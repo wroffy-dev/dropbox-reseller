@@ -166,6 +166,15 @@ async function main() {
   const seoAdmin = await (await request('/admin/seo')).text();
   check('SEO settings render the title template', seoAdmin.includes('Title template'));
 
+  const navAdmin = await (await request('/admin/navigation')).text();
+  check('navigation lists the seeded menus', navAdmin.includes('Main menu'));
+
+  const settingsAdmin = await (await request('/admin/settings')).text();
+  check('settings render the brand palette', settingsAdmin.includes('Colours'));
+
+  const emailAdmin = await (await request('/admin/settings/email')).text();
+  check('email settings render the SMTP form', emailAdmin.includes('SMTP server'));
+
   console.log(`\n${checks - failures}/${checks} checks passed\n`);
   if (failures > 0) process.exit(1);
 }
@@ -191,6 +200,9 @@ const DEFAULT_ADMIN_ROUTES = [
   '/admin/media',
   '/admin/seo',
   '/admin/redirects',
+  '/admin/navigation',
+  '/admin/settings',
+  '/admin/settings/email',
 ];
 
 const ADMIN_ROUTES = (process.env.ADMIN_ROUTES || DEFAULT_ADMIN_ROUTES.join(',')).split(',');

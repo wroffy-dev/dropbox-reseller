@@ -5,16 +5,24 @@ import type { Page, PageSection } from '@prisma/client';
 
 export type PageWithSections = Page & { sections: PageSection[] };
 
-/** Only content that is genuinely live is ever returned to a public request. */
-export const publishedPageWhere = {
-  deletedAt: null,
-  status: 'PUBLISHED' as const,
-  OR: [{ publishedAt: null }, { publishedAt: { lte: new Date() } }],
-};
+/**
+ * Only content that is genuinely live is ever returned to a public request.
+ *
+ * This must be a function: a module-level constant would freeze `new Date()` at
+ * import time, so anything published after the server started would stay hidden
+ * until the process restarted.
+ */
+export function publishedPageWhere() {
+  return {
+    deletedAt: null,
+    status: 'PUBLISHED' as const,
+    OR: [{ publishedAt: null }, { publishedAt: { lte: new Date() } }],
+  };
+}
 
 export const getPublishedPage = cache(async (slug: string): Promise<PageWithSections | null> => {
   return prisma.page.findFirst({
-    where: { ...publishedPageWhere, slug },
+    where: { ...publishedPageWhere(), slug },
     include: { sections: { orderBy: { sortOrder: 'asc' } } },
   });
 });

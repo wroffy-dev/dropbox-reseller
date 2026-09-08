@@ -19,7 +19,7 @@ export const revalidate = 300;
 export async function generateStaticParams() {
   try {
     const products = await prisma.product.findMany({
-      where: publishedProductWhere,
+      where: publishedProductWhere(),
       select: { slug: true },
       take: 200,
     });
@@ -36,7 +36,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const row = await prisma.product.findFirst({
-    where: { ...publishedProductWhere, slug },
+    where: { ...publishedProductWhere(), slug },
     select: {
       name: true,
       seoTitle: true,

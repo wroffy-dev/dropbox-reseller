@@ -18,7 +18,7 @@ export const dynamicParams = true;
 export async function generateStaticParams(): Promise<Params[]> {
   try {
     const pages = await prisma.page.findMany({
-      where: publishedPageWhere,
+      where: publishedPageWhere(),
       select: { slug: true },
       take: 500,
     });

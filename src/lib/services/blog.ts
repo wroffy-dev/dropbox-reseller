@@ -3,11 +3,17 @@ import { cache } from 'react';
 import { prisma } from '@/lib/db/prisma';
 import type { Prisma } from '@prisma/client';
 
-export const publishedPostWhere = {
-  deletedAt: null,
-  status: 'PUBLISHED' as const,
-  OR: [{ publishedAt: null }, { publishedAt: { lte: new Date() } }],
-};
+/**
+ * Evaluated per call so `new Date()` reflects the current request rather than
+ * the moment the module was first imported.
+ */
+export function publishedPostWhere() {
+  return {
+    deletedAt: null,
+    status: 'PUBLISHED' as const,
+    OR: [{ publishedAt: null }, { publishedAt: { lte: new Date() } }],
+  };
+}
 
 export const POSTS_PER_PAGE = 9;
 
@@ -36,7 +42,7 @@ export async function listPosts(options: {
   const perPage = options.perPage ?? POSTS_PER_PAGE;
   const page = Math.max(1, options.page ?? 1);
 
-  const where: Prisma.BlogPostWhereInput = { ...publishedPostWhere };
+  const where: Prisma.BlogPostWhereInput = { ...publishedPostWhere() };
   if (options.categorySlug) where.category = { slug: options.categorySlug };
   if (options.tagSlug) where.tags = { some: { tag: { slug: options.tagSlug } } };
   if (options.query?.trim()) {
@@ -68,7 +74,7 @@ export async function listPosts(options: {
 
 export const getPublishedPost = cache(async (slug: string) => {
   return prisma.blogPost.findFirst({
-    where: { ...publishedPostWhere, slug },
+    where: { ...publishedPostWhere(), slug },
     include: {
       featuredImage: true,
       ogImage: { select: { url: true } },
@@ -86,7 +92,7 @@ export const getPublishedPost = cache(async (slug: string) => {
 /** Explicit related posts, topped up with same-category posts. */
 export async function getRelatedPosts(postId: string, categoryId: string | null, limit = 3) {
   const explicit = await prisma.blogPostRelation.findMany({
-    where: { sourceId: postId, target: publishedPostWhere },
+    where: { sourceId: postId, target: publishedPostWhere() },
     orderBy: { sortOrder: 'asc' },
     take: limit,
     include: { target: { select: listSelect } },
@@ -97,7 +103,7 @@ export async function getRelatedPosts(postId: string, categoryId: string | null,
 
   const filler = await prisma.blogPost.findMany({
     where: {
-      ...publishedPostWhere,
+      ...publishedPostWhere(),
       id: { notIn: [postId, ...results.map((r) => r.id)] },
       ...(categoryId ? { categoryId } : {}),
     },
@@ -111,14 +117,14 @@ export async function getRelatedPosts(postId: string, categoryId: string | null,
 
 export const getBlogCategories = cache(async () => {
   return prisma.blogCategory.findMany({
-    where: { posts: { some: publishedPostWhere } },
+    where: { posts: { some: publishedPostWhere() } },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     select: {
       id: true,
       name: true,
       slug: true,
       description: true,
-      _count: { select: { posts: { where: publishedPostWhere } } },
+      _count: { select: { posts: { where: publishedPostWhere() } } },
     },
   });
 });

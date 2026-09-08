@@ -107,11 +107,17 @@ export function toPublicProduct(row: ProductRow): PublicProduct {
   };
 }
 
-export const publishedProductWhere = {
-  status: 'PUBLISHED',
-  deletedAt: null,
-  OR: [{ publishedAt: null }, { publishedAt: { lte: new Date() } }],
-} satisfies Prisma.ProductWhereInput;
+/**
+ * Evaluated per call so `new Date()` reflects the current request rather than
+ * the moment the module was first imported.
+ */
+export function publishedProductWhere(): Prisma.ProductWhereInput {
+  return {
+    status: 'PUBLISHED',
+    deletedAt: null,
+    OR: [{ publishedAt: null }, { publishedAt: { lte: new Date() } }],
+  };
+}
 
 export type ProductSelection = {
   source: 'featured' | 'all' | 'category' | 'selected' | 'latest';
@@ -129,7 +135,7 @@ export const selectProducts = cache(
       const ids = selection.productIds ?? [];
       if (ids.length === 0) return [];
       const rows = await prisma.product.findMany({
-        where: { ...publishedProductWhere, id: { in: ids } },
+        where: { ...publishedProductWhere(), id: { in: ids } },
         select: productSelect,
       });
       // Preserve the admin's hand-picked order.
@@ -141,7 +147,7 @@ export const selectProducts = cache(
         .map(toPublicProduct);
     }
 
-    const where: Prisma.ProductWhereInput = { ...publishedProductWhere };
+    const where: Prisma.ProductWhereInput = { ...publishedProductWhere() };
     if (selection.source === 'featured') where.isFeatured = true;
     if (selection.source === 'category' && selection.categoryId) where.categoryId = selection.categoryId;
 
@@ -157,7 +163,7 @@ export const selectProducts = cache(
 
 export const getPublicProduct = cache(async (slug: string): Promise<PublicProduct | null> => {
   const row = await prisma.product.findFirst({
-    where: { ...publishedProductWhere, slug },
+    where: { ...publishedProductWhere(), slug },
     select: productSelect,
   });
   return row ? toPublicProduct(row) : null;

@@ -1,0 +1,53 @@
+import type { Metadata } from 'next';
+import { prisma } from '@/lib/db/prisma';
+import { requirePermission, userCan } from '@/lib/auth/guards';
+import { AdminPageHeader } from '@/components/admin/page-header';
+import { CategoryManager, type CategoryRow } from '@/components/admin/products/category-manager';
+import { Card } from '@/components/ui/card';
+
+export const metadata: Metadata = { title: 'Product categories' };
+export const dynamic = 'force-dynamic';
+
+export default async function ProductCategories() {
+  const user = await requirePermission('products.view');
+
+  const rows = await prisma.productCategory.findMany({
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      description: true,
+      sortOrder: true,
+      imageId: true,
+      _count: { select: { products: { where: { deletedAt: null } } } },
+    },
+  });
+
+  const categories: CategoryRow[] = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    description: row.description,
+    sortOrder: row.sortOrder,
+    imageId: row.imageId,
+    productCount: row._count.products,
+  }));
+
+  return (
+    <div className="mx-auto max-w-4xl">
+      <AdminPageHeader
+        title="Product categories"
+        description="Group plans so a product block can pull “everything in this category”."
+        crumbs={[{ label: 'Products', href: '/admin/products' }, { label: 'Categories' }]}
+      />
+      <Card className="p-4 sm:p-5">
+        <CategoryManager
+          rows={categories}
+          canEdit={userCan(user, 'products.edit')}
+          canDelete={userCan(user, 'products.delete')}
+        />
+      </Card>
+    </div>
+  );
+}

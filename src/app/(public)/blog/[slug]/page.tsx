@@ -18,7 +18,7 @@ export const revalidate = 120;
 export async function generateStaticParams() {
   try {
     const posts = await prisma.blogPost.findMany({
-      where: publishedPostWhere,
+      where: publishedPostWhere(),
       select: { slug: true },
       take: 300,
     });

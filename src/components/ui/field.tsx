@@ -106,7 +106,9 @@ export function Checkbox({
   id,
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & { label?: React.ReactNode; hint?: string }) {
-  const inputId = id ?? React.useId();
+  // useId must run on every render, so it cannot sit behind a ?? short-circuit.
+  const generatedId = React.useId();
+  const inputId = id ?? generatedId;
   return (
     <div className="flex items-start gap-2.5">
       <input

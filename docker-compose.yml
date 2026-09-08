@@ -1,0 +1,61 @@
+# Local production-like stack. For Coolify, point it at the Dockerfile and
+# supply the same environment variables through the dashboard instead.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dropbox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dropbox}
+      POSTGRES_DB: ${POSTGRES_DB:-dropbox_reseller}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-dropbox}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dropbox}:${POSTGRES_PASSWORD:-dropbox}@db:5432/${POSTGRES_DB:-dropbox_reseller}?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-12}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      RUN_MIGRATIONS: 'true'
+      RUN_SEED: ${RUN_SEED:-false}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_DEMO_CONTENT: ${SEED_DEMO_CONTENT:-false}
+    ports:
+      - '${APP_PORT:-3000}:3000'
+    volumes:
+      # Only needed for STORAGE_PROVIDER=local. With S3/R2 this can be dropped.
+      - uploads:/app/public/uploads
+
+volumes:
+  postgres-data:
+  uploads:

@@ -5,6 +5,9 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
 import { verifyPassword } from '@/lib/auth/password';
 import { authConfig } from '@/lib/auth/config';
+import { rateLimit } from '@/lib/utils/rate-limit';
+import { hashIp } from '@/lib/utils/crypto';
+import { clientIp } from '@/lib/utils/request';
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -25,6 +28,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!parsed.success) return null;
 
         const email = parsed.data.email.toLowerCase().trim();
+
+        // Throttle by address and by source IP so neither a single account nor
+        // a single origin can be brute-forced.
+        const ipKey = hashIp(await clientIp().catch(() => null)) ?? 'unknown';
+        if (!rateLimit(`login:email:${email}`, 8, 900).ok) return null;
+        if (!rateLimit(`login:ip:${ipKey}`, 20, 900).ok) return null;
         const user = await prisma.user.findFirst({
           where: { email, deletedAt: null },
           include: {

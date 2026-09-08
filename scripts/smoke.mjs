@@ -175,6 +175,32 @@ async function main() {
   const emailAdmin = await (await request('/admin/settings/email')).text();
   check('email settings render the SMTP form', emailAdmin.includes('SMTP server'));
 
+  const marketingAdmin = await (await request('/admin/marketing')).text();
+  check('marketing lists every vendor tag', marketingAdmin.includes('Google Analytics 4') &&
+    marketingAdmin.includes('Meta Pixel'));
+
+  const staffAdmin = await (await request('/admin/staff')).text();
+  check('staff lists roles and permissions', staffAdmin.includes('Roles and permissions'));
+
+  const auditAdmin = await (await request('/admin/audit')).text();
+  check('audit log renders', auditAdmin.includes('Audit log'));
+
+  console.log('\nInfrastructure');
+  const health = await request('/api/health');
+  const healthBody = await health.json();
+  check('health endpoint reports the database', health.status === 200 &&
+    healthBody.database === 'connected', JSON.stringify(healthBody));
+
+  const headers = (await request('/')).headers;
+  check('sets X-Frame-Options', headers.get('x-frame-options') === 'DENY');
+  check('sets X-Content-Type-Options', headers.get('x-content-type-options') === 'nosniff');
+  check('sets Referrer-Policy', Boolean(headers.get('referrer-policy')));
+  check('sets Permissions-Policy', Boolean(headers.get('permissions-policy')));
+  check('does not advertise the framework', !headers.get('x-powered-by'));
+
+  const adminHeaders = (await request('/admin')).headers;
+  check('admin is not indexable', (adminHeaders.get('x-robots-tag') ?? '').includes('noindex'));
+
   console.log(`\n${checks - failures}/${checks} checks passed\n`);
   if (failures > 0) process.exit(1);
 }
@@ -203,6 +229,12 @@ const DEFAULT_ADMIN_ROUTES = [
   '/admin/navigation',
   '/admin/settings',
   '/admin/settings/email',
+  '/admin/marketing',
+  '/admin/popups',
+  '/admin/lead-magnets',
+  '/admin/staff',
+  '/admin/staff/new',
+  '/admin/audit',
 ];
 
 const ADMIN_ROUTES = (process.env.ADMIN_ROUTES || DEFAULT_ADMIN_ROUTES.join(',')).split(',');

@@ -1,0 +1,161 @@
+/**
+ * Canonical permission catalogue.
+ * Permissions are stored in the database and attached to roles, but this file is
+ * the single source of truth used for seeding and for compile-time safety.
+ */
+
+export const PERMISSIONS = {
+  'dashboard.view': { group: 'dashboard', label: 'View dashboard' },
+
+  'pages.view': { group: 'pages', label: 'View pages' },
+  'pages.create': { group: 'pages', label: 'Create pages' },
+  'pages.edit': { group: 'pages', label: 'Edit pages' },
+  'pages.delete': { group: 'pages', label: 'Delete pages' },
+  'pages.publish': { group: 'pages', label: 'Publish pages' },
+
+  'products.view': { group: 'products', label: 'View products' },
+  'products.create': { group: 'products', label: 'Create products' },
+  'products.edit': { group: 'products', label: 'Edit products' },
+  'products.delete': { group: 'products', label: 'Delete products' },
+
+  'leads.view': { group: 'leads', label: 'View leads' },
+  'leads.create': { group: 'leads', label: 'Create leads' },
+  'leads.edit': { group: 'leads', label: 'Edit leads' },
+  'leads.delete': { group: 'leads', label: 'Delete leads' },
+  'leads.export': { group: 'leads', label: 'Export leads' },
+  'leads.assign': { group: 'leads', label: 'Assign leads' },
+
+  'customers.view': { group: 'customers', label: 'View customers' },
+  'customers.create': { group: 'customers', label: 'Create customers' },
+  'customers.edit': { group: 'customers', label: 'Edit customers' },
+  'customers.delete': { group: 'customers', label: 'Delete customers' },
+
+  'blog.view': { group: 'blog', label: 'View blog posts' },
+  'blog.create': { group: 'blog', label: 'Create blog posts' },
+  'blog.edit': { group: 'blog', label: 'Edit blog posts' },
+  'blog.delete': { group: 'blog', label: 'Delete blog posts' },
+  'blog.publish': { group: 'blog', label: 'Publish blog posts' },
+
+  'forms.view': { group: 'forms', label: 'View forms' },
+  'forms.create': { group: 'forms', label: 'Create forms' },
+  'forms.edit': { group: 'forms', label: 'Edit forms' },
+  'forms.delete': { group: 'forms', label: 'Delete forms' },
+
+  'media.view': { group: 'media', label: 'View media' },
+  'media.upload': { group: 'media', label: 'Upload media' },
+  'media.edit': { group: 'media', label: 'Edit media metadata' },
+  'media.delete': { group: 'media', label: 'Delete media' },
+
+  'seo.manage': { group: 'seo', label: 'Manage SEO and redirects' },
+  'marketing.manage': { group: 'marketing', label: 'Manage marketing and tracking' },
+  'navigation.manage': { group: 'navigation', label: 'Manage navigation menus' },
+  'settings.manage': { group: 'settings', label: 'Manage website settings' },
+  'staff.manage': { group: 'staff', label: 'Manage staff and roles' },
+  'audit.view': { group: 'audit', label: 'View audit log' },
+} as const;
+
+export type PermissionKey = keyof typeof PERMISSIONS;
+
+export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as PermissionKey[];
+
+export const PERMISSION_GROUP_LABELS: Record<string, string> = {
+  dashboard: 'Dashboard',
+  pages: 'Pages',
+  products: 'Products',
+  leads: 'Leads',
+  customers: 'Customers',
+  blog: 'Blog',
+  forms: 'Forms',
+  media: 'Media',
+  seo: 'SEO',
+  marketing: 'Marketing',
+  navigation: 'Navigation',
+  settings: 'Settings',
+  staff: 'Staff',
+  audit: 'Audit log',
+};
+
+/** System roles seeded on first run. rank: lower == more privileged. */
+export const SYSTEM_ROLES: Array<{
+  slug: string;
+  name: string;
+  description: string;
+  rank: number;
+  permissions: PermissionKey[] | 'all';
+}> = [
+  {
+    slug: 'super-admin',
+    name: 'Super Admin',
+    description: 'Unrestricted access to every part of the platform.',
+    rank: 0,
+    permissions: 'all',
+  },
+  {
+    slug: 'admin',
+    name: 'Admin',
+    description: 'Full administrative access except destructive staff/role changes.',
+    rank: 10,
+    permissions: ALL_PERMISSIONS.filter((p) => p !== 'staff.manage'),
+  },
+  {
+    slug: 'sales',
+    name: 'Sales',
+    description: 'Works leads and customers. Read-only on marketing content.',
+    rank: 30,
+    permissions: [
+      'dashboard.view',
+      'leads.view',
+      'leads.create',
+      'leads.edit',
+      'leads.export',
+      'leads.assign',
+      'customers.view',
+      'customers.create',
+      'customers.edit',
+      'products.view',
+      'forms.view',
+      'pages.view',
+      'blog.view',
+      'media.view',
+    ],
+  },
+  {
+    slug: 'content-marketing',
+    name: 'Content & Marketing',
+    description: 'Owns the website, blog, media, SEO and marketing configuration.',
+    rank: 30,
+    permissions: [
+      'dashboard.view',
+      'pages.view',
+      'pages.create',
+      'pages.edit',
+      'pages.delete',
+      'pages.publish',
+      'blog.view',
+      'blog.create',
+      'blog.edit',
+      'blog.delete',
+      'blog.publish',
+      'products.view',
+      'products.create',
+      'products.edit',
+      'forms.view',
+      'forms.create',
+      'forms.edit',
+      'media.view',
+      'media.upload',
+      'media.edit',
+      'media.delete',
+      'seo.manage',
+      'marketing.manage',
+      'navigation.manage',
+      'leads.view',
+    ],
+  },
+];
+
+export function permissionsForRole(slug: string): PermissionKey[] {
+  const role = SYSTEM_ROLES.find((r) => r.slug === slug);
+  if (!role) return [];
+  return role.permissions === 'all' ? ALL_PERMISSIONS : role.permissions;
+}

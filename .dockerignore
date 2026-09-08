@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.github
+out
+dist
+coverage
+*.log
+.env
+.env.local
+.env.*.local
+README.md
+ARCHITECTURE.md
+public/uploads

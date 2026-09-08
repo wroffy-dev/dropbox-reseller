@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+dist
+build
+.env
+.env.local
+.env.*.local
+*.log
+npm-debug.log*
+.DS_Store
+coverage
+.vercel
+tsconfig.tsbuildinfo
+next-env.d.ts
+/public/uploads/*
+!/public/uploads/.gitkeep

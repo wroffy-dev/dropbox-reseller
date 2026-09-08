@@ -1,0 +1,1212 @@
+// Dropbox Reseller Platform — database schema
+// Money is ALWAYS Decimal. Never Float.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------------------------
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  SCHEDULED
+  ARCHIVED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+  SPAM
+}
+
+enum LeadPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum CustomerStatus {
+  PROSPECT
+  ACTIVE
+  INACTIVE
+  FORMER
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+enum FormFieldType {
+  TEXT
+  EMAIL
+  PHONE
+  NUMBER
+  TEXTAREA
+  SELECT
+  CHECKBOX
+  RADIO
+  HIDDEN
+  COMPANY
+  NAME
+}
+
+enum BillingPeriod {
+  MONTHLY
+  ANNUAL
+  BOTH
+  ONE_TIME
+}
+
+enum RedirectType {
+  PERMANENT
+  TEMPORARY
+}
+
+enum ScriptPlacement {
+  HEAD
+  BODY_START
+  BODY_END
+}
+
+enum ScriptEnvironment {
+  ALL
+  PRODUCTION
+  DEVELOPMENT
+}
+
+enum NavigationLocation {
+  HEADER
+  FOOTER
+  FOOTER_SECONDARY
+  LEGAL
+  MOBILE
+  SIDEBAR
+}
+
+enum NavLinkType {
+  INTERNAL
+  EXTERNAL
+  PAGE
+  PRODUCT
+  BLOG_POST
+  BLOG_CATEGORY
+}
+
+enum MediaKind {
+  IMAGE
+  VIDEO
+  DOCUMENT
+  OTHER
+}
+
+enum PopupTrigger {
+  IMMEDIATE
+  DELAY
+  SCROLL
+  EXIT_INTENT
+}
+
+enum PopupType {
+  OFFER
+  IMAGE
+  LEAD_FORM
+  NEWSLETTER
+  PRODUCT
+  LEAD_MAGNET
+}
+
+enum DeviceTarget {
+  ALL
+  DESKTOP
+  MOBILE
+}
+
+enum LeadActivityType {
+  CREATED
+  STATUS_CHANGED
+  ASSIGNED
+  NOTE_ADDED
+  EMAIL_SENT
+  CALL_LOGGED
+  MEETING_LOGGED
+  FOLLOW_UP_SET
+  UPDATED
+  CONVERTED
+}
+
+enum LeadMagnetKind {
+  EBOOK
+  PDF
+  GUIDE
+  CHECKLIST
+  WHITEPAPER
+  DEMO
+  CONSULTATION
+  OFFER
+}
+
+// ---------------------------------------------------------------------------
+// AUTH / STAFF / RBAC
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  name          String
+  passwordHash  String?
+  image         String?
+  jobTitle      String?
+  phone         String?
+  status        UserStatus @default(ACTIVE)
+  emailVerified DateTime?
+  lastLoginAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  deletedAt     DateTime?
+
+  roles  UserRole @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  roleId String
+
+  accounts Account[]
+  sessions Session[]
+
+  assignedLeads     Lead[]         @relation("LeadAssignee")
+  assignedCustomers Customer[]     @relation("CustomerAssignee")
+  leadNotes         LeadNote[]
+  leadActivities    LeadActivity[]
+  customerNotes     CustomerNote[]
+  authoredPosts     BlogPost[]     @relation("PostAuthor")
+  uploadedMedia     Media[]        @relation("MediaUploader")
+  auditLogs         AuditLog[]
+
+  @@index([email])
+  @@index([roleId])
+  @@index([status])
+}
+
+model UserRole {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  slug        String  @unique
+  description String?
+  isSystem    Boolean @default(false)
+  // Rank governs who may manage whom. Lower rank == more privileged.
+  rank        Int     @default(100)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users       User[]
+  permissions RolePermission[]
+
+  @@index([slug])
+}
+
+model Permission {
+  id          String  @id @default(cuid())
+  key         String  @unique // e.g. "pages.edit"
+  group       String // e.g. "pages"
+  label       String
+  description String?
+
+  roles RolePermission[]
+
+  @@index([group])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       UserRole   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// CMS — PAGES & SECTIONS
+// ---------------------------------------------------------------------------
+
+model Page {
+  id          String        @id @default(cuid())
+  title       String
+  slug        String        @unique // "" is the homepage; nested allowed: "dropbox/business"
+  status      ContentStatus @default(DRAFT)
+  publishedAt DateTime?
+  isHomepage  Boolean       @default(false)
+
+  // Layout controls
+  showHeader Boolean @default(true)
+  showFooter Boolean @default(true)
+
+  // SEO (entity overrides global defaults)
+  seoTitle           String?
+  seoDescription     String? @db.Text
+  canonicalUrl       String?
+  noIndex            Boolean @default(false)
+  noFollow           Boolean @default(false)
+  ogTitle            String?
+  ogDescription      String? @db.Text
+  ogImageId          String?
+  twitterTitle       String?
+  twitterDescription String? @db.Text
+  twitterImageId     String?
+
+  createdById String?
+  updatedById String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  ogImage      Media?            @relation("PageOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
+  twitterImage Media?            @relation("PageTwitterImage", fields: [twitterImageId], references: [id], onDelete: SetNull)
+  sections     PageSection[]
+  leads        Lead[]            @relation("LeadLandingPage")
+  popups       PopupPageTarget[]
+
+  @@index([slug])
+  @@index([status, publishedAt])
+  @@index([deletedAt])
+}
+
+model PageSection {
+  id        String  @id @default(cuid())
+  pageId    String
+  blockType String // registry key: "hero", "featureGrid", ...
+  name      String? // admin-facing label
+  sortOrder Int     @default(0)
+  isVisible Boolean @default(true)
+
+  // Block payload validated by the block registry's Zod schema
+  content  Json @default("{}")
+  // Presentation settings: background, spacing, width, alignment...
+  settings Json @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, sortOrder])
+}
+
+// ---------------------------------------------------------------------------
+// PRODUCTS
+// ---------------------------------------------------------------------------
+
+model ProductCategory {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String? @db.Text
+  sortOrder   Int     @default(0)
+  imageId     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  image    Media?    @relation("CategoryImage", fields: [imageId], references: [id], onDelete: SetNull)
+  products Product[]
+
+  @@index([slug])
+}
+
+model Product {
+  id          String        @id @default(cuid())
+  name        String
+  slug        String        @unique
+  sku         String?       @unique
+  status      ContentStatus @default(DRAFT)
+  publishedAt DateTime?
+  isFeatured  Boolean       @default(false)
+  sortOrder   Int           @default(0)
+
+  shortDescription String? @db.Text
+  description      String? @db.Text
+
+  // Spec
+  storage       String? // "3 TB", "Unlimited"
+  minUsers      Int?
+  maxUsers      Int?
+  billingPeriod BillingPeriod @default(BOTH)
+
+  // Money — Decimal only.
+  currency        String   @default("INR")
+  monthlyPrice    Decimal? @db.Decimal(12, 2)
+  annualPrice     Decimal? @db.Decimal(12, 2)
+  compareAtPrice  Decimal? @db.Decimal(12, 2)
+  discountPercent Int?
+  priceSuffix     String? // "per user / month"
+  priceNote       String?
+
+  // Structured content
+  features Json @default("[]") // string[]
+  benefits Json @default("[]") // string[]
+  specs    Json @default("[]") // { label, value }[]
+
+  // CTA
+  ctaLabel   String? @default("Get Started")
+  ctaUrl     String?
+  ctaFormId  String?
+  ctaPopupId String?
+
+  imageId    String?
+  galleryIds Json    @default("[]") // string[] of Media ids
+
+  categoryId String?
+
+  // SEO
+  seoTitle       String?
+  seoDescription String? @db.Text
+  canonicalUrl   String?
+  noIndex        Boolean @default(false)
+  ogImageId      String?
+
+  createdById String?
+  updatedById String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  category         ProductCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  image            Media?            @relation("ProductImage", fields: [imageId], references: [id], onDelete: SetNull)
+  ogImage          Media?            @relation("ProductOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
+  ctaForm          Form?             @relation("ProductCtaForm", fields: [ctaFormId], references: [id], onDelete: SetNull)
+  variants         ProductVariant[]
+  leads            Lead[]            @relation("LeadProduct")
+  forms            Form[]            @relation("FormProduct")
+  customerProducts CustomerProduct[]
+
+  @@index([slug])
+  @@index([status, publishedAt])
+  @@index([categoryId])
+  @@index([isFeatured])
+  @@index([deletedAt])
+}
+
+model ProductVariant {
+  id           String   @id @default(cuid())
+  productId    String
+  name         String
+  sku          String?
+  storage      String?
+  users        Int?
+  monthlyPrice Decimal? @db.Decimal(12, 2)
+  annualPrice  Decimal? @db.Decimal(12, 2)
+  sortOrder    Int      @default(0)
+  isDefault    Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+}
+
+// ---------------------------------------------------------------------------
+// BLOG
+// ---------------------------------------------------------------------------
+
+model BlogCategory {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String? @db.Text
+  sortOrder   Int     @default(0)
+
+  seoTitle       String?
+  seoDescription String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts BlogPost[]
+
+  @@index([slug])
+}
+
+model BlogTag {
+  id   String @id @default(cuid())
+  name String
+  slug String @unique
+
+  createdAt DateTime @default(now())
+
+  posts BlogPostTag[]
+
+  @@index([slug])
+}
+
+model BlogPost {
+  id          String        @id @default(cuid())
+  title       String
+  slug        String        @unique
+  status      ContentStatus @default(DRAFT)
+  publishedAt DateTime?
+  excerpt     String?       @db.Text
+  content     String        @default("") @db.Text
+  readingTime Int           @default(1) // minutes
+  isFeatured  Boolean       @default(false)
+
+  featuredImageId String?
+  categoryId      String?
+  authorId        String?
+
+  seoTitle       String?
+  seoDescription String? @db.Text
+  canonicalUrl   String?
+  noIndex        Boolean @default(false)
+  ogTitle        String?
+  ogDescription  String? @db.Text
+  ogImageId      String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  featuredImage Media?        @relation("PostFeaturedImage", fields: [featuredImageId], references: [id], onDelete: SetNull)
+  ogImage       Media?        @relation("PostOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
+  category      BlogCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  author        User?         @relation("PostAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  tags          BlogPostTag[]
+
+  relatedTo   BlogPostRelation[] @relation("RelationSource")
+  relatedFrom BlogPostRelation[] @relation("RelationTarget")
+
+  @@index([slug])
+  @@index([status, publishedAt])
+  @@index([categoryId])
+  @@index([deletedAt])
+}
+
+model BlogPostTag {
+  postId String
+  tagId  String
+
+  post BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag  BlogTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+  @@index([tagId])
+}
+
+model BlogPostRelation {
+  sourceId  String
+  targetId  String
+  sortOrder Int    @default(0)
+
+  source BlogPost @relation("RelationSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  target BlogPost @relation("RelationTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@id([sourceId, targetId])
+  @@index([targetId])
+}
+
+// ---------------------------------------------------------------------------
+// MEDIA
+// ---------------------------------------------------------------------------
+
+model Media {
+  id          String    @id @default(cuid())
+  filename    String
+  storageKey  String    @unique
+  url         String    @db.Text
+  provider    String    @default("local") // local | s3 | r2
+  mimeType    String
+  kind        MediaKind @default(IMAGE)
+  size        Int
+  width       Int?
+  height      Int?
+  altText     String?
+  title       String?
+  caption     String?   @db.Text
+  description String?   @db.Text
+  folder      String?
+
+  uploadedById String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  uploadedBy User? @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  pageOgImages       Page[]            @relation("PageOgImage")
+  pageTwitterImages  Page[]            @relation("PageTwitterImage")
+  productImages      Product[]         @relation("ProductImage")
+  productOgImages    Product[]         @relation("ProductOgImage")
+  categoryImages     ProductCategory[] @relation("CategoryImage")
+  postFeaturedImages BlogPost[]        @relation("PostFeaturedImage")
+  postOgImages       BlogPost[]        @relation("PostOgImage")
+  leadMagnetImages   LeadMagnet[]      @relation("LeadMagnetImage")
+  leadMagnetFiles    LeadMagnet[]      @relation("LeadMagnetFile")
+  popupImages        Popup[]           @relation("PopupImage")
+
+  @@index([kind])
+  @@index([createdAt])
+  @@index([deletedAt])
+}
+
+// ---------------------------------------------------------------------------
+// FORMS
+// ---------------------------------------------------------------------------
+
+model Form {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String? @db.Text
+  isActive    Boolean @default(true)
+
+  submitLabel    String  @default("Submit")
+  successMessage String  @default("Thank you. Our team will contact you shortly.")
+  redirectUrl    String?
+
+  // Lead defaults applied to submissions
+  leadSource       String? @default("Website Form")
+  defaultProductId String?
+  createsLead      Boolean @default(true)
+
+  notifyEmails String? @db.Text // comma-separated
+  consentText  String? @db.Text
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  defaultProduct Product?         @relation("FormProduct", fields: [defaultProductId], references: [id], onDelete: SetNull)
+  fields         FormField[]
+  submissions    FormSubmission[]
+  leads          Lead[]           @relation("LeadForm")
+  productCtas    Product[]        @relation("ProductCtaForm")
+  popups         Popup[]          @relation("PopupForm")
+  leadMagnets    LeadMagnet[]     @relation("LeadMagnetForm")
+
+  @@index([slug])
+}
+
+model FormField {
+  id           String        @id @default(cuid())
+  formId       String
+  type         FormFieldType
+  label        String
+  name         String // machine key
+  placeholder  String?
+  helpText     String?
+  defaultValue String?
+  isRequired   Boolean       @default(false)
+  sortOrder    Int           @default(0)
+  width        String        @default("full") // full | half
+  options      Json          @default("[]") // { label, value }[]
+  // Validation
+  minLength    Int?
+  maxLength    Int?
+  pattern      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, name])
+  @@index([formId, sortOrder])
+}
+
+model FormSubmission {
+  id     String @id @default(cuid())
+  formId String
+  data   Json   @default("{}")
+
+  ipHash    String?
+  userAgent String? @db.Text
+  referrer  String? @db.Text
+  pageUrl   String? @db.Text
+
+  leadId String?
+
+  createdAt DateTime @default(now())
+
+  form Form  @relation(fields: [formId], references: [id], onDelete: Cascade)
+  lead Lead? @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([formId, createdAt])
+  @@index([leadId])
+}
+
+// ---------------------------------------------------------------------------
+// CRM — LEADS
+// ---------------------------------------------------------------------------
+
+model Lead {
+  id        String @id @default(cuid())
+  reference Int    @default(autoincrement())
+
+  name     String
+  email    String
+  phone    String?
+  company  String?
+  jobTitle String?
+  message  String? @db.Text
+
+  status        LeadStatus   @default(NEW)
+  priority      LeadPriority @default(MEDIUM)
+  pipelineOrder Int          @default(0)
+
+  source      String?
+  campaign    String?
+  ctaLabel    String?
+  ctaLocation String?
+
+  // Attribution — first & last touch
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmTerm     String?
+  utmContent  String?
+
+  firstUtmSource   String?
+  firstUtmMedium   String?
+  firstUtmCampaign String?
+  firstUtmTerm     String?
+  firstUtmContent  String?
+  firstLandingUrl  String?   @db.Text
+  firstTouchAt     DateTime?
+
+  referrer   String? @db.Text
+  landingUrl String? @db.Text
+  userAgent  String? @db.Text
+  ipHash     String?
+
+  productId     String?
+  landingPageId String?
+  formId        String?
+  leadMagnetId  String?
+  assignedToId  String?
+  customerId    String?
+
+  followUpAt DateTime?
+  lostReason String?   @db.Text
+  value      Decimal?  @db.Decimal(12, 2)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  product     Product?    @relation("LeadProduct", fields: [productId], references: [id], onDelete: SetNull)
+  landingPage Page?       @relation("LeadLandingPage", fields: [landingPageId], references: [id], onDelete: SetNull)
+  form        Form?       @relation("LeadForm", fields: [formId], references: [id], onDelete: SetNull)
+  leadMagnet  LeadMagnet? @relation(fields: [leadMagnetId], references: [id], onDelete: SetNull)
+  assignedTo  User?       @relation("LeadAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  customer    Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  notes       LeadNote[]
+  activities  LeadActivity[]
+  submissions FormSubmission[]
+
+  @@index([status, createdAt])
+  @@index([assignedToId])
+  @@index([email])
+  @@index([productId])
+  @@index([createdAt])
+  @@index([utmSource])
+  @@index([deletedAt])
+  @@index([customerId])
+}
+
+model LeadNote {
+  id       String  @id @default(cuid())
+  leadId   String
+  authorId String?
+  body     String  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lead   Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  author User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([leadId, createdAt])
+}
+
+model LeadActivity {
+  id      String           @id @default(cuid())
+  leadId  String
+  type    LeadActivityType
+  actorId String?
+  summary String           @db.Text
+  meta    Json             @default("{}")
+
+  createdAt DateTime @default(now())
+
+  lead  Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([leadId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// CRM — CUSTOMERS
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id        String @id @default(cuid())
+  reference Int    @default(autoincrement())
+
+  name    String
+  company String?
+  email   String
+  phone   String?
+  website String?
+  address String? @db.Text
+  gstin   String?
+
+  status       CustomerStatus @default(PROSPECT)
+  assignedToId String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  assignedTo User?             @relation("CustomerAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  notes      CustomerNote[]
+  leads      Lead[]
+  products   CustomerProduct[]
+
+  @@index([email])
+  @@index([status])
+  @@index([assignedToId])
+  @@index([deletedAt])
+}
+
+model CustomerNote {
+  id         String  @id @default(cuid())
+  customerId String
+  authorId   String?
+  body       String  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  author   User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, createdAt])
+}
+
+// Join model designed so future Subscription/Order models can extend it.
+model CustomerProduct {
+  id         String    @id @default(cuid())
+  customerId String
+  productId  String
+  quantity   Int       @default(1)
+  seats      Int?
+  unitPrice  Decimal?  @db.Decimal(12, 2)
+  startsAt   DateTime?
+  renewsAt   DateTime?
+  notes      String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, productId])
+  @@index([productId])
+}
+
+// ---------------------------------------------------------------------------
+// LEAD MAGNETS & POPUPS
+// ---------------------------------------------------------------------------
+
+model LeadMagnet {
+  id          String         @id @default(cuid())
+  title       String
+  slug        String         @unique
+  kind        LeadMagnetKind @default(PDF)
+  description String?        @db.Text
+  isActive    Boolean        @default(true)
+
+  imageId         String?
+  fileId          String?
+  externalUrl     String?
+  formId          String?
+  ctaLabel        String  @default("Download")
+  thankYouTitle   String?
+  thankYouMessage String? @db.Text
+  thankYouUrl     String?
+
+  downloadCount Int @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  image  Media?  @relation("LeadMagnetImage", fields: [imageId], references: [id], onDelete: SetNull)
+  file   Media?  @relation("LeadMagnetFile", fields: [fileId], references: [id], onDelete: SetNull)
+  form   Form?   @relation("LeadMagnetForm", fields: [formId], references: [id], onDelete: SetNull)
+  leads  Lead[]
+  popups Popup[] @relation("PopupLeadMagnet")
+
+  @@index([slug])
+}
+
+model Popup {
+  id       String    @id @default(cuid())
+  name     String
+  type     PopupType @default(LEAD_FORM)
+  isActive Boolean   @default(false)
+
+  heading      String?
+  body         String? @db.Text
+  imageId      String?
+  formId       String?
+  leadMagnetId String?
+  ctaLabel     String?
+  ctaUrl       String?
+
+  trigger       PopupTrigger @default(DELAY)
+  delaySeconds  Int          @default(5)
+  scrollPercent Int          @default(50)
+  device        DeviceTarget @default(ALL)
+  frequencyDays Int          @default(7)
+  startsAt      DateTime?
+  endsAt        DateTime?
+  // Empty targeting == show everywhere
+  urlPatterns   Json         @default("[]") // string[] of glob-ish patterns
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  image       Media?            @relation("PopupImage", fields: [imageId], references: [id], onDelete: SetNull)
+  form        Form?             @relation("PopupForm", fields: [formId], references: [id], onDelete: SetNull)
+  leadMagnet  LeadMagnet?       @relation("PopupLeadMagnet", fields: [leadMagnetId], references: [id], onDelete: SetNull)
+  pageTargets PopupPageTarget[]
+
+  @@index([isActive])
+}
+
+model PopupPageTarget {
+  popupId String
+  pageId  String
+
+  popup Popup @relation(fields: [popupId], references: [id], onDelete: Cascade)
+  page  Page  @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@id([popupId, pageId])
+  @@index([pageId])
+}
+
+// ---------------------------------------------------------------------------
+// NAVIGATION
+// ---------------------------------------------------------------------------
+
+model Navigation {
+  id       String             @id @default(cuid())
+  name     String
+  slug     String             @unique
+  location NavigationLocation @default(HEADER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items NavigationItem[]
+
+  @@index([location])
+}
+
+model NavigationItem {
+  id             String      @id @default(cuid())
+  navigationId   String
+  parentId       String?
+  label          String
+  linkType       NavLinkType @default(INTERNAL)
+  url            String?
+  pageId         String?
+  productId      String?
+  blogPostId     String?
+  blogCategoryId String?
+  description    String?
+  icon           String?
+  openInNewTab   Boolean     @default(false)
+  isHighlighted  Boolean     @default(false)
+  sortOrder      Int         @default(0)
+  isVisible      Boolean     @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  navigation Navigation       @relation(fields: [navigationId], references: [id], onDelete: Cascade)
+  parent     NavigationItem?  @relation("NavItemChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children   NavigationItem[] @relation("NavItemChildren")
+
+  @@index([navigationId, sortOrder])
+  @@index([parentId])
+}
+
+// ---------------------------------------------------------------------------
+// SETTINGS (singletons — id is always "singleton")
+// ---------------------------------------------------------------------------
+
+model WebsiteSettings {
+  id String @id @default("singleton")
+
+  // General
+  siteName        String  @default("Dropbox Reseller")
+  siteTitle       String  @default("Authorised Dropbox Reseller")
+  siteDescription String  @default("Buy Dropbox Business and Enterprise plans with local billing, onboarding and support.") @db.Text
+  siteUrl         String  @default("http://localhost:3000")
+  contactEmail    String?
+  contactPhone    String?
+  whatsappNumber  String?
+  address         String? @db.Text
+
+  // Socials
+  linkedinUrl  String?
+  twitterUrl   String?
+  facebookUrl  String?
+  instagramUrl String?
+  youtubeUrl   String?
+
+  // Branding
+  logoUrl     String?
+  logoDarkUrl String?
+  faviconUrl  String?
+  ogImageUrl  String?
+
+  // Typography
+  headingFont   String @default("Inter")
+  bodyFont      String @default("Inter")
+  headingWeight String @default("700")
+  bodyWeight    String @default("400")
+  baseFontSize  String @default("16px")
+
+  // Colors — stored as hex, exposed as CSS custom properties
+  colorPrimary    String @default("#0061FF")
+  colorSecondary  String @default("#0B1B34")
+  colorAccent1    String @default("#1AC1A5")
+  colorAccent2    String @default("#FF8A3D")
+  colorBackground String @default("#FFFFFF")
+  colorText       String @default("#0B1B34")
+  colorMuted      String @default("#5B6B85")
+  colorBorder     String @default("#E3E8F0")
+
+  // Header
+  announcementText        String?
+  announcementUrl         String?
+  announcementEnabled     Boolean @default(false)
+  headerCtaLabel          String? @default("Talk to Sales")
+  headerCtaUrl            String? @default("/contact")
+  headerSecondaryCtaLabel String?
+  headerSecondaryCtaUrl   String?
+
+  // Footer
+  footerDescription       String? @db.Text
+  footerNewsletterEnabled Boolean @default(false)
+  footerNewsletterFormId  String?
+  copyrightText           String?
+
+  // Misc
+  defaultCurrency String  @default("INR")
+  maintenanceMode Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
+}
+
+model SeoSettings {
+  id String @id @default("singleton")
+
+  defaultTitle           String  @default("Authorised Dropbox Reseller")
+  titleTemplate          String  @default("%s | Dropbox Reseller")
+  defaultDescription     String  @default("Dropbox Business and Enterprise licences with local billing, migration and support.") @db.Text
+  defaultOgImageUrl      String?
+  twitterHandle          String?
+  organizationName       String  @default("Dropbox Reseller")
+  organizationLogoUrl    String?
+  organizationType       String  @default("Organization")
+  googleSiteVerification String?
+  bingSiteVerification   String?
+  robotsTxtExtra         String? @db.Text
+  sitemapEnabled         Boolean @default(true)
+  noIndexSite            Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
+}
+
+model TrackingSettings {
+  id String @id @default("singleton")
+
+  ga4Id                    String?
+  ga4Enabled               Boolean @default(false)
+  gtmId                    String?
+  gtmEnabled               Boolean @default(false)
+  googleAdsId              String?
+  googleAdsEnabled         Boolean @default(false)
+  googleAdsConversionLabel String?
+  metaPixelId              String?
+  metaPixelEnabled         Boolean @default(false)
+  microsoftUetId           String?
+  microsoftUetEnabled      Boolean @default(false)
+  hotjarId                 String?
+  hotjarEnabled            Boolean @default(false)
+  linkedinPartnerId        String?
+  linkedinEnabled          Boolean @default(false)
+  tiktokPixelId            String?
+  tiktokEnabled            Boolean @default(false)
+
+  consentRequired Boolean @default(false)
+  consentMessage  String? @db.Text
+
+  updatedAt DateTime @updatedAt
+}
+
+// Free-form scripts are a privileged, audited feature (marketing.manage only).
+model TrackingScript {
+  id              String            @id @default(cuid())
+  name            String
+  placement       ScriptPlacement   @default(HEAD)
+  environment     ScriptEnvironment @default(ALL)
+  isActive        Boolean           @default(false)
+  requiresConsent Boolean           @default(true)
+  code            String            @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, placement])
+}
+
+model EmailSettings {
+  id String @id @default("singleton")
+
+  host       String?
+  port       Int     @default(587)
+  username   String?
+  password   String? // encrypted at rest; never sent to the client
+  encryption String  @default("tls") // none | tls | ssl
+  fromName   String  @default("Dropbox Reseller")
+  fromEmail  String?
+  replyTo    String?
+
+  notifyOnNewLead         Boolean @default(true)
+  notifyOnAssignment      Boolean @default(true)
+  notifyOnSubmission      Boolean @default(false)
+  salesNotificationEmails String? @db.Text // comma-separated
+
+  isEnabled Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
+}
+
+model EmailTemplate {
+  id       String  @id @default(cuid())
+  key      String  @unique // new_lead, lead_assigned, form_submission
+  name     String
+  subject  String
+  body     String  @db.Text // simple {{token}} interpolation
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Redirect {
+  id          String       @id @default(cuid())
+  source      String       @unique
+  destination String
+  type        RedirectType @default(PERMANENT)
+  isActive    Boolean      @default(true)
+  hitCount    Int          @default(0)
+  note        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+// ---------------------------------------------------------------------------
+// AUDIT
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String  @id @default(cuid())
+  actorId    String?
+  actorEmail String?
+  action     String // created | updated | deleted | published | ...
+  entity     String // Page | Product | Lead | ...
+  entityId   String?
+  summary    String? @db.Text
+  before     Json?
+  after      Json?
+  ipHash     String?
+  userAgent  String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}

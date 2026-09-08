@@ -1,0 +1,45 @@
+import type { Config } from 'tailwindcss';
+
+const config: Config = {
+  content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
+  darkMode: 'class',
+  theme: {
+    container: {
+      center: true,
+      padding: { DEFAULT: '1rem', sm: '1.5rem', lg: '2rem' },
+      screens: { '2xl': '1280px' },
+    },
+    extend: {
+      colors: {
+        brand: {
+          DEFAULT: 'rgb(var(--brand-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--brand-secondary) / <alpha-value>)',
+          accent: 'rgb(var(--brand-accent1) / <alpha-value>)',
+          accent2: 'rgb(var(--brand-accent2) / <alpha-value>)',
+        },
+        surface: 'rgb(var(--brand-background) / <alpha-value>)',
+        content: 'rgb(var(--brand-text) / <alpha-value>)',
+        muted: 'rgb(var(--brand-muted) / <alpha-value>)',
+        hairline: 'rgb(var(--brand-border) / <alpha-value>)',
+      },
+      fontFamily: {
+        heading: ['var(--font-heading)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        body: ['var(--font-body)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+      },
+      keyframes: {
+        'fade-in': { from: { opacity: '0' }, to: { opacity: '1' } },
+        'slide-up': {
+          from: { opacity: '0', transform: 'translateY(8px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        'fade-in': 'fade-in .2s ease-out',
+        'slide-up': 'slide-up .25s ease-out',
+      },
+    },
+  },
+  plugins: [],
+};
+
+export default config;

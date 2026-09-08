@@ -160,6 +160,12 @@ async function main() {
   const reports = await (await request('/admin/reports')).text();
   check('reports render attribution breakdowns', reports.includes('Leads by source'));
 
+  const blogAdmin = await (await request('/admin/blog')).text();
+  check('blog list renders seeded posts', blogAdmin.includes('Google Drive to Dropbox'));
+
+  const seoAdmin = await (await request('/admin/seo')).text();
+  check('SEO settings render the title template', seoAdmin.includes('Title template'));
+
   console.log(`\n${checks - failures}/${checks} checks passed\n`);
   if (failures > 0) process.exit(1);
 }
@@ -179,6 +185,12 @@ const DEFAULT_ADMIN_ROUTES = [
   '/admin/forms',
   '/admin/forms/new',
   '/admin/reports',
+  '/admin/blog',
+  '/admin/blog/new',
+  '/admin/blog/categories',
+  '/admin/media',
+  '/admin/seo',
+  '/admin/redirects',
 ];
 
 const ADMIN_ROUTES = (process.env.ADMIN_ROUTES || DEFAULT_ADMIN_ROUTES.join(',')).split(',');

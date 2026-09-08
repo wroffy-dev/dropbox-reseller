@@ -12,12 +12,19 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
     return { rules: [{ userAgent: '*', disallow: '/' }] };
   }
 
+  // Admin → SEO holds extra paths to disallow, one per line. A leading
+  // "Disallow:" is tolerated and stripped so the directive is never doubled up.
+  const extra = (seo?.robotsTxtExtra ?? '')
+    .split('\n')
+    .map((line) => line.trim().replace(/^disallow:\s*/i, ''))
+    .filter((line) => line.startsWith('/'));
+
   return {
     rules: [
       {
         userAgent: '*',
         allow: '/',
-        disallow: ['/admin', '/admin/', '/api/', '/login', '/preview'],
+        disallow: ['/admin', '/admin/', '/api/', '/login', '/preview', ...extra],
       },
     ],
     sitemap: seo?.sitemapEnabled === false ? undefined : `${base}/sitemap.xml`,

@@ -315,11 +315,12 @@ model Page {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  ogImage      Media?            @relation("PageOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
-  twitterImage Media?            @relation("PageTwitterImage", fields: [twitterImageId], references: [id], onDelete: SetNull)
-  sections     PageSection[]
-  leads        Lead[]            @relation("LeadLandingPage")
-  popups       PopupPageTarget[]
+  ogImage         Media?            @relation("PageOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
+  twitterImage    Media?            @relation("PageTwitterImage", fields: [twitterImageId], references: [id], onDelete: SetNull)
+  sections        PageSection[]
+  leads           Lead[]            @relation("LeadLandingPage")
+  popups          PopupPageTarget[]
+  navigationItems NavigationItem[]
 
   @@index([slug])
   @@index([status, publishedAt])
@@ -434,6 +435,7 @@ model Product {
   leads            Lead[]            @relation("LeadProduct")
   forms            Form[]            @relation("FormProduct")
   customerProducts CustomerProduct[]
+  navigationItems  NavigationItem[]
 
   @@index([slug])
   @@index([status, publishedAt])
@@ -479,7 +481,8 @@ model BlogCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  posts BlogPost[]
+  posts    BlogPost[]
+  navItems NavigationItem[]
 
   @@index([slug])
 }
@@ -531,6 +534,7 @@ model BlogPost {
 
   relatedTo   BlogPostRelation[] @relation("RelationSource")
   relatedFrom BlogPostRelation[] @relation("RelationTarget")
+  navItems    NavigationItem[]
 
   @@index([slug])
   @@index([status, publishedAt])
@@ -996,12 +1000,20 @@ model NavigationItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  navigation Navigation       @relation(fields: [navigationId], references: [id], onDelete: Cascade)
-  parent     NavigationItem?  @relation("NavItemChildren", fields: [parentId], references: [id], onDelete: Cascade)
-  children   NavigationItem[] @relation("NavItemChildren")
+  navigation   Navigation       @relation(fields: [navigationId], references: [id], onDelete: Cascade)
+  parent       NavigationItem?  @relation("NavItemChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children     NavigationItem[] @relation("NavItemChildren")
+  page         Page?            @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  product      Product?         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  blogPost     BlogPost?        @relation(fields: [blogPostId], references: [id], onDelete: Cascade)
+  blogCategory BlogCategory?    @relation(fields: [blogCategoryId], references: [id], onDelete: Cascade)
 
   @@index([navigationId, sortOrder])
   @@index([parentId])
+  @@index([pageId])
+  @@index([productId])
+  @@index([blogPostId])
+  @@index([blogCategoryId])
 }
 
 // ---------------------------------------------------------------------------

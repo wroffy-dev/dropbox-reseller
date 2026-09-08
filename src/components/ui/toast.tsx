@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { CheckCircle2, AlertTriangle, Info, X, XCircle } from 'lucide-react';
+import { X } from 'lucide-react';
+import { CheckCircle, AlertTriangle, Info, XCircle } from '@/components/ui/icons';
 import { cn } from '@/lib/utils/cn';
 
 type ToastTone = 'success' | 'error' | 'info' | 'warning';
@@ -20,7 +21,7 @@ export function useToast(): ToastContextValue {
 }
 
 const ICONS = {
-  success: CheckCircle2,
+  success: CheckCircle,
   error: XCircle,
   warning: AlertTriangle,
   info: Info,

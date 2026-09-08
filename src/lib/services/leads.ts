@@ -115,26 +115,8 @@ export async function logLeadActivity(input: {
   }
 }
 
-export const LEAD_STATUS_LABELS: Record<string, string> = {
-  NEW: 'New',
-  CONTACTED: 'Contacted',
-  QUALIFIED: 'Qualified',
-  PROPOSAL: 'Proposal',
-  NEGOTIATION: 'Negotiation',
-  WON: 'Won',
-  LOST: 'Lost',
-  SPAM: 'Spam',
-};
-
-/** Stages shown on the Kanban board, in order. WON/LOST close the pipeline. */
-export const PIPELINE_STAGES = [
-  'NEW',
-  'CONTACTED',
-  'QUALIFIED',
-  'PROPOSAL',
-  'NEGOTIATION',
-  'WON',
-  'LOST',
-] as const;
-
-export type PipelineStage = (typeof PIPELINE_STAGES)[number];
+export {
+  LEAD_STATUS_LABELS,
+  PIPELINE_STAGES,
+  type PipelineStage,
+} from '@/lib/crm/constants';

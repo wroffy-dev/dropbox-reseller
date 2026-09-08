@@ -1,19 +1,36 @@
-import { prisma } from '@/lib/db/prisma';
-import { getSeoSettings, getWebsiteSettings } from '@/lib/services/settings';
-import { getNavigations, getPrimaryNavigation } from '@/lib/services/navigation';
-import { SiteHeader } from '@/components/public/site-header';
-import { SiteFooter } from '@/components/public/site-footer';
-import { PopupHost } from '@/components/public/popup-host';
-import { JsonLd } from '@/components/seo/json-ld';
-import { organizationSchema, websiteSchema } from '@/lib/seo/structured-data';
+import { headers } from "next/headers";
+import { prisma } from "@/lib/db/prisma";
+import { getPublishedPage } from "@/lib/services/pages";
+import { getSeoSettings, getWebsiteSettings } from "@/lib/services/settings";
+import {
+  getNavigations,
+  getPrimaryNavigation,
+} from "@/lib/services/navigation";
+import { SiteHeader } from "@/components/public/site-header";
+import { SiteFooter } from "@/components/public/site-footer";
+import { PopupHost } from "@/components/public/popup-host";
+import { JsonLd } from "@/components/seo/json-ld";
+import { organizationSchema, websiteSchema } from "@/lib/seo/structured-data";
 
-export default async function PublicLayout({ children }: { children: React.ReactNode }) {
+export default async function PublicLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const headerList = await headers();
+  const pathname = headerList.get("x-pathname") ?? "/";
+
+  // A CMS page can opt out of the site header or footer. Other public routes
+  // (blog, products) always show both. getPublishedPage is request-cached, so
+  // this adds no extra query for the page route itself.
+  const chrome = await resolveChrome(pathname);
+
   const [site, seo, nav, footerMenus, legalMenus, popups] = await Promise.all([
     getWebsiteSettings(),
     getSeoSettings(),
     getPrimaryNavigation(),
-    getNavigations('FOOTER'),
-    getNavigations('LEGAL'),
+    getNavigations("FOOTER"),
+    getNavigations("LEGAL"),
     prisma.popup.findMany({
       where: {
         isActive: true,
@@ -35,25 +52,33 @@ export default async function PublicLayout({ children }: { children: React.React
       <a href="#main" className="skip-link">
         Skip to content
       </a>
-      <SiteHeader
-        nav={nav}
-        brand={{
-          siteName: site.siteName,
-          logoUrl: site.logoUrl,
-          ctaLabel: site.headerCtaLabel,
-          ctaUrl: site.headerCtaUrl,
-          secondaryCtaLabel: site.headerSecondaryCtaLabel,
-          secondaryCtaUrl: site.headerSecondaryCtaUrl,
-          announcement:
-            site.announcementEnabled && site.announcementText
-              ? { text: site.announcementText, url: site.announcementUrl }
-              : null,
-        }}
-      />
+      {chrome.showHeader ? (
+        <SiteHeader
+          nav={nav}
+          brand={{
+            siteName: site.siteName,
+            logoUrl: site.logoUrl,
+            ctaLabel: site.headerCtaLabel,
+            ctaUrl: site.headerCtaUrl,
+            secondaryCtaLabel: site.headerSecondaryCtaLabel,
+            secondaryCtaUrl: site.headerSecondaryCtaUrl,
+            announcement:
+              site.announcementEnabled && site.announcementText
+                ? { text: site.announcementText, url: site.announcementUrl }
+                : null,
+          }}
+        />
+      ) : null}
       <main id="main" className="min-h-[60vh]">
         {children}
       </main>
-      <SiteFooter settings={site} columns={footerMenus} legal={legalMenus[0]?.items ?? []} />
+      {chrome.showFooter ? (
+        <SiteFooter
+          settings={site}
+          columns={footerMenus}
+          legal={legalMenus[0]?.items ?? []}
+        />
+      ) : null}
       <PopupHost
         popups={popups.map((p) => ({
           id: p.id,
@@ -71,11 +96,30 @@ export default async function PublicLayout({ children }: { children: React.React
           scrollPercent: p.scrollPercent,
           device: p.device,
           frequencyDays: p.frequencyDays,
-          urlPatterns: Array.isArray(p.urlPatterns) ? (p.urlPatterns as string[]) : [],
+          urlPatterns: Array.isArray(p.urlPatterns)
+            ? (p.urlPatterns as string[])
+            : [],
           pageSlugs: p.pageTargets.map((t) => t.page.slug),
         }))}
       />
       <JsonLd data={[organizationSchema(seo, site), websiteSchema(site)]} />
     </>
   );
+}
+
+/** CMS pages may hide the header or footer; every other route keeps both. */
+async function resolveChrome(
+  pathname: string,
+): Promise<{ showHeader: boolean; showFooter: boolean }> {
+  const slug = pathname.replace(/^\/+|\/+$/g, "");
+  if (slug.startsWith("blog") || slug.startsWith("products")) {
+    return { showHeader: true, showFooter: true };
+  }
+  try {
+    const page = await getPublishedPage(slug);
+    if (!page) return { showHeader: true, showFooter: true };
+    return { showHeader: page.showHeader, showFooter: page.showFooter };
+  } catch {
+    return { showHeader: true, showFooter: true };
+  }
 }

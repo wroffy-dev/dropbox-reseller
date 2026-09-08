@@ -145,11 +145,43 @@ async function main() {
   const pagesAdmin = await (await request('/admin/pages')).text();
   check('pages list renders seeded pages', pagesAdmin.includes('Pricing'));
 
+  const productsAdmin = await (await request('/admin/products')).text();
+  check('products list renders seeded products', productsAdmin.includes('Dropbox Business Advanced'));
+
+  const leadsAdmin = await (await request('/admin/leads')).text();
+  check('leads list renders seeded leads', leadsAdmin.includes('Meridian Labs'));
+
+  const pipeline = await (await request('/admin/pipeline')).text();
+  check('pipeline renders every stage', pipeline.includes('Negotiation') && pipeline.includes('Qualified'));
+
+  const forms = await (await request('/admin/forms')).text();
+  check('forms list renders seeded forms', forms.includes('Contact Sales'));
+
+  const reports = await (await request('/admin/reports')).text();
+  check('reports render attribution breakdowns', reports.includes('Leads by source'));
+
   console.log(`\n${checks - failures}/${checks} checks passed\n`);
   if (failures > 0) process.exit(1);
 }
 
-const ADMIN_ROUTES = (process.env.ADMIN_ROUTES || '/admin,/admin/pages,/admin/pages/new').split(',');
+const DEFAULT_ADMIN_ROUTES = [
+  '/admin',
+  '/admin/pages',
+  '/admin/pages/new',
+  '/admin/products',
+  '/admin/products/new',
+  '/admin/products/categories',
+  '/admin/leads',
+  '/admin/leads/new',
+  '/admin/pipeline',
+  '/admin/customers',
+  '/admin/customers/new',
+  '/admin/forms',
+  '/admin/forms/new',
+  '/admin/reports',
+];
+
+const ADMIN_ROUTES = (process.env.ADMIN_ROUTES || DEFAULT_ADMIN_ROUTES.join(',')).split(',');
 
 main().catch((error) => {
   console.error(error);

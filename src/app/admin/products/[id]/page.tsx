@@ -82,6 +82,7 @@ export default async function EditProduct({ params }: { params: Promise<{ id: st
     ctaUrl: product.ctaUrl ?? '',
     ctaFormSlug: product.ctaForm?.slug ?? '',
     imageId: product.imageId,
+    galleryIds: asStringArray(product.galleryIds),
     ogImageId: product.ogImageId,
     categoryId: product.categoryId ?? '',
     seoTitle: product.seoTitle ?? '',

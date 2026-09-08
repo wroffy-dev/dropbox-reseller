@@ -30,6 +30,7 @@ export type PublicProduct = {
   ctaFormSlug: string | null;
   imageUrl: string | null;
   imageAlt: string | null;
+  galleryIds: string[];
   categoryName: string | null;
 };
 
@@ -58,6 +59,7 @@ const productSelect = {
   ctaUrl: true,
   ctaForm: { select: { slug: true, isActive: true } },
   image: { select: { url: true, altText: true } },
+  galleryIds: true,
   category: { select: { name: true } },
 } satisfies Prisma.ProductSelect;
 
@@ -103,6 +105,7 @@ export function toPublicProduct(row: ProductRow): PublicProduct {
     ctaFormSlug: row.ctaForm?.isActive ? row.ctaForm.slug : null,
     imageUrl: row.image?.url ?? null,
     imageAlt: row.image?.altText ?? row.name,
+    galleryIds: toStringArray(row.galleryIds),
     categoryName: row.category?.name ?? null,
   };
 }

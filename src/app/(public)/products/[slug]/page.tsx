@@ -5,6 +5,7 @@ import type { Metadata } from 'next';
 import { Check, ChevronRight } from 'lucide-react';
 import { prisma } from '@/lib/db/prisma';
 import { getPublicProduct, selectProducts, publishedProductWhere } from '@/lib/services/products';
+import { getMediaByIds } from '@/lib/services/media';
 import { getWebsiteSettings } from '@/lib/services/settings';
 import { buildMetadata } from '@/lib/seo/metadata';
 import { JsonLd } from '@/components/seo/json-ld';
@@ -66,7 +67,17 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const [product, site] = await Promise.all([getPublicProduct(slug), getWebsiteSettings()]);
   if (!product) notFound();
 
-  const related = (await selectProducts({ source: 'featured', limit: 4 })).filter((p) => p.id !== product.id).slice(0, 3);
+  const [related, gallery] = await Promise.all([
+    selectProducts({ source: 'featured', limit: 4 }).then((rows) =>
+      rows.filter((p) => p.id !== product.id).slice(0, 3),
+    ),
+    getMediaByIds(product.galleryIds),
+  ]);
+
+  // Preserve the order the admin arranged in the gallery picker.
+  const galleryImages = product.galleryIds
+    .map((id) => gallery.get(id))
+    .filter((image): image is NonNullable<typeof image> => Boolean(image));
 
   return (
     <>
@@ -115,6 +126,23 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                 sizes="(max-width: 1024px) 100vw, 60vw"
                 className="mt-8 h-auto w-full rounded-2xl border border-hairline object-cover"
               />
+            ) : null}
+
+            {galleryImages.length > 0 ? (
+              <ul className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {galleryImages.map((image) => (
+                  <li key={image.id}>
+                    <Image
+                      src={image.url}
+                      alt={image.altText}
+                      width={image.width ?? 400}
+                      height={image.height ?? 300}
+                      sizes="(max-width: 640px) 50vw, 200px"
+                      className="h-auto w-full rounded-lg border border-hairline object-cover"
+                    />
+                  </li>
+                ))}
+              </ul>
             ) : null}
 
             <RichText html={product.description} className="mt-10" />

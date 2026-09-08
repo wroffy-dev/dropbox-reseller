@@ -8,6 +8,7 @@ import { Field, Input, Textarea, Select, Switch } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody } from '@/components/ui/card';
 import { MediaPicker } from '@/components/admin/media-picker';
+import { GalleryPicker } from '@/components/admin/gallery-picker';
 import { RichTextEditor } from '@/components/cms/rich-text-editor';
 import { StringListEditor, SpecListEditor, type SpecItem } from '@/components/admin/list-editor';
 import { FormSelect } from '@/components/cms/form-select';
@@ -46,6 +47,7 @@ export type ProductFormValues = {
   ctaUrl: string;
   ctaFormSlug: string;
   imageId: string | null;
+  galleryIds: string[];
   ogImageId: string | null;
   categoryId: string;
   seoTitle: string;
@@ -82,6 +84,7 @@ export const EMPTY_PRODUCT: ProductFormValues = {
   ctaUrl: '',
   ctaFormSlug: '',
   imageId: null,
+  galleryIds: [],
   ogImageId: null,
   categoryId: '',
   seoTitle: '',
@@ -144,7 +147,7 @@ export function ProductForm({
     data.set('features', JSON.stringify(values.features.filter(Boolean)));
     data.set('benefits', JSON.stringify(values.benefits.filter(Boolean)));
     data.set('specs', JSON.stringify(values.specs.filter((s) => s.label)));
-    data.set('galleryIds', JSON.stringify([]));
+    data.set('galleryIds', JSON.stringify(values.galleryIds));
 
     const result = mode === 'create' ? await createProduct(data) : await updateProduct(initial.id!, data);
     setPending(false);
@@ -291,8 +294,15 @@ export function ProductForm({
                 </Field>
               </div>
 
-              <Field label="Product image">
+              <Field label="Product image" hint="Shown on cards and at the top of the product page.">
                 <MediaPicker value={values.imageId} onChange={(id) => set('imageId', id)} label="Product image" />
+              </Field>
+
+              <Field label="Gallery" hint="Additional images. Drag the arrows to reorder.">
+                <GalleryPicker
+                  value={values.galleryIds}
+                  onChange={(next) => set('galleryIds', next)}
+                />
               </Field>
 
               <div className="grid gap-4 sm:grid-cols-2">

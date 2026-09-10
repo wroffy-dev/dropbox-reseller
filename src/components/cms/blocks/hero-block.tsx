@@ -47,7 +47,12 @@ export async function HeroBlock({ content, ctx }: { content: HeroContent; ctx: B
       />
 
       {bullets.length > 0 ? (
-        <ul className={cn('mt-7 space-y-2.5', centred && 'inline-flex flex-col items-start text-left')}>
+        <ul
+          className={cn(
+            'mt-7 space-y-2.5',
+            centred && 'inline-flex flex-col items-start text-left',
+          )}
+        >
           {bullets.map((bullet, index) => (
             <li key={index} className="flex items-start gap-2.5">
               <span
@@ -58,7 +63,9 @@ export async function HeroBlock({ content, ctx }: { content: HeroContent; ctx: B
               >
                 <Check className="h-3 w-3" aria-hidden="true" />
               </span>
-              <span className={cn('text-sm', inverted ? 'text-white/85' : 'text-muted')}>{bullet}</span>
+              <span className={cn('text-sm', inverted ? 'text-white/85' : 'text-muted')}>
+                {bullet}
+              </span>
             </li>
           ))}
         </ul>
@@ -80,7 +87,12 @@ export async function HeroBlock({ content, ctx }: { content: HeroContent; ctx: B
       ) : null}
 
       {badges.length > 0 ? (
-        <ul className={cn('mt-8 flex flex-wrap items-center gap-x-5 gap-y-3', centred && 'justify-center')}>
+        <ul
+          className={cn(
+            'mt-8 flex flex-wrap items-center gap-x-5 gap-y-3',
+            centred && 'justify-center',
+          )}
+        >
           {badges.map((badge, index) => {
             const Icon = resolveCmsIcon(badge.icon);
             return (
@@ -110,7 +122,7 @@ export async function HeroBlock({ content, ctx }: { content: HeroContent; ctx: B
         <p className="mt-1.5 text-sm leading-relaxed text-muted">{content.formDescription}</p>
       ) : null}
       <div className={cn(content.formHeading || content.formDescription ? 'mt-5' : undefined)}>
-        <PublicFormRenderer form={form!} ctaLocation="hero" compact />
+        <PublicFormRenderer form={form!} ctaLocation={content.ctaLocation || 'hero'} compact />
       </div>
     </div>
   ) : null;
@@ -140,7 +152,10 @@ export async function HeroBlock({ content, ctx }: { content: HeroContent; ctx: B
             alt=""
             aria-hidden="true"
             className="absolute inset-0 -z-10 h-full w-full rounded-[var(--layout-card-radius)]"
-            style={{ objectFit: content.imageFit as 'cover', objectPosition: content.imagePosition }}
+            style={{
+              objectFit: content.imageFit as 'cover',
+              objectPosition: content.imagePosition,
+            }}
           />
         ) : null}
         <div

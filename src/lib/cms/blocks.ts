@@ -11,13 +11,29 @@ import type { FieldDescriptor } from './fields';
 
 const linkFields = (prefix: string, label: string): FieldDescriptor[] => [
   { kind: 'text', name: `${prefix}Label`, label: `${label} label`, width: 'half' },
-  { kind: 'url', name: `${prefix}Url`, label: `${label} link`, width: 'half', placeholder: '/contact' },
+  {
+    kind: 'url',
+    name: `${prefix}Url`,
+    label: `${label} link`,
+    width: 'half',
+    placeholder: '/contact',
+  },
 ];
 
 // --- shared content fragments ----------------------------------------------
 const objectFit = z.enum(['cover', 'contain', 'fill', 'none']).catch('cover').default('cover');
 const objectPosition = z
-  .enum(['center', 'top', 'bottom', 'left', 'right', 'top left', 'top right', 'bottom left', 'bottom right'])
+  .enum([
+    'center',
+    'top',
+    'bottom',
+    'left',
+    'right',
+    'top left',
+    'top right',
+    'bottom left',
+    'bottom right',
+  ])
   .catch('center')
   .default('center');
 const imageRatio = z
@@ -38,7 +54,9 @@ const heroSchema = z.object({
   description: z.string().max(1200).default(''),
   bullets: z.array(z.string().max(160)).default([]),
   badges: z
-    .array(z.object({ label: z.string().max(80).default(''), icon: z.string().max(40).default('') }))
+    .array(
+      z.object({ label: z.string().max(80).default(''), icon: z.string().max(40).default('') }),
+    )
     .default([]),
 
   // Image slot — every part optional.
@@ -55,6 +73,14 @@ const heroSchema = z.object({
   formSlug: z.string().max(120).default(''),
   formHeading: z.string().max(160).default(''),
   formDescription: z.string().max(400).default(''),
+  /**
+   * Internal CTA attribution. Names *where on the site* this form sits, so a
+   * lead can be traced to the placement that converted it — separately from
+   * utm_source, which belongs to the external campaign that brought them.
+   * Blank falls back to the block's own default, so existing sections keep the
+   * label they already report under.
+   */
+  ctaLocation: z.string().max(120).default(''),
 
   primaryCtaLabel: z.string().max(60).default(''),
   primaryCtaUrl: z.string().max(500).default(''),
@@ -173,6 +199,14 @@ const ctaSchema = z.object({
   secondaryCtaUrl: z.string().max(500).default(''),
   formSlug: z.string().max(120).default(''),
   variant: z.enum(['panel', 'plain', 'split']).default('panel'),
+  /**
+   * Internal CTA attribution. Names *where on the site* this form sits, so a
+   * lead can be traced to the placement that converted it — separately from
+   * utm_source, which belongs to the external campaign that brought them.
+   * Blank falls back to the block's own default, so existing sections keep the
+   * label they already report under.
+   */
+  ctaLocation: z.string().max(120).default(''),
 });
 
 // --- leadMagnet ------------------------------------------------------------
@@ -183,6 +217,14 @@ const leadMagnetSchema = z.object({
   imageId: z.string().nullable().default(null),
   formSlug: z.string().max(120).default(''),
   ctaLabel: z.string().max(60).default('Download'),
+  /**
+   * Internal CTA attribution. Names *where on the site* this form sits, so a
+   * lead can be traced to the placement that converted it — separately from
+   * utm_source, which belongs to the external campaign that brought them.
+   * Blank falls back to the block's own default, so existing sections keep the
+   * label they already report under.
+   */
+  ctaLocation: z.string().max(120).default(''),
 });
 
 // --- formBlock -------------------------------------------------------------
@@ -193,6 +235,14 @@ const formBlockSchema = z.object({
   layout: z.enum(['single', 'split']).default('single'),
   sideHeading: z.string().max(240).default(''),
   sideBullets: z.array(z.string().max(200)).default([]),
+  /**
+   * Internal CTA attribution. Names *where on the site* this form sits, so a
+   * lead can be traced to the placement that converted it — separately from
+   * utm_source, which belongs to the external campaign that brought them.
+   * Blank falls back to the block's own default, so existing sections keep the
+   * label they already report under.
+   */
+  ctaLocation: z.string().max(120).default(''),
 });
 
 // --- logoWall --------------------------------------------------------------
@@ -350,10 +400,7 @@ const textListImageSchema = z.object({
   heading: z.string().max(240).default(''),
   subheading: z.string().max(400).default(''),
   description: z.string().default(''),
-  imagePlacement: z
-    .enum(['left', 'right', 'top', 'bottom'])
-    .catch('right')
-    .default('right'),
+  imagePlacement: z.enum(['left', 'right', 'top', 'bottom']).catch('right').default('right'),
   imageId: z.string().nullable().default(null),
   imageAlt: z.string().max(200).default(''),
   imageRatio,
@@ -525,7 +572,27 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     icon: 'layout-template',
     schema: heroSchema,
     fields: [
-      { kind: 'text', name: 'eyebrow', label: 'Eyebrow', width: 'half', help: 'Small label above the heading' },
+      {
+        kind: 'select',
+        name: 'layout',
+        label: 'Layout',
+        width: 'half',
+        help: 'Decides which of the optional slots the hero shows.',
+        options: [
+          { label: 'Content only', value: 'content' },
+          { label: 'Content + image', value: 'contentImage' },
+          { label: 'Content + form', value: 'contentForm' },
+          { label: 'Content + image + form', value: 'contentImageForm' },
+          { label: 'Background image', value: 'backgroundImage' },
+        ],
+      },
+      {
+        kind: 'text',
+        name: 'eyebrow',
+        label: 'Eyebrow',
+        width: 'half',
+        help: 'Small label above the heading',
+      },
       {
         kind: 'select',
         name: 'alignment',
@@ -549,6 +616,27 @@ export const BLOCKS: Record<string, BlockDefinition> = {
       { kind: 'media', name: 'imageId', label: 'Image' },
       ...linkFields('primaryCta', 'Primary button'),
       ...linkFields('secondaryCta', 'Secondary button'),
+      {
+        kind: 'form',
+        name: 'formSlug',
+        label: 'Form',
+        width: 'half',
+        help: 'Shown by the “Content + form” layouts. Choose any active form.',
+      },
+      {
+        kind: 'text',
+        name: 'ctaLocation',
+        label: 'Tracking label',
+        width: 'half',
+        help: 'Optional. Names this placement on leads it captures, e.g. homepage_hero. Separate from UTM campaign tracking.',
+      },
+      { kind: 'text', name: 'formHeading', label: 'Form heading', width: 'half' },
+      {
+        kind: 'textarea',
+        name: 'formDescription',
+        label: 'Form description',
+        rows: 2,
+      },
     ],
   },
 
@@ -784,7 +872,20 @@ export const BLOCKS: Record<string, BlockDefinition> = {
           { label: 'Split with form', value: 'split' },
         ],
       },
-      { kind: 'form', name: 'formSlug', label: 'Inline form', width: 'half', help: 'Used by the split style' },
+      {
+        kind: 'form',
+        name: 'formSlug',
+        label: 'Inline form',
+        width: 'half',
+        help: 'Used by the split style',
+      },
+      {
+        kind: 'text',
+        name: 'ctaLocation',
+        label: 'Tracking label',
+        width: 'half',
+        help: 'Optional. Names this placement on leads it captures, e.g. homepage_hero. Separate from UTM campaign tracking.',
+      },
       ...linkFields('primaryCta', 'Primary button'),
       ...linkFields('secondaryCta', 'Secondary button'),
     ],
@@ -798,11 +899,23 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     icon: 'gift',
     schema: leadMagnetSchema,
     fields: [
-      { kind: 'text', name: 'leadMagnetSlug', label: 'Lead magnet slug', help: 'From Marketing → Lead magnets' },
+      {
+        kind: 'text',
+        name: 'leadMagnetSlug',
+        label: 'Lead magnet slug',
+        help: 'From Marketing → Lead magnets',
+      },
       { kind: 'text', name: 'heading', label: 'Heading override' },
       { kind: 'textarea', name: 'description', label: 'Description override', rows: 2 },
       { kind: 'media', name: 'imageId', label: 'Image override', width: 'half' },
       { kind: 'form', name: 'formSlug', label: 'Form override', width: 'half' },
+      {
+        kind: 'text',
+        name: 'ctaLocation',
+        label: 'Tracking label',
+        width: 'half',
+        help: 'Optional. Names this placement on leads it captures, e.g. homepage_hero. Separate from UTM campaign tracking.',
+      },
       { kind: 'text', name: 'ctaLabel', label: 'Button label', width: 'half' },
     ],
   },
@@ -818,6 +931,13 @@ export const BLOCKS: Record<string, BlockDefinition> = {
       { kind: 'text', name: 'heading', label: 'Heading' },
       { kind: 'textarea', name: 'description', label: 'Description', rows: 2 },
       { kind: 'form', name: 'formSlug', label: 'Form', width: 'half' },
+      {
+        kind: 'text',
+        name: 'ctaLocation',
+        label: 'Tracking label',
+        width: 'half',
+        help: 'Optional. Names this placement on leads it captures, e.g. homepage_hero. Separate from UTM campaign tracking.',
+      },
       {
         kind: 'select',
         name: 'layout',
@@ -935,9 +1055,21 @@ export const BLOCKS: Record<string, BlockDefinition> = {
         max: 20,
         help: '0 shows every card.',
       },
-      { kind: 'select', name: 'imageRatio', label: 'Image ratio', width: 'half', options: RATIO_OPTIONS },
+      {
+        kind: 'select',
+        name: 'imageRatio',
+        label: 'Image ratio',
+        width: 'half',
+        options: RATIO_OPTIONS,
+      },
       { kind: 'select', name: 'imageFit', label: 'Image fit', width: 'half', options: FIT_OPTIONS },
-      { kind: 'select', name: 'cardAlign', label: 'Card alignment', width: 'half', options: ALIGN_OPTIONS },
+      {
+        kind: 'select',
+        name: 'cardAlign',
+        label: 'Card alignment',
+        width: 'half',
+        options: ALIGN_OPTIONS,
+      },
       {
         kind: 'select',
         name: 'cardStyle',
@@ -957,7 +1089,12 @@ export const BLOCKS: Record<string, BlockDefinition> = {
         titleField: 'heading',
         fields: [
           { kind: 'media', name: 'imageId', label: 'Image' },
-          { kind: 'text', name: 'imageAlt', label: 'Alt text', help: 'Describes the image for screen readers.' },
+          {
+            kind: 'text',
+            name: 'imageAlt',
+            label: 'Alt text',
+            help: 'Describes the image for screen readers.',
+          },
           { kind: 'text', name: 'heading', label: 'Heading' },
           { kind: 'textarea', name: 'description', label: 'Description', rows: 2 },
           ...linkFields('cta', 'Button'),
@@ -990,8 +1127,20 @@ export const BLOCKS: Record<string, BlockDefinition> = {
           { label: 'Beside the text', value: 'left' },
         ],
       },
-      { kind: 'select', name: 'iconStyle', label: 'Icon style', width: 'half', options: ICON_STYLE_OPTIONS },
-      { kind: 'select', name: 'cardAlign', label: 'Card alignment', width: 'half', options: ALIGN_OPTIONS },
+      {
+        kind: 'select',
+        name: 'iconStyle',
+        label: 'Icon style',
+        width: 'half',
+        options: ICON_STYLE_OPTIONS,
+      },
+      {
+        kind: 'select',
+        name: 'cardAlign',
+        label: 'Card alignment',
+        width: 'half',
+        options: ALIGN_OPTIONS,
+      },
       {
         kind: 'select',
         name: 'cardStyle',
@@ -1045,8 +1194,20 @@ export const BLOCKS: Record<string, BlockDefinition> = {
       { kind: 'richtext', name: 'text', label: 'Text' },
       { kind: 'media', name: 'imageId', label: 'Image' },
       { kind: 'text', name: 'imageAlt', label: 'Alt text' },
-      { kind: 'length', name: 'imageWidth', label: 'Image width', width: 'half', placeholder: '480px' },
-      { kind: 'select', name: 'imageRatio', label: 'Image ratio', width: 'half', options: RATIO_OPTIONS },
+      {
+        kind: 'length',
+        name: 'imageWidth',
+        label: 'Image width',
+        width: 'half',
+        placeholder: '480px',
+      },
+      {
+        kind: 'select',
+        name: 'imageRatio',
+        label: 'Image ratio',
+        width: 'half',
+        options: RATIO_OPTIONS,
+      },
       { kind: 'select', name: 'imageFit', label: 'Image fit', width: 'half', options: FIT_OPTIONS },
       {
         kind: 'select',
@@ -1070,8 +1231,20 @@ export const BLOCKS: Record<string, BlockDefinition> = {
       { kind: 'icon', name: 'icon', label: 'Icon', width: 'half' },
       { kind: 'media', name: 'imageId', label: 'Or upload an icon', width: 'half' },
       { kind: 'length', name: 'iconSize', label: 'Icon size', width: 'half', placeholder: '32px' },
-      { kind: 'select', name: 'iconStyle', label: 'Icon style', width: 'half', options: ICON_STYLE_OPTIONS },
-      { kind: 'select', name: 'iconAlign', label: 'Alignment', width: 'half', options: ALIGN_OPTIONS },
+      {
+        kind: 'select',
+        name: 'iconStyle',
+        label: 'Icon style',
+        width: 'half',
+        options: ICON_STYLE_OPTIONS,
+      },
+      {
+        kind: 'select',
+        name: 'iconAlign',
+        label: 'Alignment',
+        width: 'half',
+        options: ALIGN_OPTIONS,
+      },
       { kind: 'text', name: 'heading', label: 'Heading' },
       { kind: 'textarea', name: 'description', label: 'Description', rows: 3 },
       ...linkFields('cta', 'Button'),
@@ -1091,7 +1264,13 @@ export const BLOCKS: Record<string, BlockDefinition> = {
       { kind: 'text', name: 'heading', label: 'Heading', width: 'half' },
       { kind: 'textarea', name: 'description', label: 'Description', rows: 2 },
       { kind: 'number', name: 'columns', label: 'Columns', width: 'half', min: 1, max: 4 },
-      { kind: 'select', name: 'marker', label: 'Bullet style', width: 'half', options: MARKER_OPTIONS },
+      {
+        kind: 'select',
+        name: 'marker',
+        label: 'Bullet style',
+        width: 'half',
+        options: MARKER_OPTIONS,
+      },
       {
         kind: 'repeater',
         name: 'items',
@@ -1101,7 +1280,13 @@ export const BLOCKS: Record<string, BlockDefinition> = {
         fields: [
           { kind: 'text', name: 'text', label: 'Text' },
           { kind: 'textarea', name: 'description', label: 'Supporting text', rows: 2 },
-          { kind: 'icon', name: 'icon', label: 'Icon', width: 'half', help: 'Used when the bullet style is “Icon”.' },
+          {
+            kind: 'icon',
+            name: 'icon',
+            label: 'Icon',
+            width: 'half',
+            help: 'Used when the bullet style is “Icon”.',
+          },
           { kind: 'url', name: 'url', label: 'Link', width: 'half' },
         ],
       },
@@ -1149,8 +1334,20 @@ export const BLOCKS: Record<string, BlockDefinition> = {
       { kind: 'text', name: 'heading', label: 'Heading' },
       { kind: 'textarea', name: 'subheading', label: 'Subheading', rows: 2 },
       { kind: 'richtext', name: 'description', label: 'Description' },
-      { kind: 'select', name: 'marker', label: 'Bullet style', width: 'half', options: MARKER_OPTIONS },
-      { kind: 'select', name: 'imageRatio', label: 'Image ratio', width: 'half', options: RATIO_OPTIONS },
+      {
+        kind: 'select',
+        name: 'marker',
+        label: 'Bullet style',
+        width: 'half',
+        options: MARKER_OPTIONS,
+      },
+      {
+        kind: 'select',
+        name: 'imageRatio',
+        label: 'Image ratio',
+        width: 'half',
+        options: RATIO_OPTIONS,
+      },
       { kind: 'media', name: 'imageId', label: 'Image', width: 'half' },
       { kind: 'text', name: 'imageAlt', label: 'Alt text', width: 'half' },
       {
@@ -1161,7 +1358,12 @@ export const BLOCKS: Record<string, BlockDefinition> = {
         titleField: 'text',
         fields: [
           { kind: 'text', name: 'text', label: 'Text' },
-          { kind: 'icon', name: 'icon', label: 'Icon', help: 'Used when the bullet style is “Icon”.' },
+          {
+            kind: 'icon',
+            name: 'icon',
+            label: 'Icon',
+            help: 'Used when the bullet style is “Icon”.',
+          },
         ],
       },
       ...linkFields('primaryCta', 'Primary button'),
@@ -1180,7 +1382,14 @@ export const BLOCKS: Record<string, BlockDefinition> = {
       { kind: 'text', name: 'eyebrow', label: 'Eyebrow', width: 'half' },
       { kind: 'text', name: 'heading', label: 'Heading', width: 'half' },
       { kind: 'textarea', name: 'description', label: 'Description', rows: 2 },
-      { kind: 'number', name: 'columns', label: 'Statistics per row', width: 'half', min: 1, max: 6 },
+      {
+        kind: 'number',
+        name: 'columns',
+        label: 'Statistics per row',
+        width: 'half',
+        min: 1,
+        max: 6,
+      },
       { kind: 'select', name: 'align', label: 'Alignment', width: 'half', options: ALIGN_OPTIONS },
       {
         kind: 'select',
@@ -1279,7 +1488,13 @@ export const BLOCKS: Record<string, BlockDefinition> = {
           { label: 'Annual', value: 'annual' },
         ],
       },
-      { kind: 'text', name: 'ctaLabel', label: 'Button label', width: 'half', placeholder: "The product's own label" },
+      {
+        kind: 'text',
+        name: 'ctaLabel',
+        label: 'Button label',
+        width: 'half',
+        placeholder: "The product's own label",
+      },
       { kind: 'boolean', name: 'showImage', label: 'Show product image', width: 'half' },
       { kind: 'boolean', name: 'showDescription', label: 'Show description', width: 'half' },
       { kind: 'boolean', name: 'showPrice', label: 'Show pricing', width: 'half' },

@@ -10,15 +10,11 @@ import { SectionHeading, CtaLink, type BlockContext, columnVars } from './shared
 
 export async function CtaBlock({ content, ctx }: { content: CtaContent; ctx: BlockContext }) {
   const inverted = ctx.inverted;
-  const form = content.variant === 'split' && content.formSlug ? await getPublicForm(content.formSlug) : null;
+  const form =
+    content.variant === 'split' && content.formSlug ? await getPublicForm(content.formSlug) : null;
 
   const buttons = (
-    <div
-      className={cn(
-        'flex flex-wrap gap-3',
-        content.variant !== 'split' && 'justify-center',
-      )}
-    >
+    <div className={cn('flex flex-wrap gap-3', content.variant !== 'split' && 'justify-center')}>
       <CtaLink
         label={content.primaryCtaLabel}
         url={content.primaryCtaUrl}
@@ -45,7 +41,11 @@ export async function CtaBlock({ content, ctx }: { content: CtaContent; ctx: Blo
           <div className="mt-7">{buttons}</div>
         </div>
         <div className="rounded-2xl border border-hairline bg-surface p-6 shadow-lg sm:p-8">
-          <PublicFormRenderer form={form} ctaLocation="cta-block" compact />
+          <PublicFormRenderer
+            form={form}
+            ctaLocation={content.ctaLocation || 'cta-block'}
+            compact
+          />
         </div>
       </div>
     );
@@ -53,7 +53,11 @@ export async function CtaBlock({ content, ctx }: { content: CtaContent; ctx: Blo
 
   const body = (
     <>
-      <SectionHeading heading={content.heading} description={content.description} inverted={inverted} />
+      <SectionHeading
+        heading={content.heading}
+        description={content.description}
+        inverted={inverted}
+      />
       <div className="mt-8">{buttons}</div>
     </>
   );
@@ -66,14 +70,14 @@ export async function CtaBlock({ content, ctx }: { content: CtaContent; ctx: Blo
           inverted ? 'bg-white/10 backdrop-blur' : 'bg-brand text-white',
         )}
       >
-        <SectionHeading
-          heading={content.heading}
-          description={content.description}
-          inverted
-        />
+        <SectionHeading heading={content.heading} description={content.description} inverted />
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <CtaLink label={content.primaryCtaLabel} url={content.primaryCtaUrl} variant="outline" />
-          <CtaLink label={content.secondaryCtaLabel} url={content.secondaryCtaUrl} variant="ghost" />
+          <CtaLink
+            label={content.secondaryCtaLabel}
+            url={content.secondaryCtaUrl}
+            variant="ghost"
+          />
         </div>
       </div>
     );
@@ -82,7 +86,13 @@ export async function CtaBlock({ content, ctx }: { content: CtaContent; ctx: Blo
   return <div className="text-center">{body}</div>;
 }
 
-export async function FormBlock({ content, ctx }: { content: FormBlockContent; ctx: BlockContext }) {
+export async function FormBlock({
+  content,
+  ctx,
+}: {
+  content: FormBlockContent;
+  ctx: BlockContext;
+}) {
   const inverted = ctx.inverted;
   const form = content.formSlug ? await getPublicForm(content.formSlug) : await getDefaultForm();
 
@@ -98,7 +108,7 @@ export async function FormBlock({ content, ctx }: { content: FormBlockContent; c
 
   const formPanel = (
     <div className="rounded-2xl border border-hairline bg-surface p-6 shadow-sm sm:p-8">
-      <PublicFormRenderer form={form} ctaLocation="form-block" />
+      <PublicFormRenderer form={form} ctaLocation={content.ctaLocation || 'form-block'} />
     </div>
   );
 
@@ -135,7 +145,9 @@ export async function FormBlock({ content, ctx }: { content: FormBlockContent; c
                   >
                     <Check className="h-3 w-3" aria-hidden="true" />
                   </span>
-                  <span className={cn('text-sm', inverted ? 'text-white/80' : 'text-muted')}>{bullet}</span>
+                  <span className={cn('text-sm', inverted ? 'text-white/80' : 'text-muted')}>
+                    {bullet}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -170,14 +182,19 @@ export async function LeadMagnetBlock({
   const magnet = content.leadMagnetSlug
     ? await prisma.leadMagnet.findFirst({
         where: { slug: content.leadMagnetSlug, isActive: true, deletedAt: null },
-        include: { image: { select: { url: true, altText: true, width: true, height: true } }, form: true },
+        include: {
+          image: { select: { url: true, altText: true, width: true, height: true } },
+          form: true,
+        },
       })
     : null;
 
   const heading = content.heading || magnet?.title || '';
   const description = content.description || magnet?.description || '';
   const overrideImage = await getMedia(content.imageId);
-  const image = overrideImage ?? (magnet?.image ? { ...magnet.image, id: '', altText: magnet.image.altText ?? '' } : null);
+  const image =
+    overrideImage ??
+    (magnet?.image ? { ...magnet.image, id: '', altText: magnet.image.altText ?? '' } : null);
 
   const formSlug = content.formSlug || (magnet?.form?.isActive ? magnet.form.slug : null);
   const form = formSlug ? await getPublicForm(formSlug) : null;
@@ -209,16 +226,24 @@ export async function LeadMagnetBlock({
             className="mb-6 h-auto w-full max-w-xs rounded-xl border border-hairline object-cover"
           />
         ) : null}
-        <SectionHeading heading={heading} description={description} align="left" inverted={inverted} />
+        <SectionHeading
+          heading={heading}
+          description={description}
+          align="left"
+          inverted={inverted}
+        />
       </div>
 
       <div>
         {form ? (
           <PublicFormRenderer
-            form={{ ...form, submitLabel: content.ctaLabel || magnet?.ctaLabel || form.submitLabel }}
+            form={{
+              ...form,
+              submitLabel: content.ctaLabel || magnet?.ctaLabel || form.submitLabel,
+            }}
             leadMagnetId={magnet?.id ?? null}
             compact
-            ctaLocation="lead-magnet"
+            ctaLocation={content.ctaLocation || 'lead-magnet'}
           />
         ) : (
           <p className={cn('text-sm', inverted ? 'text-white/70' : 'text-muted')}>

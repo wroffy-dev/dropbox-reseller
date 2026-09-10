@@ -12,6 +12,12 @@ import {
   type FilterPreset,
 } from '@/lib/admin/filters';
 import { Input, Select, Label } from '@/components/ui/field';
+import {
+  resolveRange,
+  formatRangeLabel,
+  RANGE_PRESET_LABELS,
+  type RangePreset,
+} from '@/lib/admin/date-range';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils/cn';
 
@@ -298,6 +304,20 @@ function Chip({
   );
 }
 
+/**
+ * The quick picks offered on any list's date filter. Same vocabulary and same
+ * resolution as the CRM dashboard, so "Last 7 days" means the same window
+ * wherever the admin chooses it.
+ */
+const DATE_QUICK_PICKS: RangePreset[] = [
+  'today',
+  'yesterday',
+  'last7',
+  'last30',
+  'thisMonth',
+  'lastMonth',
+];
+
 function DateRangeControl({
   label,
   from,
@@ -330,7 +350,22 @@ function DateRangeControl({
     };
   }, [open]);
 
-  const summary = active ? `${from || 'Any'} → ${to || 'Now'}` : label;
+  // Named when it matches a preset, spelled out otherwise — "Last 7 days"
+  // reads better on the button than "2026-09-04 → 2026-09-10".
+  const matchedPreset = active
+    ? DATE_QUICK_PICKS.find((pick) => {
+        const picked = resolveRange({ range: pick });
+        return picked.from === from && picked.to === to;
+      })
+    : undefined;
+
+  const summary = !active
+    ? label
+    : matchedPreset
+      ? RANGE_PRESET_LABELS[matchedPreset]
+      : from && to
+        ? formatRangeLabel({ from, to })
+        : `${from || 'Any'} → ${to || 'Now'}`;
 
   return (
     <div className="relative" ref={ref}>
@@ -345,6 +380,33 @@ function DateRangeControl({
 
       {open ? (
         <div className="absolute left-0 top-full z-dropdown mt-1.5 w-72 rounded-xl border border-hairline bg-surface p-3 shadow-xl">
+          <div className="mb-3 grid grid-cols-2 gap-1">
+            {DATE_QUICK_PICKS.map((pick) => {
+              const picked = resolveRange({ range: pick });
+              const isActive = from === picked.from && to === picked.to;
+              return (
+                <button
+                  key={pick}
+                  type="button"
+                  onClick={() => onChange(picked.from, picked.to)}
+                  aria-pressed={isActive}
+                  className={cn(
+                    'rounded-lg px-2.5 py-1.5 text-left text-[0.8125rem] transition-colors',
+                    isActive
+                      ? 'bg-brand/10 font-medium text-brand'
+                      : 'text-content hover:bg-muted/[0.07]',
+                  )}
+                >
+                  {RANGE_PRESET_LABELS[pick]}
+                </button>
+              );
+            })}
+          </div>
+
+          <p className="mb-2 border-t border-hairline pt-2.5 text-xs font-semibold uppercase tracking-wide text-muted">
+            Custom
+          </p>
+
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <Label htmlFor="filter-from" className="text-xs font-normal text-muted">

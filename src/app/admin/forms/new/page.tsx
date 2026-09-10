@@ -2,38 +2,39 @@ import type { Metadata } from 'next';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
-import { FormBuilder, EMPTY_FORM, newField } from '@/components/admin/forms/form-builder';
+import { FormBuilder } from '@/components/admin/forms/form-builder';
+import { EMPTY_FORM, starterFields } from '@/lib/cms/form-model';
 
 export const metadata: Metadata = { title: 'New form' };
 export const dynamic = 'force-dynamic';
 
+/**
+ * New form.
+ *
+ * EMPTY_FORM and starterFields come from lib/cms/form-model, not from the
+ * builder component. They used to be imported from the `'use client'` module,
+ * which made them client references on the server — spreading EMPTY_FORM and
+ * calling the field factory here threw, so the route 500'd and the "New form"
+ * button looked like it did nothing.
+ */
 export default async function NewForm() {
   await requirePermission('forms.create');
 
   const products = await prisma.product.findMany({
     where: { deletedAt: null },
-    orderBy: { name: 'asc' },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     select: { id: true, name: true },
-  });
-
-  // A sensible starting point: the four fields that map onto a lead.
-  const starter = ['NAME', 'EMAIL', 'PHONE', 'COMPANY'].map((type) => {
-    const field = newField(type);
-    field.name = type.toLowerCase();
-    field.label = { NAME: 'Full name', EMAIL: 'Work email', PHONE: 'Phone', COMPANY: 'Company' }[type]!;
-    field.isRequired = type === 'NAME' || type === 'EMAIL';
-    return field;
   });
 
   return (
     <>
       <AdminPageHeader
         title="New form"
-        description="Add fields, then use this form in a CMS block, a product button or a popup."
+        description="Add fields, then use this form in a CMS section, a hero, a product button or a popup."
         crumbs={[{ label: 'Forms', href: '/admin/forms' }, { label: 'New' }]}
       />
       <FormBuilder
-        initial={{ ...EMPTY_FORM, fields: starter }}
+        initial={{ ...EMPTY_FORM, fields: starterFields() }}
         products={products}
         mode="create"
         canEdit

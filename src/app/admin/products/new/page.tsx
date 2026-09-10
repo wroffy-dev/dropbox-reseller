@@ -10,8 +10,12 @@ export const dynamic = 'force-dynamic';
 export default async function NewProduct() {
   await requirePermission('products.create');
 
-  const [categories, forms] = await Promise.all([
-    prisma.productCategory.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true } }),
+  const [categories, brands, forms] = await Promise.all([
+    prisma.productCategory.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true },
+    }),
+    prisma.brand.findMany({ orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: { id: true, name: true } }),
     prisma.form.findMany({ where: { deletedAt: null }, select: { id: true, slug: true } }),
   ]);
 
@@ -25,6 +29,7 @@ export default async function NewProduct() {
       <ProductForm
         initial={EMPTY_PRODUCT}
         categories={categories}
+        brands={brands}
         formIdBySlug={Object.fromEntries(forms.map((f) => [f.slug, f.id]))}
         mode="create"
       />

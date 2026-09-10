@@ -31,6 +31,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     items: [
       { label: 'Pages', href: '/admin/pages', icon: 'layout', permission: 'pages.view' },
       { label: 'Products', href: '/admin/products', icon: 'package', permission: 'products.view' },
+      { label: 'Brands', href: '/admin/products/brands', icon: 'building', permission: 'products.view' },
       { label: 'Blog', href: '/admin/blog', icon: 'file', permission: 'blog.view' },
       { label: 'Forms', href: '/admin/forms', icon: 'clipboard', permission: 'forms.view' },
       { label: 'Media', href: '/admin/media', icon: 'image', permission: 'media.view' },

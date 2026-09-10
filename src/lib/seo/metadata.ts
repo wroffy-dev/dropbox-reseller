@@ -48,7 +48,12 @@ export async function buildMetadata(input: SeoInput): Promise<Metadata> {
 
   return {
     metadataBase: new URL(siteUrl()),
-    title,
+    /*
+     * `absolute` stops Next from applying the root layout's title template on
+     * top of the one already applied above, which would repeat the suffix
+     * ("Page | Site | Site").
+     */
+    title: { absolute: title },
     description,
     alternates: { canonical },
     robots: {

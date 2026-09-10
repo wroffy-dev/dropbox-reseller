@@ -18,9 +18,12 @@ export const formFieldTypes = [
   'TEXT',
   'TEXTAREA',
   'NUMBER',
+  'URL',
+  'DATE',
   'SELECT',
   'RADIO',
   'CHECKBOX',
+  'CONSENT',
   'HIDDEN',
 ] as const;
 

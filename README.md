@@ -31,7 +31,9 @@ no redeploy.
 ## What it does
 
 **Public website**
-- Every page is built from ordered CMS sections. 14 block types ship in the box.
+- Every page — the homepage included — is a database row built from ordered CMS
+  sections. Nothing is hardcoded: 23 block types ship in the box and the same
+  catch-all route renders all of them.
 - Product pages, a blog with categories, tags, search and pagination.
 - Metadata, canonical URLs, Open Graph, Twitter cards, JSON-LD (Organization,
   WebSite, Product, Article, FAQ, Breadcrumb), `sitemap.xml` and `robots.txt`
@@ -39,12 +41,27 @@ no redeploy.
 - Colours, fonts, logos and navigation come from the database, so the whole
   look changes from the admin panel.
 
+**Page builder**
+- Drag-and-drop section ordering, plus duplicate, hide, show, move up/down and
+  delete. Hiding a section keeps it in the page without publishing it.
+- Every section gets the same Design panel: margin and padding per side in
+  px/%/rem/em/vw/vh, width and min-height, row/column/content/card gaps,
+  solid/gradient/image backgrounds with overlay, a full colour set with picker
+  and hex, and an anchor ID validated to be unique on the page.
+- Design values can be set independently for desktop, tablet and mobile, and
+  inherit downwards when left blank.
+- Preview any page at desktop, tablet and mobile widths before publishing;
+  drafts never reach the public site.
+
 **Lead capture**
 - There is no checkout. Product buttons open the configured lead form, and each
   submission records the product, page, button label, referrer and both
   first-touch and last-touch UTM parameters.
-- Forms are built in the admin: field types, validation, success message,
-  redirect, notification recipients.
+- Forms are built in the admin: text, email, phone, number, textarea, dropdown,
+  radio, checkbox, date, URL, hidden and consent fields, each with validation,
+  help text, default value, duplicate and drag-to-reorder — plus success
+  message, redirect and notification recipients. Any active form can be dropped
+  into a hero, a section, a product button or a popup.
 
 **CRM**
 - Lead list with search, filters, bulk actions and CSV export.
@@ -56,6 +73,12 @@ no redeploy.
 **Administration**
 - Role-based access control checked on the server for every action.
 - Media library, audit log, staff management, popups and lead magnets.
+- Products with categories, brands, drag-and-drop catalogue ordering and a
+  separate featured order — any number of products can be featured.
+- Global design settings: searchable Google Font pickers for body, heading,
+  navigation and button text, weights, sizes, line height and letter spacing,
+  plus container width, section spacing, radii and button styling. Only the
+  fonts and weights actually selected are downloaded by the site.
 
 ---
 
@@ -341,7 +364,8 @@ Three steps, no changes to the page builder:
    `src/components/cms/section-renderer.tsx`.
 
 The block appears in the "Add section" dialog immediately, with a working
-editor, validation, and the shared background/spacing/visibility controls.
+editor, validation, and the shared Design panel — spacing, width, background,
+colours, responsive breakpoints and anchor ID — without writing any of it.
 
 ---
 

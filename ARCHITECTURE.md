@@ -137,15 +137,24 @@ Component can import a service without dragging in the `'use server'` boundary.
 
 ## Data model
 
-Twenty-eight models. The parts worth calling out:
+Twenty-nine models. The parts worth calling out:
 
 **Content**
 - `Page` has many `PageSection`. A section stores `blockType` plus two JSON
-  columns: `content` (validated by the block's schema) and `settings`
-  (background, spacing, width, visibility). Ordering is an integer `sortOrder`
-  rewritten in steps of ten on every reorder.
+  columns: `content` (validated by the block's schema) and `settings` (the
+  `SectionDesign` object described under [CMS architecture](#cms-architecture)).
+  Ordering is an integer `sortOrder` rewritten in steps of ten on every reorder.
+  There is no hardcoded page anywhere: the homepage is the `Page` row whose slug
+  is the empty string, rendered by the same catch-all route as every other page.
 - `Product` carries `Decimal` prices, JSON arrays for features/benefits/specs,
-  and an optional `ctaForm` relation.
+  and an optional `ctaForm` relation. Ordering is explicit and stored, never
+  derived from creation date: `sortOrder` for the catalogue and a separate
+  `featuredOrder` for the featured rail, so a product can sit third in the
+  catalogue and first among the featured picks. `isFeatured` is a plain flag, so
+  any number of products can be featured at once.
+- `Brand` groups products by vendor alongside `ProductCategory`. Both are
+  optional relations with `onDelete: SetNull`, so removing one never removes a
+  product.
 - `BlogPost` relates to categories, tags (through `BlogPostTag`) and other posts
   (through the self-referencing `BlogPostRelation`).
 
@@ -235,9 +244,12 @@ The page builder knows nothing about individual blocks. A block is:
 ```
 
 `fields` is a list of descriptors — `text`, `textarea`, `richtext`, `number`,
-`boolean`, `select`, `url`, `media`, `form`, `products`, `repeater`. The admin
-editor is generated from them by `components/cms/field-renderer.tsx`, so adding
-a block never means touching editor code.
+`boolean`, `select`, `url`, `media`, `form`, `products`, `productCategory`,
+`brand`, `icon`, `color`, `length`, `repeater`. The admin editor is generated
+from them by `components/cms/field-renderer.tsx`, so adding a block never means
+touching editor code. A descriptor may also carry `showWhen`, which hides it
+until a sibling field holds one of the listed values — that is how the product
+section only asks for a category when the source is "By category".
 
 Reading a section:
 
@@ -255,9 +267,59 @@ Partial or stale content can never crash a page: an unparseable payload falls
 back to the schema's defaults, and an unregistered `blockType` renders nothing
 (with a development warning).
 
-Presentation lives in `settings`, shared by every block: background, top and
-bottom spacing, content width, anchor id, and per-breakpoint visibility. That is
-why blocks contain no layout chrome of their own.
+Presentation lives in `settings`, shared by every block, and is described by
+`lib/cms/design.ts`. That is why blocks contain no layout chrome of their own.
+
+### Section design
+
+One `SectionDesign` object covers every section regardless of block type:
+
+```
+SectionDesign
+ ├── preset          quick background (default | muted | brand | dark | gradient)
+ ├── widthMode       boxed | narrow | wide | full | custom  (+ maxWidth)
+ ├── background      none | solid | gradient | image
+ │                    └── position, size, repeat, attachment, overlay, opacity
+ ├── colors          primary, secondary, text, heading, background,
+ │                    button, buttonText, link, invertText
+ ├── anchorId        rendered as id="…", unique per page
+ └── desktop / tablet / mobile
+      ├── margin  { top, right, bottom, left }   each a full CSS length
+      ├── padding { top, right, bottom, left }
+      ├── columns, contentWidth, minHeight, align
+      ├── headingSize, bodySize
+      ├── rowGap, columnGap, contentGap, cardGap
+      ├── imageWidth, imageHeight
+      └── hidden
+```
+
+Values are stored as finished CSS lengths (`40px`, `2.5rem`, `85%`, `4vh`), so
+the admin is not limited to a fixed spacing scale.
+
+### Why CSS custom properties, not utility classes
+
+Tailwind cannot generate a class for a value an admin invents at runtime.
+`buildSectionStyles()` therefore emits variables instead:
+
+```
+desktop values  → inline style on the <section>   (always wins, no specificity war)
+tablet / mobile → one <style> per section, one media query per breakpoint,
+                  containing only the properties that actually differ
+```
+
+`globals.css` holds the fixed rules that consume them (`.cms-section`,
+`.cms-container`, `.cms-grid`, `.cms-media`). A section left at its defaults
+emits **no** CSS at all, so flexibility costs nothing on pages that do not use
+it. Inheritance runs desktop → tablet → mobile: an unset value simply does not
+override the larger breakpoint.
+
+### Backwards compatibility
+
+`parseSectionDesign()` accepts both the current shape and the original
+`{ background, paddingTop, paddingBottom, width, hideOnMobile }` one, translating
+the old spacing scale into real lengths at read time. Pages built before the
+design system keep rendering identically with no data migration, and are
+upgraded in place the next time they are saved.
 
 ---
 
@@ -391,9 +453,29 @@ Tailwind's `<alpha-value>` syntax means `bg-brand/10` still works against a
 runtime-defined colour. Changing the primary colour in the admin repaints the
 entire site on the next request — no rebuild, no redeploy.
 
-Google Fonts are loaded only for names on a known list; anything else falls back
-to the system stack rather than emitting a request for a font that does not
-exist.
+### Typography
+
+`lib/cms/google-fonts.ts` bundles a catalogue of families and the weights each
+one actually ships. The admin picks a family per role — body, heading,
+navigation, button — and `googleFontsHref()` builds a single stylesheet URL for
+exactly those families and weights:
+
+```
+Settings → Typography          →  one <link> such as
+  body     Inter    400            css2?family=Inter:wght@400;500;600;700
+  heading  Inter    700                &family=Lora:wght@600
+  nav      (inherit body)            &display=swap
+  button   (inherit body)
+```
+
+Nothing else from the catalogue is downloaded, requested weights are clamped to
+what the family provides, and a name that is not in the catalogue is skipped
+rather than fetched blindly. An empty navigation or button font inherits the
+body font, which costs no extra request.
+
+Layout and button tokens (`--layout-container`, `--layout-section-spacing`,
+`--btn-radius`, `--btn-padding-x`, …) come from the same settings row, and each
+section's design panel can override them locally.
 
 ---
 

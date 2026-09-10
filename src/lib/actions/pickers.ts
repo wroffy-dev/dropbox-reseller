@@ -42,10 +42,27 @@ export async function listFormOptions(): Promise<PickerOption[]> {
 
 export async function listProductCategoryOptions(): Promise<PickerOption[]> {
   const user = await getCurrentUser();
-  if (!userCan(user, 'products.view')) return [];
+  // A page editor needs these to configure a product section, even without
+  // full product permissions.
+  if (!userCan(user, 'products.view') && !userCan(user, 'pages.edit')) return [];
   const rows = await prisma.productCategory.findMany({
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     select: { id: true, name: true },
   });
   return rows.map((row) => ({ value: row.id, label: row.name }));
+}
+
+/** Brand options for the product grid and the product editor. */
+export async function listBrandOptions(): Promise<PickerOption[]> {
+  const user = await getCurrentUser();
+  if (!userCan(user, 'products.view') && !userCan(user, 'pages.edit')) return [];
+  const rows = await prisma.brand.findMany({
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    select: { id: true, name: true, _count: { select: { products: true } } },
+  });
+  return rows.map((row) => ({
+    value: row.id,
+    label: row.name,
+    hint: `${row._count.products} product${row._count.products === 1 ? '' : 's'}`,
+  }));
 }

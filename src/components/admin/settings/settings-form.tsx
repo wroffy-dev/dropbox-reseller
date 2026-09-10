@@ -8,6 +8,7 @@ import { Field, Input, Textarea, Select, Switch } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { MediaUrlPicker } from './media-url-picker';
 import { ColorField } from './color-field';
+import { FontSelect, FontWeightSelect } from './font-select';
 import { Alert } from '@/components/ui/states';
 import { useToast } from '@/components/ui/toast';
 import { Spinner } from '@/components/ui/icons';
@@ -19,20 +20,14 @@ export type WebsiteSettingsValues = Record<string, string | boolean>;
 const TABS = [
   { id: 'general', label: 'General' },
   { id: 'branding', label: 'Branding' },
-  { id: 'theme', label: 'Colours & type' },
+  { id: 'theme', label: 'Colours' },
+  { id: 'typography', label: 'Typography' },
+  { id: 'design', label: 'Website design' },
   { id: 'header', label: 'Header' },
   { id: 'footer', label: 'Footer' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
-
-const FONTS = [
-  'Inter', 'Manrope', 'Poppins', 'Roboto', 'Open Sans', 'Lato', 'Montserrat',
-  'Source Sans 3', 'Nunito', 'Work Sans', 'DM Sans', 'Plus Jakarta Sans',
-  'Space Grotesk', 'Outfit', 'Figtree', 'Playfair Display', 'Merriweather', 'Lora',
-];
-
-const WEIGHTS = ['300', '400', '500', '600', '700', '800'];
 
 export function WebsiteSettingsForm({
   initial,
@@ -188,12 +183,12 @@ export function WebsiteSettingsForm({
                   <legend className="px-1 text-sm font-medium text-content">Colours</legend>
                   <p className="text-xs text-muted">
                     These become CSS variables used across the whole site — buttons, links, headings and
-                    borders all follow them.
+                    borders all follow them. Any section can override them in its own Design panel.
                   </p>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <ColorField label="Primary" name="colorPrimary" value={str('colorPrimary')} error={errors.colorPrimary} onChange={(v) => set('colorPrimary', v)} />
                     <ColorField label="Secondary" name="colorSecondary" value={str('colorSecondary')} error={errors.colorSecondary} onChange={(v) => set('colorSecondary', v)} />
-                    <ColorField label="Accent 1" name="colorAccent1" value={str('colorAccent1')} error={errors.colorAccent1} onChange={(v) => set('colorAccent1', v)} />
+                    <ColorField label="Accent" name="colorAccent1" value={str('colorAccent1')} error={errors.colorAccent1} onChange={(v) => set('colorAccent1', v)} />
                     <ColorField label="Accent 2" name="colorAccent2" value={str('colorAccent2')} error={errors.colorAccent2} onChange={(v) => set('colorAccent2', v)} />
                     <ColorField label="Background" name="colorBackground" value={str('colorBackground')} error={errors.colorBackground} onChange={(v) => set('colorBackground', v)} />
                     <ColorField label="Text" name="colorText" value={str('colorText')} error={errors.colorText} onChange={(v) => set('colorText', v)} />
@@ -212,45 +207,230 @@ export function WebsiteSettingsForm({
                       Supporting copy uses the muted colour.
                     </p>
                     <span
-                      className="mt-3 inline-flex rounded-lg px-3 py-1.5 text-xs font-medium text-white"
-                      style={{ background: str('colorPrimary') }}
+                      className="mt-3 inline-flex text-xs font-medium text-white"
+                      style={{
+                        background: str('colorPrimary'),
+                        borderRadius: str('buttonRadius') || '0.5rem',
+                        padding: `${str('buttonPaddingY') || '0.625rem'} ${str('buttonPaddingX') || '1.25rem'}`,
+                      }}
                     >
                       Primary button
                     </span>
                   </div>
                 </fieldset>
+              </>
+            ) : null}
+
+            {tab === 'typography' ? (
+              <>
+                <p className="text-sm text-muted">
+                  Pick any Google Font. Only the families and weights chosen here are downloaded by the
+                  website — nothing else from the catalogue is bundled or requested.
+                </p>
 
                 <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
-                  <legend className="px-1 text-sm font-medium text-content">Typography</legend>
+                  <legend className="px-1 text-sm font-medium text-content">Fonts</legend>
+
+                  <FontSelect
+                    id="bodyFont"
+                    label="Body font"
+                    value={str('bodyFont')}
+                    onChange={(v) => set('bodyFont', v)}
+                    hint="Used for all body copy, and as the fallback for navigation and buttons."
+                  />
+                  <FontSelect
+                    id="headingFont"
+                    label="Heading font"
+                    value={str('headingFont')}
+                    onChange={(v) => set('headingFont', v)}
+                  />
+                  <FontSelect
+                    id="navFont"
+                    label="Navigation font"
+                    value={str('navFont')}
+                    onChange={(v) => set('navFont', v)}
+                    allowInherit
+                  />
+                  <FontSelect
+                    id="buttonFont"
+                    label="Button font"
+                    value={str('buttonFont')}
+                    onChange={(v) => set('buttonFont', v)}
+                    allowInherit
+                  />
+                </fieldset>
+
+                <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
+                  <legend className="px-1 text-sm font-medium text-content">Weights</legend>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Heading font" htmlFor="headingFont">
-                      <Select id="headingFont" value={str('headingFont')} onChange={(e) => set('headingFont', e.target.value)}>
-                        {FONTS.map((font) => (<option key={font} value={font}>{font}</option>))}
-                      </Select>
+                    <FontWeightSelect
+                      id="bodyWeight"
+                      label="Body weight"
+                      family={str('bodyFont')}
+                      value={str('bodyWeight')}
+                      error={errors.bodyWeight}
+                      onChange={(v) => set('bodyWeight', v)}
+                    />
+                    <FontWeightSelect
+                      id="headingWeight"
+                      label="Heading weight"
+                      family={str('headingFont')}
+                      value={str('headingWeight')}
+                      error={errors.headingWeight}
+                      onChange={(v) => set('headingWeight', v)}
+                    />
+                    <FontWeightSelect
+                      id="navWeight"
+                      label="Navigation weight"
+                      family={str('navFont') || str('bodyFont')}
+                      value={str('navWeight')}
+                      error={errors.navWeight}
+                      onChange={(v) => set('navWeight', v)}
+                    />
+                    <FontWeightSelect
+                      id="buttonWeight"
+                      label="Button weight"
+                      family={str('buttonFont') || str('bodyFont')}
+                      value={str('buttonWeight')}
+                      error={errors.buttonWeight}
+                      onChange={(v) => set('buttonWeight', v)}
+                    />
+                  </div>
+                </fieldset>
+
+                <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
+                  <legend className="px-1 text-sm font-medium text-content">Sizing</legend>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <Field label="Base size" htmlFor="baseFontSize" error={errors.baseFontSize} hint="Scales the whole site.">
+                      <Input id="baseFontSize" value={str('baseFontSize')} placeholder="16px" onChange={(e) => set('baseFontSize', e.target.value)} />
                     </Field>
-                    <Field label="Heading weight" htmlFor="headingWeight" error={errors.headingWeight}>
-                      <Select id="headingWeight" value={str('headingWeight')} onChange={(e) => set('headingWeight', e.target.value)}>
-                        {WEIGHTS.map((weight) => (<option key={weight} value={weight}>{weight}</option>))}
-                      </Select>
+                    <Field label="Base size — tablet" htmlFor="baseFontSizeTablet" error={errors.baseFontSizeTablet} hint="Blank inherits desktop.">
+                      <Input id="baseFontSizeTablet" value={str('baseFontSizeTablet')} placeholder="inherit" onChange={(e) => set('baseFontSizeTablet', e.target.value)} />
                     </Field>
-                    <Field label="Body font" htmlFor="bodyFont">
-                      <Select id="bodyFont" value={str('bodyFont')} onChange={(e) => set('bodyFont', e.target.value)}>
-                        {FONTS.map((font) => (<option key={font} value={font}>{font}</option>))}
-                      </Select>
+                    <Field label="Base size — mobile" htmlFor="baseFontSizeMobile" error={errors.baseFontSizeMobile} hint="Blank inherits tablet.">
+                      <Input id="baseFontSizeMobile" value={str('baseFontSizeMobile')} placeholder="inherit" onChange={(e) => set('baseFontSizeMobile', e.target.value)} />
                     </Field>
-                    <Field label="Body weight" htmlFor="bodyWeight" error={errors.bodyWeight}>
-                      <Select id="bodyWeight" value={str('bodyWeight')} onChange={(e) => set('bodyWeight', e.target.value)}>
-                        {WEIGHTS.map((weight) => (<option key={weight} value={weight}>{weight}</option>))}
-                      </Select>
+
+                    <Field label="Navigation size" htmlFor="navFontSize" error={errors.navFontSize}>
+                      <Input id="navFontSize" value={str('navFontSize')} placeholder="0.9375rem" onChange={(e) => set('navFontSize', e.target.value)} />
                     </Field>
-                    <Field label="Base font size" htmlFor="baseFontSize" error={errors.baseFontSize} hint="Scales the whole site. 16px is the default.">
-                      <Input id="baseFontSize" value={str('baseFontSize')} onChange={(e) => set('baseFontSize', e.target.value)} />
+                    <Field label="Button size" htmlFor="buttonFontSize" error={errors.buttonFontSize}>
+                      <Input id="buttonFontSize" value={str('buttonFontSize')} placeholder="0.875rem" onChange={(e) => set('buttonFontSize', e.target.value)} />
                     </Field>
                   </div>
-                  <p className="text-xs text-muted">
-                    Google Fonts are loaded automatically for the fonts listed here. Any other name falls back
-                    to the system font stack.
+                </fieldset>
+
+                <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
+                  <legend className="px-1 text-sm font-medium text-content">Line height & letter spacing</legend>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Heading line height" htmlFor="headingLineHeight" error={errors.headingLineHeight}>
+                      <Input id="headingLineHeight" value={str('headingLineHeight')} placeholder="1.15" onChange={(e) => set('headingLineHeight', e.target.value)} />
+                    </Field>
+                    <Field label="Body line height" htmlFor="bodyLineHeight" error={errors.bodyLineHeight}>
+                      <Input id="bodyLineHeight" value={str('bodyLineHeight')} placeholder="1.6" onChange={(e) => set('bodyLineHeight', e.target.value)} />
+                    </Field>
+                    <Field label="Heading letter spacing" htmlFor="headingLetterSpacing" error={errors.headingLetterSpacing}>
+                      <Input id="headingLetterSpacing" value={str('headingLetterSpacing')} placeholder="-0.02em" onChange={(e) => set('headingLetterSpacing', e.target.value)} />
+                    </Field>
+                    <Field label="Body letter spacing" htmlFor="bodyLetterSpacing" error={errors.bodyLetterSpacing}>
+                      <Input id="bodyLetterSpacing" value={str('bodyLetterSpacing')} placeholder="0em" onChange={(e) => set('bodyLetterSpacing', e.target.value)} />
+                    </Field>
+                  </div>
+                </fieldset>
+
+                <div
+                  className="rounded-lg border border-hairline p-5"
+                  style={{ fontFamily: `'${str('bodyFont')}', system-ui, sans-serif` }}
+                >
+                  <p
+                    className="text-2xl"
+                    style={{
+                      fontFamily: `'${str('headingFont')}', system-ui, sans-serif`,
+                      fontWeight: Number(str('headingWeight')) || 700,
+                      lineHeight: str('headingLineHeight') || '1.15',
+                      letterSpacing: str('headingLetterSpacing') || '-0.02em',
+                    }}
+                  >
+                    The quick brown fox jumps
                   </p>
+                  <p
+                    className="mt-2 text-sm text-muted"
+                    style={{
+                      fontWeight: Number(str('bodyWeight')) || 400,
+                      lineHeight: str('bodyLineHeight') || '1.6',
+                      letterSpacing: str('bodyLetterSpacing') || '0em',
+                    }}
+                  >
+                    Body copy preview. Save to load the chosen fonts and see them exactly as visitors will.
+                  </p>
+                </div>
+              </>
+            ) : null}
+
+            {tab === 'design' ? (
+              <>
+                <p className="text-sm text-muted">
+                  Site-wide defaults. Every CMS section can override these in its own Design panel.
+                </p>
+
+                <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
+                  <legend className="px-1 text-sm font-medium text-content">Layout</legend>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Container width" htmlFor="containerWidth" error={errors.containerWidth} hint="The default boxed width for sections.">
+                      <Input id="containerWidth" value={str('containerWidth')} placeholder="72rem" onChange={(e) => set('containerWidth', e.target.value)} />
+                    </Field>
+                    <Field label="Side padding" htmlFor="containerPadding" error={errors.containerPadding}>
+                      <Input id="containerPadding" value={str('containerPadding')} placeholder="1.5rem" onChange={(e) => set('containerPadding', e.target.value)} />
+                    </Field>
+                    <Field label="Section spacing" htmlFor="sectionSpacing" error={errors.sectionSpacing} hint="Default padding above and below a section.">
+                      <Input id="sectionSpacing" value={str('sectionSpacing')} placeholder="5rem" onChange={(e) => set('sectionSpacing', e.target.value)} />
+                    </Field>
+                    <Field label="Section spacing — mobile" htmlFor="sectionSpacingMobile" error={errors.sectionSpacingMobile}>
+                      <Input id="sectionSpacingMobile" value={str('sectionSpacingMobile')} placeholder="3rem" onChange={(e) => set('sectionSpacingMobile', e.target.value)} />
+                    </Field>
+                    <Field label="Border radius" htmlFor="borderRadius" error={errors.borderRadius}>
+                      <Input id="borderRadius" value={str('borderRadius')} placeholder="0.75rem" onChange={(e) => set('borderRadius', e.target.value)} />
+                    </Field>
+                    <Field label="Card radius" htmlFor="cardRadius" error={errors.cardRadius}>
+                      <Input id="cardRadius" value={str('cardRadius')} placeholder="1rem" onChange={(e) => set('cardRadius', e.target.value)} />
+                    </Field>
+                  </div>
+                </fieldset>
+
+                <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
+                  <legend className="px-1 text-sm font-medium text-content">Buttons</legend>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Primary button style" htmlFor="buttonPrimaryStyle">
+                      <Select id="buttonPrimaryStyle" value={str('buttonPrimaryStyle')} onChange={(e) => set('buttonPrimaryStyle', e.target.value)}>
+                        <option value="solid">Solid</option>
+                        <option value="outline">Outline</option>
+                        <option value="soft">Soft tint</option>
+                      </Select>
+                    </Field>
+                    <Field label="Secondary button style" htmlFor="buttonSecondaryStyle">
+                      <Select id="buttonSecondaryStyle" value={str('buttonSecondaryStyle')} onChange={(e) => set('buttonSecondaryStyle', e.target.value)}>
+                        <option value="solid">Solid</option>
+                        <option value="outline">Outline</option>
+                        <option value="soft">Soft tint</option>
+                      </Select>
+                    </Field>
+                    <Field label="Button radius" htmlFor="buttonRadius" error={errors.buttonRadius}>
+                      <Input id="buttonRadius" value={str('buttonRadius')} placeholder="0.5rem" onChange={(e) => set('buttonRadius', e.target.value)} />
+                    </Field>
+                    <Field label="Text transform" htmlFor="buttonTextTransform">
+                      <Select id="buttonTextTransform" value={str('buttonTextTransform')} onChange={(e) => set('buttonTextTransform', e.target.value)}>
+                        <option value="none">Normal</option>
+                        <option value="uppercase">UPPERCASE</option>
+                        <option value="capitalize">Capitalise</option>
+                      </Select>
+                    </Field>
+                    <Field label="Horizontal padding" htmlFor="buttonPaddingX" error={errors.buttonPaddingX}>
+                      <Input id="buttonPaddingX" value={str('buttonPaddingX')} placeholder="1.25rem" onChange={(e) => set('buttonPaddingX', e.target.value)} />
+                    </Field>
+                    <Field label="Vertical padding" htmlFor="buttonPaddingY" error={errors.buttonPaddingY}>
+                      <Input id="buttonPaddingY" value={str('buttonPaddingY')} placeholder="0.625rem" onChange={(e) => set('buttonPaddingY', e.target.value)} />
+                    </Field>
+                  </div>
                 </fieldset>
               </>
             ) : null}
@@ -328,7 +508,19 @@ export function WebsiteSettingsForm({
 }
 
 function tabForField(field: string): TabId {
-  if (field.startsWith('color') || field.includes('Font') || field.includes('Weight')) return 'theme';
+  if (field.startsWith('color')) return 'theme';
+  if (
+    field.includes('Font') ||
+    field.includes('Weight') ||
+    field.includes('LineHeight') ||
+    field.includes('LetterSpacing') ||
+    field.startsWith('headingScale')
+  ) {
+    return 'typography';
+  }
+  if (field.startsWith('container') || field.startsWith('section') || field.endsWith('Radius') || field.startsWith('button')) {
+    return 'design';
+  }
   if (field.startsWith('logo') || field.startsWith('favicon') || field.startsWith('ogImage')) return 'branding';
   if (field.startsWith('announcement') || field.startsWith('header')) return 'header';
   if (field.startsWith('footer') || field.startsWith('copyright')) return 'footer';

@@ -10,6 +10,15 @@ import { Input, Textarea, Select, Label, FieldError, Checkbox } from '@/componen
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils/cn';
 
+/** Native input type per field type — everything else falls back to text. */
+const INPUT_TYPES: Record<string, string> = {
+  EMAIL: 'email',
+  PHONE: 'tel',
+  NUMBER: 'number',
+  URL: 'url',
+  DATE: 'date',
+};
+
 export function PublicFormRenderer({
   form,
   productId,
@@ -141,12 +150,15 @@ export function PublicFormRenderer({
                 field.width === 'full' || compact ? 'sm:col-span-2' : 'sm:col-span-1',
               )}
             >
-              {field.type === 'CHECKBOX' ? (
+              {field.type === 'CHECKBOX' || field.type === 'CONSENT' ? (
                 <Checkbox
                   id={fieldId}
                   name={field.name}
                   value="true"
                   required={field.isRequired}
+                  defaultChecked={
+                    field.type === 'CONSENT' && /^(true|checked|on|yes)$/i.test(field.defaultValue ?? '')
+                  }
                   label={field.label}
                   hint={field.helpText ?? undefined}
                   aria-invalid={invalid || undefined}
@@ -186,15 +198,7 @@ export function PublicFormRenderer({
                   ) : (
                     <Input
                       {...shared}
-                      type={
-                        field.type === 'EMAIL'
-                          ? 'email'
-                          : field.type === 'PHONE'
-                            ? 'tel'
-                            : field.type === 'NUMBER'
-                              ? 'number'
-                              : 'text'
-                      }
+                      type={INPUT_TYPES[field.type] ?? 'text'}
                       autoComplete={autoCompleteFor(field.type, field.name)}
                       maxLength={field.maxLength ?? undefined}
                     />
@@ -245,6 +249,8 @@ function autoCompleteFor(type: string, name: string): string | undefined {
   if (type === 'PHONE') return 'tel';
   if (type === 'NAME') return 'name';
   if (type === 'COMPANY') return 'organization';
+  if (type === 'URL') return 'url';
+  if (type === 'DATE') return 'bday';
   if (/first_?name/i.test(name)) return 'given-name';
   if (/last_?name/i.test(name)) return 'family-name';
   return undefined;

@@ -6,9 +6,10 @@ import { getMedia } from '@/lib/services/media';
 import { PublicFormRenderer } from '@/components/forms/public-form';
 import { cn } from '@/lib/utils/cn';
 import { Check } from 'lucide-react';
-import { SectionHeading, CtaLink } from './shared';
+import { SectionHeading, CtaLink, type BlockContext, columnVars } from './shared';
 
-export async function CtaBlock({ content, inverted }: { content: CtaContent; inverted: boolean }) {
+export async function CtaBlock({ content, ctx }: { content: CtaContent; ctx: BlockContext }) {
+  const inverted = ctx.inverted;
   const form = content.variant === 'split' && content.formSlug ? await getPublicForm(content.formSlug) : null;
 
   const buttons = (
@@ -81,7 +82,8 @@ export async function CtaBlock({ content, inverted }: { content: CtaContent; inv
   return <div className="text-center">{body}</div>;
 }
 
-export async function FormBlock({ content, inverted }: { content: FormBlockContent; inverted: boolean }) {
+export async function FormBlock({ content, ctx }: { content: FormBlockContent; ctx: BlockContext }) {
+  const inverted = ctx.inverted;
   const form = content.formSlug ? await getPublicForm(content.formSlug) : await getDefaultForm();
 
   if (!form) {
@@ -159,11 +161,12 @@ export async function FormBlock({ content, inverted }: { content: FormBlockConte
 
 export async function LeadMagnetBlock({
   content,
-  inverted,
+  ctx,
 }: {
   content: LeadMagnetContent;
-  inverted: boolean;
+  ctx: BlockContext;
 }) {
+  const inverted = ctx.inverted;
   const magnet = content.leadMagnetSlug
     ? await prisma.leadMagnet.findFirst({
         where: { slug: content.leadMagnetSlug, isActive: true, deletedAt: null },

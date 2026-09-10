@@ -6,11 +6,21 @@ import { formatMoney } from '@/lib/utils/money';
 import { cn } from '@/lib/utils/cn';
 import { ProductCta } from './product-cta';
 
+/**
+ * Product card.
+ *
+ * The show/hide props default to the original behaviour, so existing callers are
+ * unaffected; the CMS product grid passes the admin's own toggles through.
+ */
 export function ProductCard({
   product,
   billing = 'monthly',
   showPrice = true,
   showFeatures = true,
+  showImage = true,
+  showDescription = true,
+  showCta = true,
+  ctaLabel,
   highlight,
   ctaLocation = 'product-card',
 }: {
@@ -18,6 +28,10 @@ export function ProductCard({
   billing?: 'monthly' | 'annual';
   showPrice?: boolean;
   showFeatures?: boolean;
+  showImage?: boolean;
+  showDescription?: boolean;
+  showCta?: boolean;
+  ctaLabel?: string;
   highlight?: boolean;
   ctaLocation?: string;
 }) {
@@ -37,12 +51,13 @@ export function ProductCard({
         </span>
       ) : null}
 
-      {product.imageUrl ? (
+      {showImage && product.imageUrl ? (
         <Image
           src={product.imageUrl}
           alt={product.imageAlt ?? product.name}
           width={56}
           height={56}
+          loading="lazy"
           className="mb-4 h-14 w-14 rounded-lg object-cover"
         />
       ) : null}
@@ -53,7 +68,7 @@ export function ProductCard({
         </Link>
       </h3>
 
-      {product.shortDescription ? (
+      {showDescription && product.shortDescription ? (
         <p className="mt-2 text-sm leading-relaxed text-muted">{product.shortDescription}</p>
       ) : null}
 
@@ -95,10 +110,15 @@ export function ProductCard({
       ) : null}
 
       <div className="mt-auto pt-6">
-        <ProductCta product={product} className="w-full" ctaLocation={ctaLocation} />
+        {showCta ? (
+          <ProductCta product={product} label={ctaLabel} className="w-full" ctaLocation={ctaLocation} />
+        ) : null}
         <Link
           href={`/products/${product.slug}`}
-          className="mt-3 block text-center text-xs font-medium text-muted underline-offset-4 hover:text-brand hover:underline"
+          className={cn(
+            'block text-center text-xs font-medium text-muted underline-offset-4 hover:text-brand hover:underline',
+            showCta && 'mt-3',
+          )}
         >
           View full details
         </Link>

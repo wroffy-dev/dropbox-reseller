@@ -3,7 +3,8 @@ import type { Metadata } from 'next';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
-import { FormBuilder, type FormBuilderValues, type BuilderField } from '@/components/admin/forms/form-builder';
+import { FormBuilder } from '@/components/admin/forms/form-builder';
+import type { FormBuilderValues, BuilderField } from '@/lib/cms/form-model';
 import { SubmissionsPanel } from '@/components/admin/forms/submissions-panel';
 import { Badge } from '@/components/ui/badge';
 
@@ -37,7 +38,7 @@ export default async function EditForm({ params }: { params: Promise<{ id: strin
     }),
     prisma.product.findMany({
       where: { deletedAt: null },
-      orderBy: { name: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       select: { id: true, name: true },
     }),
     prisma.formSubmission.findMany({

@@ -20,9 +20,20 @@ import {
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Plus, Trash, ChevronDown } from 'lucide-react';
+import { GripVertical, Plus, Trash, ChevronDown, Copy } from 'lucide-react';
 import { saveForm } from '@/lib/actions/forms';
 import { formFieldTypes } from '@/lib/validation/form';
+import {
+  newField,
+  nextFieldKey,
+  uniqueFieldName,
+  FIELD_TYPE_LABELS,
+  MAPPED_FIELD_TYPES,
+  CHOICE_FIELD_TYPES,
+  EMPTY_FORM,
+  type BuilderField,
+  type FormBuilderValues,
+} from '@/lib/cms/form-model';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Field, Input, Select, Textarea, Switch } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
@@ -32,94 +43,14 @@ import { Spinner } from '@/components/ui/icons';
 import { slugify } from '@/lib/utils/slug';
 import { cn } from '@/lib/utils/cn';
 
-export type BuilderField = {
-  key: string;
-  id: string | null;
-  type: string;
-  label: string;
-  name: string;
-  placeholder: string;
-  helpText: string;
-  defaultValue: string;
-  isRequired: boolean;
-  width: 'full' | 'half';
-  options: Array<{ label: string; value: string }>;
-  minLength: string;
-  maxLength: string;
-  pattern: string;
-};
+/*
+ * The builder's data model lives in lib/cms/form-model so Server Components can
+ * use it too. These re-exports keep the original import paths working.
+ */
+export { EMPTY_FORM, newField };
+export type { BuilderField, FormBuilderValues };
 
-export type FormBuilderValues = {
-  id?: string;
-  name: string;
-  slug: string;
-  description: string;
-  isActive: boolean;
-  submitLabel: string;
-  successMessage: string;
-  redirectUrl: string;
-  leadSource: string;
-  defaultProductId: string;
-  createsLead: boolean;
-  notifyEmails: string;
-  consentText: string;
-  fields: BuilderField[];
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  NAME: 'Name',
-  EMAIL: 'Email',
-  PHONE: 'Phone',
-  COMPANY: 'Company',
-  TEXT: 'Single line text',
-  TEXTAREA: 'Paragraph text',
-  NUMBER: 'Number',
-  SELECT: 'Dropdown',
-  RADIO: 'Radio buttons',
-  CHECKBOX: 'Checkbox',
-  HIDDEN: 'Hidden value',
-};
-
-/** Fields whose values map straight onto Lead columns. */
-const MAPPED_TYPES = new Set(['NAME', 'EMAIL', 'PHONE', 'COMPANY', 'TEXTAREA']);
-
-export const EMPTY_FORM: FormBuilderValues = {
-  name: '',
-  slug: '',
-  description: '',
-  isActive: true,
-  submitLabel: 'Submit',
-  successMessage: 'Thank you. Our team will contact you shortly.',
-  redirectUrl: '',
-  leadSource: 'Website Form',
-  defaultProductId: '',
-  createsLead: true,
-  notifyEmails: '',
-  consentText: '',
-  fields: [],
-};
-
-let keyCounter = 0;
-const nextKey = () => `f${(keyCounter += 1)}-${Date.now()}`;
-
-export function newField(type = 'TEXT'): BuilderField {
-  return {
-    key: nextKey(),
-    id: null,
-    type,
-    label: TYPE_LABELS[type] ?? 'Field',
-    name: '',
-    placeholder: '',
-    helpText: '',
-    defaultValue: '',
-    isRequired: type === 'EMAIL',
-    width: type === 'TEXTAREA' ? 'full' : 'half',
-    options: type === 'SELECT' || type === 'RADIO' ? [{ label: 'Option one', value: 'option-one' }] : [],
-    minLength: '',
-    maxLength: '',
-    pattern: '',
-  };
-}
+const TYPE_LABELS = FIELD_TYPE_LABELS;
 
 export function FormBuilder({
   initial,
@@ -157,9 +88,28 @@ export function FormBuilder({
   function addField(type: string) {
     const field = newField(type);
     // Derive a machine name from the label so the admin rarely has to think about it.
-    field.name = uniqueName(slugify(field.label).replace(/-/g, '_'), values.fields);
+    field.name = uniqueFieldName(slugify(field.label).replace(/-/g, '_'), values.fields);
     setValues((current) => ({ ...current, fields: [...current.fields, field] }));
     setOpenField(field.key);
+  }
+
+  function duplicateField(key: string) {
+    const index = values.fields.findIndex((f) => f.key === key);
+    if (index < 0) return;
+    const source = values.fields[index]!;
+    const copy: BuilderField = {
+      ...source,
+      // A copy is a brand-new row: it must not overwrite the original on save,
+      // and its machine name has to stay unique within the form.
+      key: nextFieldKey(),
+      id: null,
+      name: uniqueFieldName(source.name || 'field', values.fields),
+      options: source.options.map((option) => ({ ...option })),
+    };
+    const next = [...values.fields];
+    next.splice(index + 1, 0, copy);
+    set('fields', next);
+    setOpenField(copy.key);
   }
 
   function onDragEnd(event: DragEndEvent) {
@@ -252,6 +202,7 @@ export function FormBuilder({
                         expanded={openField === field.key}
                         onToggle={() => setOpenField(openField === field.key ? null : field.key)}
                         onChange={(patch) => updateField(field.key, patch)}
+                        onDuplicate={() => duplicateField(field.key)}
                         onRemove={() =>
                           set(
                             'fields',
@@ -471,23 +422,13 @@ export function FormBuilder({
   );
 }
 
-function uniqueName(base: string, fields: BuilderField[]): string {
-  const root = base || 'field';
-  let candidate = root;
-  let n = 1;
-  while (fields.some((f) => f.name === candidate)) {
-    n += 1;
-    candidate = `${root}_${n}`;
-  }
-  return candidate;
-}
-
 function SortableFieldRow({
   field,
   canEdit,
   expanded,
   onToggle,
   onChange,
+  onDuplicate,
   onRemove,
 }: {
   field: BuilderField;
@@ -495,6 +436,7 @@ function SortableFieldRow({
   expanded: boolean;
   onToggle: () => void;
   onChange: (patch: Partial<BuilderField>) => void;
+  onDuplicate: () => void;
   onRemove: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -502,7 +444,7 @@ function SortableFieldRow({
     disabled: !canEdit,
   });
 
-  const hasOptions = field.type === 'SELECT' || field.type === 'RADIO';
+  const hasOptions = CHOICE_FIELD_TYPES.has(field.type);
 
   return (
     <li
@@ -539,17 +481,29 @@ function SortableFieldRow({
 
         <Badge tone="neutral">{TYPE_LABELS[field.type] ?? field.type}</Badge>
         {field.isRequired ? <Badge tone="warning">Required</Badge> : null}
-        {MAPPED_TYPES.has(field.type) ? <Badge tone="brand">Mapped</Badge> : null}
+        {MAPPED_FIELD_TYPES.has(field.type) ? <Badge tone="brand">Mapped</Badge> : null}
 
         {canEdit ? (
-          <button
-            type="button"
-            onClick={onRemove}
-            aria-label={`Remove ${field.label}`}
-            className="rounded p-1.5 text-muted transition-colors hover:bg-red-50 hover:text-red-600"
-          >
-            <Trash className="h-4 w-4" />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={onDuplicate}
+              aria-label={`Duplicate ${field.label}`}
+              title="Duplicate field"
+              className="rounded p-1.5 text-muted transition-colors hover:bg-muted/10 hover:text-content"
+            >
+              <Copy className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={onRemove}
+              aria-label={`Remove ${field.label}`}
+              title="Remove field"
+              className="rounded p-1.5 text-muted transition-colors hover:bg-red-50 hover:text-red-600"
+            >
+              <Trash className="h-4 w-4" />
+            </button>
+          </>
         ) : null}
 
         <ChevronDown
@@ -591,7 +545,7 @@ function SortableFieldRow({
                   onChange({
                     type,
                     options:
-                      type === 'SELECT' || type === 'RADIO'
+                      CHOICE_FIELD_TYPES.has(type)
                         ? field.options.length
                           ? field.options
                           : [{ label: 'Option one', value: 'option-one' }]
@@ -630,8 +584,17 @@ function SortableFieldRow({
                 onChange={(e) => onChange({ helpText: e.target.value })}
               />
             </Field>
-            {field.type === 'HIDDEN' ? (
-              <Field label="Value" htmlFor={`${field.key}-default`} className="sm:col-span-2">
+            {field.type === 'HIDDEN' || field.type === 'CONSENT' ? (
+              <Field
+                label={field.type === 'HIDDEN' ? 'Value' : 'Default value'}
+                htmlFor={`${field.key}-default`}
+                className="sm:col-span-2"
+                hint={
+                  field.type === 'CONSENT'
+                    ? 'Enter “checked” to tick the box by default.'
+                    : 'Sent with every submission and never shown to the visitor.'
+                }
+              >
                 <Input
                   id={`${field.key}-default`}
                   value={field.defaultValue}

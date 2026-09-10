@@ -32,6 +32,9 @@ export type PublicProduct = {
   imageAlt: string | null;
   galleryIds: string[];
   categoryName: string | null;
+  categorySlug: string | null;
+  brandName: string | null;
+  brandSlug: string | null;
 };
 
 const productSelect = {
@@ -60,7 +63,8 @@ const productSelect = {
   ctaForm: { select: { slug: true, isActive: true } },
   image: { select: { url: true, altText: true } },
   galleryIds: true,
-  category: { select: { name: true } },
+  category: { select: { name: true, slug: true } },
+  brand: { select: { name: true, slug: true } },
 } satisfies Prisma.ProductSelect;
 
 type ProductRow = Prisma.ProductGetPayload<{ select: typeof productSelect }>;
@@ -107,6 +111,9 @@ export function toPublicProduct(row: ProductRow): PublicProduct {
     imageAlt: row.image?.altText ?? row.name,
     galleryIds: toStringArray(row.galleryIds),
     categoryName: row.category?.name ?? null,
+    categorySlug: row.category?.slug ?? null,
+    brandName: row.brand?.name ?? null,
+    brandSlug: row.brand?.slug ?? null,
   };
 }
 
@@ -122,14 +129,24 @@ export function publishedProductWhere(): Prisma.ProductWhereInput {
   };
 }
 
+export type ProductSource = 'featured' | 'all' | 'category' | 'brand' | 'selected' | 'latest';
+
 export type ProductSelection = {
-  source: 'featured' | 'all' | 'category' | 'selected' | 'latest';
+  source: ProductSource;
   productIds?: string[];
   categoryId?: string | null;
+  brandId?: string | null;
   limit?: number;
 };
 
-/** Resolves the product-source configuration shared by the product blocks. */
+/**
+ * Resolves the product-source configuration shared by every product block.
+ *
+ * Ordering is always explicit and admin-controlled:
+ *  - hand-picked keeps the order the admin dragged them into;
+ *  - featured uses the dedicated featured order;
+ *  - everything else uses the catalogue sort order, never creation date.
+ */
 export const selectProducts = cache(
   async (selection: ProductSelection): Promise<PublicProduct[]> => {
     const take = Math.min(Math.max(selection.limit ?? 3, 1), 24);
@@ -153,11 +170,14 @@ export const selectProducts = cache(
     const where: Prisma.ProductWhereInput = { ...publishedProductWhere() };
     if (selection.source === 'featured') where.isFeatured = true;
     if (selection.source === 'category' && selection.categoryId) where.categoryId = selection.categoryId;
+    if (selection.source === 'brand' && selection.brandId) where.brandId = selection.brandId;
 
     const orderBy: Prisma.ProductOrderByWithRelationInput[] =
       selection.source === 'latest'
         ? [{ publishedAt: 'desc' }, { createdAt: 'desc' }]
-        : [{ sortOrder: 'asc' }, { name: 'asc' }];
+        : selection.source === 'featured'
+          ? [{ featuredOrder: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
+          : [{ sortOrder: 'asc' }, { name: 'asc' }];
 
     const rows = await prisma.product.findMany({ where, orderBy, take, select: productSelect });
     return rows.map(toPublicProduct);

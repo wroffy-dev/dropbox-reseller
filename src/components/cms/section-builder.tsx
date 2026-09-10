@@ -18,9 +18,20 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Eye, EyeOff, Copy, Trash, Plus, ChevronDown, Settings } from 'lucide-react';
-import { BLOCK_LIST, getBlock } from '@/lib/cms/blocks';
-import { SECTION_SETTING_FIELDS } from '@/lib/cms/section-settings';
+import {
+  GripVertical,
+  Eye,
+  EyeOff,
+  Copy,
+  Trash,
+  Plus,
+  ChevronDown,
+  Settings,
+  ArrowUp,
+  ArrowDown,
+} from 'lucide-react';
+import { BLOCK_PICKER_LIST, getBlock, BLOCK_GROUPS } from '@/lib/cms/blocks';
+import { parseSectionDesign, type SectionDesign } from '@/lib/cms/design';
 import {
   addSection,
   updateSection,
@@ -30,6 +41,7 @@ import {
   toggleSectionVisibility,
 } from '@/lib/actions/pages';
 import { FieldList, type FieldValues } from './field-renderer';
+import { DesignPanel } from './design-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/field';
 import { Dialog, ConfirmDialog } from '@/components/ui/dialog';
@@ -152,15 +164,40 @@ export function SectionBuilder({
     }
   }
 
-  const grouped = React.useMemo(() => {
-    const map = new Map<string, typeof BLOCK_LIST>();
-    for (const block of BLOCK_LIST) {
-      const list = map.get(block.group) ?? [];
-      list.push(block);
-      map.set(block.group, list);
+  /** Keyboard-friendly alternative to dragging. Persists the same way. */
+  async function onMove(sectionId: string, delta: number) {
+    const index = sections.findIndex((s) => s.id === sectionId);
+    const target = index + delta;
+    if (index < 0 || target < 0 || target >= sections.length) return;
+
+    const previous = sections;
+    const next = arrayMove(sections, index, target);
+    setSections(next);
+
+    const result = await reorderSections({ pageId, order: next.map((s) => s.id) });
+    if (!result.ok) {
+      setSections(previous);
+      toast(result.error, 'error');
     }
-    return Array.from(map.entries());
-  }, []);
+  }
+
+  const grouped = React.useMemo(
+    () =>
+      BLOCK_GROUPS.map((group) => [group, BLOCK_PICKER_LIST.filter((b) => b.group === group)] as const).filter(
+        ([, blocks]) => blocks.length > 0,
+      ),
+    [],
+  );
+
+  /** Anchor IDs already in use, so the design panel can flag duplicates. */
+  const anchorsBySection = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const section of sections) {
+      const anchor = parseSectionDesign(section.settings).anchorId;
+      if (anchor) map.set(section.id, anchor);
+    }
+    return map;
+  }, [sections]);
 
   return (
     <div>
@@ -193,6 +230,11 @@ export function SectionBuilder({
                   onToggleVisibility={() => onToggleVisibility(section.id)}
                   onDuplicate={() => onDuplicate(section.id)}
                   onDelete={() => setPendingDelete(section.id)}
+                  onMoveUp={index > 0 ? () => onMove(section.id, -1) : undefined}
+                  onMoveDown={index < sections.length - 1 ? () => onMove(section.id, 1) : undefined}
+                  takenAnchors={Array.from(anchorsBySection.entries())
+                    .filter(([id]) => id !== section.id)
+                    .map(([, anchor]) => anchor)}
                   onSaved={(updated) =>
                     setSections((current) =>
                       current.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)),
@@ -273,6 +315,9 @@ function SortableSection({
   onToggleVisibility,
   onDuplicate,
   onDelete,
+  onMoveUp,
+  onMoveDown,
+  takenAnchors,
   onSaved,
 }: {
   section: BuilderSection;
@@ -283,6 +328,9 @@ function SortableSection({
   onToggleVisibility: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  takenAnchors: string[];
   onSaved: (section: BuilderSection) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -313,6 +361,31 @@ function SortableSection({
         >
           <GripVertical className="h-4 w-4" aria-hidden="true" />
         </button>
+
+        {canEdit ? (
+          <span className="flex shrink-0 flex-col">
+            <button
+              type="button"
+              onClick={onMoveUp}
+              disabled={!onMoveUp}
+              aria-label="Move section up"
+              title="Move up"
+              className="rounded px-1 text-[0.625rem] leading-none text-muted transition-colors hover:text-content disabled:opacity-30"
+            >
+              <ArrowUp className="h-3 w-3" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={onMoveDown}
+              disabled={!onMoveDown}
+              aria-label="Move section down"
+              title="Move down"
+              className="rounded px-1 text-[0.625rem] leading-none text-muted transition-colors hover:text-content disabled:opacity-30"
+            >
+              <ArrowDown className="h-3 w-3" aria-hidden="true" />
+            </button>
+          </span>
+        ) : null}
 
         <span className="w-6 shrink-0 text-center text-xs font-medium text-muted">{index + 1}</span>
 
@@ -371,7 +444,14 @@ function SortableSection({
         />
       </div>
 
-      {expanded ? <SectionEditor section={section} canEdit={canEdit} onSaved={onSaved} /> : null}
+      {expanded ? (
+        <SectionEditor
+          section={section}
+          canEdit={canEdit}
+          takenAnchors={takenAnchors}
+          onSaved={onSaved}
+        />
+      ) : null}
     </li>
   );
 }
@@ -379,10 +459,12 @@ function SortableSection({
 function SectionEditor({
   section,
   canEdit,
+  takenAnchors,
   onSaved,
 }: {
   section: BuilderSection;
   canEdit: boolean;
+  takenAnchors: string[];
   onSaved: (section: BuilderSection) => void;
 }) {
   const { toast } = useToast();
@@ -483,12 +565,12 @@ function SectionEditor({
             />
           </>
         ) : (
-          <FieldList
-            fields={SECTION_SETTING_FIELDS}
-            values={settings}
+          <DesignPanel
+            value={settings}
             idPrefix={`s-${section.id}`}
-            onChange={(field, value) => {
-              setSettings((current) => ({ ...current, [field]: value }));
+            takenAnchors={takenAnchors}
+            onChange={(next: SectionDesign) => {
+              setSettings(next as unknown as FieldValues);
               setDirty(true);
             }}
           />

@@ -63,6 +63,9 @@ enum FormFieldType {
   HIDDEN
   COMPANY
   NAME
+  URL
+  DATE
+  CONSENT
 }
 
 enum BillingPeriod {
@@ -369,15 +372,37 @@ model ProductCategory {
   @@index([slug])
 }
 
-model Product {
-  id          String        @id @default(cuid())
+model Brand {
+  id          String  @id @default(cuid())
   name        String
-  slug        String        @unique
-  sku         String?       @unique
-  status      ContentStatus @default(DRAFT)
-  publishedAt DateTime?
-  isFeatured  Boolean       @default(false)
-  sortOrder   Int           @default(0)
+  slug        String  @unique
+  description String? @db.Text
+  websiteUrl  String?
+  sortOrder   Int     @default(0)
+  logoId      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  logo     Media?    @relation("BrandLogo", fields: [logoId], references: [id], onDelete: SetNull)
+  products Product[]
+
+  @@index([slug])
+  @@index([sortOrder])
+}
+
+model Product {
+  id            String        @id @default(cuid())
+  name          String
+  slug          String        @unique
+  sku           String?       @unique
+  status        ContentStatus @default(DRAFT)
+  publishedAt   DateTime?
+  isFeatured    Boolean       @default(false)
+  sortOrder     Int           @default(0)
+  // Independent ordering for the featured rail — a product can sit third in the
+  // catalogue and first among the featured picks.
+  featuredOrder Int           @default(0)
 
   shortDescription String? @db.Text
   description      String? @db.Text
@@ -412,6 +437,7 @@ model Product {
   galleryIds Json    @default("[]") // string[] of Media ids
 
   categoryId String?
+  brandId    String?
 
   // SEO
   seoTitle       String?
@@ -428,6 +454,7 @@ model Product {
   deletedAt DateTime?
 
   category         ProductCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brand            Brand?            @relation(fields: [brandId], references: [id], onDelete: SetNull)
   image            Media?            @relation("ProductImage", fields: [imageId], references: [id], onDelete: SetNull)
   ogImage          Media?            @relation("ProductOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
   ctaForm          Form?             @relation("ProductCtaForm", fields: [ctaFormId], references: [id], onDelete: SetNull)
@@ -440,7 +467,9 @@ model Product {
   @@index([slug])
   @@index([status, publishedAt])
   @@index([categoryId])
-  @@index([isFeatured])
+  @@index([brandId])
+  @@index([isFeatured, featuredOrder])
+  @@index([sortOrder])
   @@index([deletedAt])
 }
 
@@ -599,6 +628,7 @@ model Media {
   productImages      Product[]         @relation("ProductImage")
   productOgImages    Product[]         @relation("ProductOgImage")
   categoryImages     ProductCategory[] @relation("CategoryImage")
+  brandLogos         Brand[]           @relation("BrandLogo")
   postFeaturedImages BlogPost[]        @relation("PostFeaturedImage")
   postOgImages       BlogPost[]        @relation("PostOgImage")
   leadMagnetImages   LeadMagnet[]      @relation("LeadMagnetImage")
@@ -1046,12 +1076,28 @@ model WebsiteSettings {
   faviconUrl  String?
   ogImageUrl  String?
 
-  // Typography
-  headingFont   String @default("Inter")
-  bodyFont      String @default("Inter")
-  headingWeight String @default("700")
-  bodyWeight    String @default("400")
-  baseFontSize  String @default("16px")
+  // Typography — four roles. An empty value inherits the body font.
+  headingFont          String @default("Inter")
+  bodyFont             String @default("Inter")
+  navFont              String @default("")
+  buttonFont           String @default("")
+  headingWeight        String @default("700")
+  bodyWeight           String @default("400")
+  navWeight            String @default("500")
+  buttonWeight         String @default("600")
+  baseFontSize         String @default("16px")
+  // Responsive overrides. Empty inherits the larger breakpoint.
+  baseFontSizeTablet   String @default("")
+  baseFontSizeMobile   String @default("")
+  headingLineHeight    String @default("1.15")
+  bodyLineHeight       String @default("1.6")
+  headingLetterSpacing String @default("-0.02em")
+  bodyLetterSpacing    String @default("0em")
+  navFontSize          String @default("0.9375rem")
+  buttonFontSize       String @default("0.875rem")
+  headingScale         String @default("1")
+  headingScaleTablet   String @default("")
+  headingScaleMobile   String @default("")
 
   // Colors — stored as hex, exposed as CSS custom properties
   colorPrimary    String @default("#0061FF")
@@ -1077,6 +1123,22 @@ model WebsiteSettings {
   footerNewsletterEnabled Boolean @default(false)
   footerNewsletterFormId  String?
   copyrightText           String?
+
+  // Layout — global defaults every section can override
+  containerWidth       String @default("72rem")
+  containerPadding     String @default("1.5rem")
+  sectionSpacing       String @default("5rem")
+  sectionSpacingMobile String @default("3rem")
+  borderRadius         String @default("0.75rem")
+  cardRadius           String @default("1rem")
+
+  // Buttons
+  buttonRadius         String @default("0.5rem")
+  buttonPaddingX       String @default("1.25rem")
+  buttonPaddingY       String @default("0.625rem")
+  buttonPrimaryStyle   String @default("solid")
+  buttonSecondaryStyle String @default("outline")
+  buttonTextTransform  String @default("none")
 
   // Misc
   defaultCurrency String  @default("INR")

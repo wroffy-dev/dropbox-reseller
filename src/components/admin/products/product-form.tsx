@@ -50,6 +50,8 @@ export type ProductFormValues = {
   galleryIds: string[];
   ogImageId: string | null;
   categoryId: string;
+  brandId: string;
+  featuredOrder: string;
   seoTitle: string;
   seoDescription: string;
   canonicalUrl: string;
@@ -87,6 +89,8 @@ export const EMPTY_PRODUCT: ProductFormValues = {
   galleryIds: [],
   ogImageId: null,
   categoryId: '',
+  brandId: '',
+  featuredOrder: '0',
   seoTitle: '',
   seoDescription: '',
   canonicalUrl: '',
@@ -106,11 +110,13 @@ type TabId = (typeof TABS)[number]['id'];
 export function ProductForm({
   initial,
   categories,
+  brands,
   formIdBySlug,
   mode,
 }: {
   initial: ProductFormValues;
   categories: Array<{ id: string; name: string }>;
+  brands: Array<{ id: string; name: string }>;
   formIdBySlug: Record<string, string>;
   mode: 'create' | 'edit';
 }) {
@@ -135,8 +141,8 @@ export function ProductForm({
       'name', 'slug', 'sku', 'status', 'publishedAt', 'sortOrder', 'shortDescription',
       'description', 'storage', 'minUsers', 'maxUsers', 'billingPeriod', 'currency',
       'monthlyPrice', 'annualPrice', 'compareAtPrice', 'discountPercent', 'priceSuffix',
-      'priceNote', 'ctaLabel', 'ctaUrl', 'categoryId', 'seoTitle', 'seoDescription',
-      'canonicalUrl',
+      'priceNote', 'ctaLabel', 'ctaUrl', 'categoryId', 'brandId', 'featuredOrder',
+      'seoTitle', 'seoDescription', 'canonicalUrl',
     ];
     for (const key of simple) data.set(key, String(values[key] ?? ''));
     data.set('isFeatured', String(values.isFeatured));
@@ -283,13 +289,41 @@ export function ProductForm({
                     ))}
                   </Select>
                 </Field>
-                <Field label="Sort order" htmlFor="sortOrder" hint="Lower numbers appear first.">
+                <Field label="Brand" htmlFor="brandId">
+                  <Select id="brandId" value={values.brandId} onChange={(e) => set('brandId', e.target.value)}>
+                    <option value="">No brand</option>
+                    {brands.map((brand) => (
+                      <option key={brand.id} value={brand.id}>
+                        {brand.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field
+                  label="Sort order"
+                  htmlFor="sortOrder"
+                  hint="Lower numbers appear first. Drag products on the list page to set this visually."
+                >
                   <Input
                     id="sortOrder"
                     type="number"
                     min={0}
                     value={values.sortOrder}
                     onChange={(e) => set('sortOrder', e.target.value)}
+                  />
+                </Field>
+                <Field
+                  label="Featured order"
+                  htmlFor="featuredOrder"
+                  hint="Position among featured products only."
+                >
+                  <Input
+                    id="featuredOrder"
+                    type="number"
+                    min={0}
+                    value={values.featuredOrder}
+                    onChange={(e) => set('featuredOrder', e.target.value)}
+                    disabled={!values.isFeatured}
                   />
                 </Field>
               </div>
@@ -333,7 +367,7 @@ export function ProductForm({
                   checked={values.isFeatured}
                   onChange={(next) => set('isFeatured', next)}
                   label="Featured product"
-                  hint="Featured products fill the “Featured” source in product blocks."
+                  hint="Any number of products can be featured. Order them under Products → Featured."
                 />
               </div>
             </>

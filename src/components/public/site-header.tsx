@@ -93,7 +93,7 @@ export function SiteHeader({ nav, brand }: { nav: ResolvedNavItem[]; brand: Head
                       aria-haspopup="true"
                       onClick={() => setOpenDropdown(openDropdown === item.id ? null : item.id)}
                       className={cn(
-                        'flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                        'nav-tokens flex items-center gap-1 rounded-lg px-3 py-2 transition-colors',
                         isActive(item.href) ? 'text-brand' : 'text-content hover:text-brand',
                       )}
                     >
@@ -133,7 +133,7 @@ export function SiteHeader({ nav, brand }: { nav: ResolvedNavItem[]; brand: Head
                     rel={item.openInNewTab ? 'noopener noreferrer' : undefined}
                     aria-current={isActive(item.href) ? 'page' : undefined}
                     className={cn(
-                      'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      'nav-tokens rounded-lg px-3 py-2 transition-colors',
                       isActive(item.href) ? 'text-brand' : 'text-content hover:text-brand',
                     )}
                   >
@@ -146,12 +146,12 @@ export function SiteHeader({ nav, brand }: { nav: ResolvedNavItem[]; brand: Head
 
           <div className="ml-auto hidden items-center gap-2 lg:flex">
             {brand.secondaryCtaLabel && brand.secondaryCtaUrl ? (
-              <Link href={brand.secondaryCtaUrl} className={buttonClasses('ghost', 'sm')}>
+              <Link href={brand.secondaryCtaUrl} className={buttonClasses('ghost', 'sm', 'btn-tokens')}>
                 {brand.secondaryCtaLabel}
               </Link>
             ) : null}
             {brand.ctaLabel && brand.ctaUrl ? (
-              <Link href={brand.ctaUrl} className={buttonClasses('primary', 'sm')}>
+              <Link href={brand.ctaUrl} className={buttonClasses('primary', 'sm', 'btn-tokens')}>
                 {brand.ctaLabel}
               </Link>
             ) : null}
@@ -204,12 +204,12 @@ export function SiteHeader({ nav, brand }: { nav: ResolvedNavItem[]; brand: Head
           </ul>
           <div className="space-y-2 border-t border-hairline px-4 py-4">
             {brand.ctaLabel && brand.ctaUrl ? (
-              <Link href={brand.ctaUrl} className={buttonClasses('primary', 'lg', 'w-full')}>
+              <Link href={brand.ctaUrl} className={buttonClasses('primary', 'lg', 'w-full btn-tokens')}>
                 {brand.ctaLabel}
               </Link>
             ) : null}
             {brand.secondaryCtaLabel && brand.secondaryCtaUrl ? (
-              <Link href={brand.secondaryCtaUrl} className={buttonClasses('outline', 'lg', 'w-full')}>
+              <Link href={brand.secondaryCtaUrl} className={buttonClasses('outline', 'lg', 'w-full btn-tokens')}>
                 {brand.secondaryCtaLabel}
               </Link>
             ) : null}

@@ -18,9 +18,32 @@
 
   --font-heading: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-nav: var(--font-body);
+  --font-button: var(--font-body);
   --font-heading-weight: 700;
   --font-body-weight: 400;
+  --font-nav-weight: 500;
+  --font-button-weight: 600;
   --font-base-size: 16px;
+  --font-heading-leading: 1.15;
+  --font-body-leading: 1.6;
+  --font-heading-tracking: -0.02em;
+  --font-body-tracking: 0em;
+  --font-nav-size: 0.9375rem;
+  --font-button-size: 0.875rem;
+  --font-heading-scale: 1;
+
+  /* Global layout tokens — a section's own design panel overrides these. */
+  --layout-container: 72rem;
+  --layout-gutter: 1.5rem;
+  --layout-section-spacing: 5rem;
+  --layout-section-spacing-mobile: 3rem;
+  --layout-radius: 0.75rem;
+  --layout-card-radius: 1rem;
+  --btn-radius: 0.5rem;
+  --btn-padding-x: 1.25rem;
+  --btn-padding-y: 0.625rem;
+  --btn-transform: none;
 }
 
 @layer base {
@@ -34,11 +57,15 @@
     @apply bg-surface text-content antialiased;
     font-family: var(--font-body);
     font-weight: var(--font-body-weight);
+    line-height: var(--font-body-leading);
+    letter-spacing: var(--font-body-tracking);
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-heading);
     font-weight: var(--font-heading-weight);
+    line-height: var(--font-heading-leading);
+    letter-spacing: var(--font-heading-tracking);
     @apply text-balance;
   }
 
@@ -108,5 +135,127 @@
   .scroll-x::-webkit-scrollbar { height: 8px; }
   .scroll-x::-webkit-scrollbar-thumb {
     @apply rounded-full bg-hairline;
+  }
+}
+
+@layer components {
+  /*
+    Section design runtime.
+
+    Every CMS section renders as `.cms-section`. Its design panel writes CSS
+    custom properties — inline for desktop, in one media query per breakpoint for
+    tablet and mobile — and the rules below consume them. That keeps arbitrary
+    admin values (37px, 4.5vh, 85%) working without generating any Tailwind.
+  */
+  .cms-section {
+    display: var(--sec-display, block);
+    position: relative;
+    isolation: isolate;
+    margin: var(--sec-mt, 0) var(--sec-mr, 0) var(--sec-mb, 0) var(--sec-ml, 0);
+    padding: var(--sec-pt, var(--layout-section-spacing)) var(--sec-pr, 0)
+             var(--sec-pb, var(--layout-section-spacing)) var(--sec-pl, 0);
+    min-height: var(--sec-min-h, auto);
+    background-color: var(--sec-bg, transparent);
+    color: var(--sec-text, inherit);
+  }
+
+  @media (max-width: 767px) {
+    .cms-section {
+      padding-top: var(--sec-pt, var(--layout-section-spacing-mobile));
+      padding-bottom: var(--sec-pb, var(--layout-section-spacing-mobile));
+    }
+  }
+
+  .cms-section h1,
+  .cms-section h2,
+  .cms-section h3,
+  .cms-section h4 {
+    color: var(--sec-heading-color, inherit);
+  }
+
+  .cms-section :where(h1, h2, h3) {
+    font-size: var(--sec-heading-size, inherit);
+  }
+
+  .cms-container {
+    width: 100%;
+    max-width: var(--sec-max-w, var(--layout-container));
+    margin-inline: auto;
+    padding-inline: var(--sec-px, 1rem);
+    font-size: var(--sec-body-size, inherit);
+    text-align: var(--sec-align, initial);
+  }
+
+  @media (min-width: 640px) {
+    .cms-container { padding-inline: var(--sec-px, var(--layout-gutter)); }
+  }
+
+  /* Background image / gradient layer, painted behind the content. */
+  .cms-section-layer,
+  .cms-section-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  /*
+    Card grid. The renderer resolves the column count per breakpoint (design
+    panel wins over the block's own setting) and writes the three variables
+    below onto the grid element, so no Tailwind column classes are generated.
+  */
+  .cms-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--grid-cols, 3), minmax(0, 1fr));
+    column-gap: var(--sec-col-gap, var(--sec-card-gap, 1.5rem));
+    row-gap: var(--sec-row-gap, var(--sec-card-gap, 1.5rem));
+  }
+
+  @media (max-width: 1023px) {
+    .cms-grid { grid-template-columns: repeat(var(--grid-cols-tablet, 2), minmax(0, 1fr)); }
+  }
+
+  @media (max-width: 767px) {
+    .cms-grid { grid-template-columns: repeat(var(--grid-cols-mobile, 1), minmax(0, 1fr)); }
+  }
+
+  .cms-stack > * + * { margin-top: var(--sec-content-gap, 1rem); }
+
+  /* Section colour overrides reach buttons and links without !important. */
+  .cms-section .cms-btn-primary {
+    background-color: var(--sec-button, rgb(var(--brand-primary)));
+    color: var(--sec-button-text, #fff);
+    border-color: transparent;
+  }
+  .cms-section .cms-btn-outline {
+    border-color: var(--sec-button, rgb(var(--brand-primary)));
+    color: var(--sec-button, rgb(var(--brand-primary)));
+    background-color: transparent;
+  }
+  .cms-section .cms-accent { color: var(--sec-primary, rgb(var(--brand-primary))); }
+  .cms-section .prose-cms a { color: var(--sec-link, rgb(var(--brand-primary))); }
+
+  /* Media constrained by the section's responsive image sizing. */
+  .cms-media {
+    width: var(--sec-img-w, 100%);
+    height: var(--sec-img-h, auto);
+    max-width: 100%;
+  }
+
+  /* Global button tokens from Settings -> Website design. */
+  .btn-tokens {
+    border-radius: var(--btn-radius);
+    padding-inline: var(--btn-padding-x);
+    padding-block: var(--btn-padding-y);
+    font-family: var(--font-button);
+    font-weight: var(--font-button-weight);
+    font-size: var(--font-button-size);
+    text-transform: var(--btn-transform);
+  }
+
+  .nav-tokens {
+    font-family: var(--font-nav);
+    font-weight: var(--font-nav-weight);
+    font-size: var(--font-nav-size);
   }
 }

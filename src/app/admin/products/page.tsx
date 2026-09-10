@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Plus, Tag } from 'lucide-react';
+import { Plus, Tag, ArrowUpDown, Building2 } from 'lucide-react';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
@@ -93,10 +93,20 @@ export default async function ProductsAdmin({
         actions={
           <>
             {can.edit ? (
-              <Link href="/admin/products/categories" className={buttonClasses('outline', 'md')}>
-                <Tag className="h-4 w-4" aria-hidden="true" />
-                Categories
-              </Link>
+              <>
+                <Link href="/admin/products/order" className={buttonClasses('outline', 'md')}>
+                  <ArrowUpDown className="h-4 w-4" aria-hidden="true" />
+                  Order
+                </Link>
+                <Link href="/admin/products/brands" className={buttonClasses('outline', 'md')}>
+                  <Building2 className="h-4 w-4" aria-hidden="true" />
+                  Brands
+                </Link>
+                <Link href="/admin/products/categories" className={buttonClasses('outline', 'md')}>
+                  <Tag className="h-4 w-4" aria-hidden="true" />
+                  Categories
+                </Link>
+              </>
             ) : null}
             {can.create ? (
               <ButtonLink href="/admin/products/new">

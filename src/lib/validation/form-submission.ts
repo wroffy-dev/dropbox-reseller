@@ -52,6 +52,21 @@ export function buildFieldSchema(fields: PublicFormField[]): z.ZodType<Record<st
     let rule: z.ZodTypeAny;
 
     switch (field.type) {
+      // A consent box is a single yes/no the visitor must actively tick when it
+      // is required — it never carries multiple values like a checkbox group.
+      case 'CONSENT': {
+        rule = z
+          .union([z.string(), z.array(z.string())])
+          .transform((v) => (Array.isArray(v) ? (v.length > 0 ? 'true' : '') : v));
+        if (field.isRequired) {
+          rule = rule.refine((v) => v === 'true' || v === 'on' || v === 'checked', {
+            message: `${field.label} must be accepted`,
+          });
+        }
+        shape[field.name] = rule.optional();
+        continue;
+      }
+
       case 'CHECKBOX':
         rule = z.union([z.string(), z.array(z.string())]).transform((v) =>
           Array.isArray(v) ? v.join(', ') : v,
@@ -96,6 +111,26 @@ export function buildFieldSchema(fields: PublicFormField[]): z.ZodType<Record<st
           .refine((v) => !v || allowed.length === 0 || allowed.includes(v), {
             message: 'Choose one of the available options',
           });
+        break;
+      }
+
+      case 'URL': {
+        rule = z
+          .string()
+          .trim()
+          .max(500)
+          .refine((v) => !v || /^(https?:\/\/)?[\w.-]+\.[a-z]{2,}([/?#].*)?$/i.test(v), {
+            message: 'Enter a valid web address',
+          });
+        break;
+      }
+
+      case 'DATE': {
+        rule = z
+          .string()
+          .trim()
+          .max(10)
+          .refine((v) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v), { message: 'Choose a date' });
         break;
       }
 

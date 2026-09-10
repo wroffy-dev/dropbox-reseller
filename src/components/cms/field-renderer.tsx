@@ -3,12 +3,16 @@
 import * as React from 'react';
 import { Plus, Trash, ChevronDown, GripVertical } from 'lucide-react';
 import type { FieldDescriptor } from '@/lib/cms/fields';
+import { isFieldVisible } from '@/lib/cms/fields';
 import { Field, Input, Textarea, Select, Switch, Label } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { MediaPicker } from '@/components/admin/media-picker';
 import { RichTextEditor } from './rich-text-editor';
 import { ProductMultiSelect } from './product-select';
 import { FormSelect } from './form-select';
+import { IconSelect } from './icon-select';
+import { CategorySelect, BrandSelect } from './taxonomy-select';
+import { UnitInput, ColorInput } from './design-controls';
 import { cn } from '@/lib/utils/cn';
 
 export type FieldValues = Record<string, unknown>;
@@ -38,7 +42,7 @@ export function FieldList({
 }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      {fields.map((field) => (
+      {fields.filter((field) => isFieldVisible(field, values)).map((field) => (
         <div key={field.name} className={cn(WIDTH_CLASS[('width' in field && field.width) || 'full'])}>
           <FieldControl
             field={field}
@@ -184,6 +188,59 @@ function FieldControl({
         </Field>
       );
 
+    case 'productCategory':
+      return (
+        <Field label={field.label} htmlFor={id} hint={field.help}>
+          <CategorySelect
+            id={id}
+            value={typeof value === 'string' ? value : ''}
+            onChange={(next) => onChange(next || null)}
+          />
+        </Field>
+      );
+
+    case 'brand':
+      return (
+        <Field label={field.label} htmlFor={id} hint={field.help}>
+          <BrandSelect
+            id={id}
+            value={typeof value === 'string' ? value : ''}
+            onChange={(next) => onChange(next || null)}
+          />
+        </Field>
+      );
+
+    case 'icon':
+      return (
+        <Field label={field.label} hint={field.help}>
+          <IconSelect value={typeof value === 'string' ? value : ''} onChange={onChange} id={id} />
+        </Field>
+      );
+
+    case 'color':
+      return (
+        <ColorInput
+          label={field.label}
+          id={id}
+          hint={field.help}
+          value={typeof value === 'string' ? value : ''}
+          onChange={onChange}
+        />
+      );
+
+    case 'length':
+      return (
+        <Field label={field.label} htmlFor={id} hint={field.help}>
+          <UnitInput
+            id={id}
+            value={typeof value === 'string' ? value : ''}
+            aria-label={field.label}
+            placeholder={field.placeholder}
+            onChange={onChange}
+          />
+        </Field>
+      );
+
     case 'repeater':
       return <Repeater field={field} value={value} onChange={onChange} idPrefix={id} />;
 
@@ -225,7 +282,16 @@ function Repeater({
   const add = () => {
     if (field.max && items.length >= field.max) return;
     const blank: FieldValues = {};
-    for (const sub of field.fields) blank[sub.name] = sub.kind === 'boolean' ? false : '';
+    for (const sub of field.fields) {
+      blank[sub.name] =
+        sub.kind === 'boolean'
+          ? false
+          : sub.kind === 'media' || sub.kind === 'productCategory' || sub.kind === 'brand'
+            ? null
+            : sub.kind === 'repeater' || sub.kind === 'products'
+              ? []
+              : '';
+    }
     commit([...items, blank]);
     setOpenIndex(items.length);
   };

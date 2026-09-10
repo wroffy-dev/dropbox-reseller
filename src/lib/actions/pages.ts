@@ -7,7 +7,7 @@ import { authorize } from '@/lib/auth/guards';
 import { recordAudit } from '@/lib/services/audit';
 import { pageInputSchema, sectionOrderSchema } from '@/lib/validation/page';
 import { blockDefaults, getBlock } from '@/lib/cms/blocks';
-import { sectionSettingsSchema } from '@/lib/cms/section-settings';
+import { parseSectionDesign, DEFAULT_SECTION_DESIGN } from '@/lib/cms/design';
 import { uniqueSlug, pageSlug } from '@/lib/utils/slug';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
 import { sanitizeText } from '@/lib/utils/sanitize';
@@ -317,7 +317,7 @@ export async function addSection(pageId: string, blockType: string): Promise<Act
         name: definition.label,
         sortOrder: (last?.sortOrder ?? 0) + 10,
         content: blockDefaults(blockType) as object,
-        settings: sectionSettingsSchema.parse({}) as object,
+        settings: DEFAULT_SECTION_DESIGN as unknown as object,
       },
     });
 
@@ -358,7 +358,25 @@ export async function updateSection(
       data.content = definition.schema.parse(payload.content);
     }
     if (payload.settings !== undefined) {
-      data.settings = sectionSettingsSchema.parse(payload.settings);
+      // parseSectionDesign never throws — it upgrades the original settings
+      // shape and falls back to defaults — so a half-saved panel can't 500.
+      const design = parseSectionDesign(payload.settings);
+
+      // Anchor IDs address a single element, so they must be unique per page.
+      if (design.anchorId) {
+        const siblings = await prisma.pageSection.findMany({
+          where: { pageId: section.page.id, id: { not: sectionId } },
+          select: { settings: true },
+        });
+        const taken = siblings.some((s) => parseSectionDesign(s.settings).anchorId === design.anchorId);
+        if (taken) {
+          return failure(`Another section on this page already uses the anchor “${design.anchorId}”.`, {
+            anchorId: ['This anchor is already used on this page'],
+          });
+        }
+      }
+
+      data.settings = design as unknown as object;
     }
     if (payload.name !== undefined) data.name = payload.name ? sanitizeText(payload.name) : null;
     if (payload.isVisible !== undefined) data.isVisible = payload.isVisible;
@@ -383,6 +401,10 @@ export async function duplicateSection(sectionId: string): Promise<ActionResult<
     });
     if (!source) return failure('That section no longer exists.');
 
+    // The copy keeps every design value except the anchor: two elements cannot
+    // share one DOM id, and silently duplicating it would break #links.
+    const design = parseSectionDesign(source.settings);
+
     const copy = await prisma.pageSection.create({
       data: {
         pageId: source.pageId,
@@ -391,7 +413,7 @@ export async function duplicateSection(sectionId: string): Promise<ActionResult<
         sortOrder: source.sortOrder + 5,
         isVisible: source.isVisible,
         content: source.content as object,
-        settings: source.settings as object,
+        settings: { ...design, anchorId: '' } as unknown as object,
       },
     });
 

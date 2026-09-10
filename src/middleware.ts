@@ -12,7 +12,7 @@ const THIRTY_DAYS = 60 * 60 * 24 * 30;
 
 /**
  * Middleware responsibilities:
- *  1. Gate /admin behind an authenticated session.
+ *  1. Gate /admin and /preview behind an authenticated session.
  *  2. Capture UTM/referrer attribution into first-touch and last-touch cookies.
  *
  * Database-backed redirects are handled in the catch-all route (Node runtime),
@@ -20,7 +20,9 @@ const THIRTY_DAYS = 60 * 60 * 24 * 30;
  */
 export default auth((request) => {
   const { nextUrl } = request;
-  const isAdmin = nextUrl.pathname.startsWith('/admin');
+  // /preview renders unpublished pages for the admin preview iframe, so it is
+  // gated exactly like /admin. The route itself still checks pages.view.
+  const isAdmin = nextUrl.pathname.startsWith('/admin') || nextUrl.pathname.startsWith('/preview');
   const isLoggedIn = Boolean(request.auth?.user);
 
   if (isAdmin && !isLoggedIn) {
@@ -45,7 +47,13 @@ export default auth((request) => {
 
 function captureAttribution(request: NextRequest, response: NextResponse) {
   const { nextUrl } = request;
-  if (nextUrl.pathname.startsWith('/admin') || nextUrl.pathname.startsWith('/api')) return;
+  if (
+    nextUrl.pathname.startsWith('/admin') ||
+    nextUrl.pathname.startsWith('/preview') ||
+    nextUrl.pathname.startsWith('/api')
+  ) {
+    return;
+  }
 
   const params = nextUrl.searchParams;
   const hasUtm = UTM_KEYS.some((key) => params.get(key));

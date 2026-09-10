@@ -1,19 +1,22 @@
+import Link from 'next/link';
+import Image from 'next/image';
 import { Check, Minus } from 'lucide-react';
-import type { ProductCardsContent, ProductTableContent } from '@/lib/cms/blocks';
+import type { ProductCardsContent, ProductTableContent, ProductGridContent } from '@/lib/cms/blocks';
 import { selectProducts } from '@/lib/services/products';
 import { formatMoney } from '@/lib/utils/money';
 import { cn } from '@/lib/utils/cn';
 import { ProductCard } from '@/components/products/product-card';
 import { ProductCta } from '@/components/products/product-cta';
-import { SectionHeading, gridColsClass } from './shared';
+import { SectionHeading, columnVars, type BlockContext } from './shared';
 
 export async function ProductCardsBlock({
   content,
-  inverted,
+  ctx,
 }: {
   content: ProductCardsContent;
-  inverted: boolean;
+  ctx: BlockContext;
 }) {
+  const inverted = ctx.inverted;
   const products = await selectProducts({
     source: content.source,
     productIds: content.productIds,
@@ -39,7 +42,7 @@ export async function ProductCardsBlock({
         inverted={inverted}
         className="mb-12"
       />
-      <div className={cn('grid items-stretch gap-6', gridColsClass(content.columns))}>
+      <div className="cms-grid items-stretch" style={columnVars(ctx.design, content.columns)}>
         {products.map((product) => (
           <ProductCard
             key={product.id}
@@ -65,11 +68,12 @@ export async function ProductCardsBlock({
  */
 export async function ProductTableBlock({
   content,
-  inverted,
+  ctx,
 }: {
   content: ProductTableContent;
-  inverted: boolean;
+  ctx: BlockContext;
 }) {
+  const inverted = ctx.inverted;
   const products = await selectProducts({
     source: content.source,
     productIds: content.productIds,
@@ -256,5 +260,176 @@ export async function ProductTableBlock({
         ))}
       </div>
     </>
+  );
+}
+
+/**
+ * Product grid.
+ *
+ * The reusable way to put products on any CMS page. Source, ordering, column
+ * count and every show/hide toggle come from the section's own configuration,
+ * so the same block covers a pricing page, a category page and a homepage rail.
+ */
+export async function ProductGridBlock({
+  content,
+  ctx,
+}: {
+  content: ProductGridContent;
+  ctx: BlockContext;
+}) {
+  const products = await selectProducts({
+    source: content.source,
+    productIds: content.productIds,
+    categoryId: content.categoryId,
+    brandId: content.brandId,
+    limit: content.limit,
+  });
+
+  const heading = (
+    <SectionHeading
+      eyebrow={content.eyebrow}
+      heading={content.heading}
+      description={content.description}
+      inverted={ctx.inverted}
+      className={content.heading || content.description ? 'mb-10' : undefined}
+    />
+  );
+
+  if (products.length === 0) {
+    return (
+      <>
+        {heading}
+        <p
+          className={cn(
+            'rounded-[var(--layout-card-radius)] border border-dashed px-4 py-8 text-center text-sm',
+            ctx.inverted ? 'border-white/25 text-white/70' : 'border-hairline text-muted',
+          )}
+        >
+          No published products match this section yet.
+        </p>
+      </>
+    );
+  }
+
+  if (content.layout === 'list') {
+    return (
+      <>
+        {heading}
+        <ul className="space-y-4">
+          {products.map((product) => (
+            <li
+              key={product.id}
+              className={cn(
+                'flex flex-col gap-5 rounded-[var(--layout-card-radius)] p-5 sm:flex-row sm:items-center',
+                ctx.inverted ? 'bg-white/10' : 'border border-hairline bg-surface shadow-sm',
+              )}
+            >
+              {content.showImage && product.imageUrl ? (
+                <Image
+                  src={product.imageUrl}
+                  alt={product.imageAlt ?? product.name}
+                  width={72}
+                  height={72}
+                  loading="lazy"
+                  className="h-16 w-16 shrink-0 rounded-lg object-cover"
+                />
+              ) : null}
+
+              <div className="min-w-0 flex-1">
+                <h3 className={cn('font-heading text-base font-bold', ctx.inverted ? 'text-white' : 'text-content')}>
+                  <Link href={`/products/${product.slug}`} className="hover:underline">
+                    {product.name}
+                  </Link>
+                </h3>
+                {content.showDescription && product.shortDescription ? (
+                  <p className={cn('mt-1 text-sm leading-relaxed', ctx.inverted ? 'text-white/75' : 'text-muted')}>
+                    {product.shortDescription}
+                  </p>
+                ) : null}
+                {content.showFeatures && product.features.length > 0 ? (
+                  <ul className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
+                    {product.features.slice(0, 4).map((feature, index) => (
+                      <li
+                        key={index}
+                        className={cn(
+                          'flex items-center gap-1.5 text-xs',
+                          ctx.inverted ? 'text-white/70' : 'text-muted',
+                        )}
+                      >
+                        <Check className="h-3 w-3 shrink-0 cms-accent" aria-hidden="true" />
+                        {feature}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+
+              {content.showPrice ? (
+                <PriceTag product={product} billing={content.billing} inverted={ctx.inverted} />
+              ) : null}
+
+              {content.showCta ? (
+                <ProductCta
+                  product={product}
+                  label={content.ctaLabel || undefined}
+                  size="sm"
+                  className="shrink-0"
+                  ctaLocation="product-grid"
+                />
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {heading}
+      <div className="cms-grid items-stretch" style={columnVars(ctx.design, content.columns || 3)}>
+        {products.map((product) => (
+          <ProductCard
+            key={product.id}
+            product={product}
+            billing={content.billing}
+            showPrice={content.showPrice}
+            showFeatures={content.showFeatures}
+            showImage={content.showImage}
+            showDescription={content.showDescription}
+            showCta={content.showCta}
+            ctaLabel={content.ctaLabel || undefined}
+            ctaLocation="product-grid"
+          />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function PriceTag({
+  product,
+  billing,
+  inverted,
+}: {
+  product: Awaited<ReturnType<typeof selectProducts>>[number];
+  billing: 'monthly' | 'annual';
+  inverted: boolean;
+}) {
+  const price = billing === 'annual' ? product.annualPrice : product.monthlyPrice;
+  if (!price) {
+    return (
+      <span className={cn('shrink-0 text-sm', inverted ? 'text-white/70' : 'text-muted')}>
+        {product.priceNote || 'On request'}
+      </span>
+    );
+  }
+  return (
+    <span className={cn('shrink-0 font-heading text-lg font-bold', inverted ? 'text-white' : 'text-content')}>
+      {formatMoney(price, product.currency)}
+      <span className={cn('ml-1 text-xs font-normal', inverted ? 'text-white/65' : 'text-muted')}>
+        {billing === 'annual' ? '/year' : '/month'}
+      </span>
+    </span>
   );
 }

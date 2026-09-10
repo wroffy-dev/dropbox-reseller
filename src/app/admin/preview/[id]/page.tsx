@@ -1,13 +1,10 @@
-import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { requirePermission } from '@/lib/auth/guards';
 import { getPageForPreview } from '@/lib/services/pages';
-import { getWebsiteSettings } from '@/lib/services/settings';
-import { getNavigations, getPrimaryNavigation } from '@/lib/services/navigation';
-import { SectionList } from '@/components/cms/section-renderer';
-import { SiteHeader } from '@/components/public/site-header';
-import { SiteFooter } from '@/components/public/site-footer';
+import { PreviewFrame } from '@/components/admin/preview-frame';
+import { ContentStatusBadge } from '@/components/admin/lead-status-badge';
 
 export const metadata: Metadata = {
   title: 'Preview',
@@ -18,7 +15,10 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Authenticated preview of any page, published or not.
- * Renders with the real header/footer so what you see matches the live site.
+ *
+ * The page itself renders at /preview/[id] inside an iframe — outside /admin so
+ * the frame gets no admin chrome — which means the tablet and mobile widths
+ * exercise the real media queries rather than just shrinking a div.
  */
 export default async function PreviewPage({ params }: { params: Promise<{ id: string }> }) {
   await requirePermission('pages.view');
@@ -27,51 +27,26 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
   const page = await getPageForPreview(id);
   if (!page) notFound();
 
-  const [site, nav, footerMenus, legalMenus] = await Promise.all([
-    getWebsiteSettings(),
-    getPrimaryNavigation(),
-    getNavigations('FOOTER'),
-    getNavigations('LEGAL'),
-  ]);
-
   return (
-    <div className="min-h-screen bg-surface">
-      <div className="sticky top-0 z-[60] flex flex-wrap items-center gap-3 bg-amber-500 px-4 py-2 text-sm text-amber-950">
+    <div className="fixed inset-0 z-50 flex flex-col bg-surface">
+      <div className="flex flex-wrap items-center gap-3 bg-amber-500 px-4 py-2 text-sm text-amber-950">
         <strong className="font-semibold">Preview</strong>
-        <span>
-          “{page.title}” — {page.status.toLowerCase()}
-          {page.status !== 'PUBLISHED' ? ' (not visible to the public)' : ''}
+        <span className="min-w-0 truncate">
+          “{page.title}”
+          {page.status !== 'PUBLISHED' ? ' — draft changes are not on the live website yet' : ''}
         </span>
-        <Link href={`/admin/pages/${page.id}`} className="ml-auto font-medium underline underline-offset-2">
+        <span className="shrink-0">
+          <ContentStatusBadge status={page.status} />
+        </span>
+        <Link
+          href={`/admin/pages/${page.id}`}
+          className="ml-auto shrink-0 font-medium underline underline-offset-2"
+        >
           Back to editor
         </Link>
       </div>
 
-      {page.showHeader ? (
-        <SiteHeader
-          nav={nav}
-          brand={{
-            siteName: site.siteName,
-            logoUrl: site.logoUrl,
-            ctaLabel: site.headerCtaLabel,
-            ctaUrl: site.headerCtaUrl,
-            secondaryCtaLabel: site.headerSecondaryCtaLabel,
-            secondaryCtaUrl: site.headerSecondaryCtaUrl,
-            announcement:
-              site.announcementEnabled && site.announcementText
-                ? { text: site.announcementText, url: site.announcementUrl }
-                : null,
-          }}
-        />
-      ) : null}
-
-      <main>
-        <SectionList sections={page.sections} />
-      </main>
-
-      {page.showFooter ? (
-        <SiteFooter settings={site} columns={footerMenus} legal={legalMenus[0]?.items ?? []} />
-      ) : null}
+      <PreviewFrame src={`/preview/${page.id}`} title={`Preview of ${page.title}`} />
     </div>
   );
 }

@@ -26,6 +26,53 @@ const hexColor = z
 
 const fontWeight = z.string().trim().regex(/^[1-9]00$/, 'Choose a weight between 100 and 900');
 
+/** A CSS length the admin typed, e.g. "16px", "1.5rem", "80%". */
+const LENGTH_RE = /^\d{1,4}(\.\d+)?(px|rem|em|%)$/;
+const NUMBER_RE = /^\d(\.\d+)?$/;
+const TRACKING_RE = /^-?\d(\.\d+)?(em|px|rem)$/;
+
+/**
+ * Design tokens all carry a default.
+ *
+ * The settings form posts every field, but a partial post — an older cached
+ * client, or a caller that only wants to change the site name — must not fail
+ * validation on a token it never sent. An omitted or blank value falls back to
+ * the documented default rather than rejecting the whole save.
+ */
+const token = (pattern: RegExp, fallback: string, message: string) =>
+  z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v === undefined || v === '' ? fallback : v))
+    .refine((v) => pattern.test(v), message);
+
+/** Same, but an empty value is meaningful: it means "inherit". */
+const optionalToken = (pattern: RegExp, message: string) =>
+  z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => v ?? '')
+    .refine((v) => v === '' || pattern.test(v), message);
+
+const fontSize = (fallback: string, message: string) => token(LENGTH_RE, fallback, message);
+const cssLength = (fallback: string, message: string) => token(LENGTH_RE, fallback, message);
+const unitlessNumber = (fallback: string) =>
+  token(NUMBER_RE, fallback, 'Use a plain number such as 1.5');
+const optionalUnitlessNumber = optionalToken(NUMBER_RE, 'Use a plain number such as 1.2');
+const optionalFontSize = optionalToken(LENGTH_RE, 'Use a size like 15px or 0.95rem');
+const letterSpacing = (fallback: string) =>
+  token(TRACKING_RE, fallback, 'Use a value like -0.02em or 1px');
+
+/** An optional font name; blank means "inherit the body font". */
+const optionalFontName = z
+  .string()
+  .trim()
+  .max(80)
+  .optional()
+  .transform((v) => v ?? '');
+
 const websiteSettingsSchema = z.object({
   siteName: z.string().trim().min(1, 'Site name is required').max(120),
   siteTitle: z.string().trim().max(200),
@@ -49,12 +96,39 @@ const websiteSettingsSchema = z.object({
 
   headingFont: z.string().trim().min(1).max(80),
   bodyFont: z.string().trim().min(1).max(80),
+  // Empty means "inherit the body font" and costs no extra font request.
+  navFont: optionalFontName,
+  buttonFont: optionalFontName,
   headingWeight: fontWeight,
   bodyWeight: fontWeight,
-  baseFontSize: z
-    .string()
-    .trim()
-    .regex(/^\d{1,2}(\.\d+)?(px|rem)$/, 'Use a size like 16px or 1rem'),
+  navWeight: fontWeight.optional().transform((v) => v ?? '500'),
+  buttonWeight: fontWeight.optional().transform((v) => v ?? '600'),
+  baseFontSize: fontSize('16px', 'Use a size like 16px or 1rem'),
+  baseFontSizeTablet: optionalFontSize,
+  baseFontSizeMobile: optionalFontSize,
+  headingLineHeight: unitlessNumber('1.15'),
+  bodyLineHeight: unitlessNumber('1.6'),
+  headingLetterSpacing: letterSpacing('-0.02em'),
+  bodyLetterSpacing: letterSpacing('0em'),
+  navFontSize: fontSize('0.9375rem', 'Use a size like 15px or 0.9375rem'),
+  buttonFontSize: fontSize('0.875rem', 'Use a size like 14px or 0.875rem'),
+  headingScale: unitlessNumber('1'),
+  headingScaleTablet: optionalUnitlessNumber,
+  headingScaleMobile: optionalUnitlessNumber,
+
+  containerWidth: cssLength('72rem', 'Use a width like 1200px or 72rem'),
+  containerPadding: cssLength('1.5rem', 'Use a value like 24px or 1.5rem'),
+  sectionSpacing: cssLength('5rem', 'Use a value like 80px or 5rem'),
+  sectionSpacingMobile: cssLength('3rem', 'Use a value like 48px or 3rem'),
+  borderRadius: cssLength('0.75rem', 'Use a value like 12px or 0.75rem'),
+  cardRadius: cssLength('1rem', 'Use a value like 16px or 1rem'),
+
+  buttonRadius: cssLength('0.5rem', 'Use a value like 8px or 0.5rem'),
+  buttonPaddingX: cssLength('1.25rem', 'Use a value like 20px or 1.25rem'),
+  buttonPaddingY: cssLength('0.625rem', 'Use a value like 10px or 0.625rem'),
+  buttonPrimaryStyle: z.enum(['solid', 'outline', 'soft']).catch('solid').default('solid'),
+  buttonSecondaryStyle: z.enum(['solid', 'outline', 'soft']).catch('outline').default('outline'),
+  buttonTextTransform: z.enum(['none', 'uppercase', 'capitalize']).catch('none').default('none'),
 
   colorPrimary: hexColor,
   colorSecondary: hexColor,
@@ -78,6 +152,11 @@ const websiteSettingsSchema = z.object({
   defaultCurrency: z.string().trim().length(3),
   maintenanceMode: z.coerce.boolean().default(false),
 });
+
+/** Keeps a font family safe to interpolate into CSS. */
+function cleanFontName(value: string): string {
+  return value.replace(/["'`;{}<>()\\]/g, '').trim().slice(0, 80);
+}
 
 export async function saveWebsiteSettings(formData: FormData): Promise<ActionResult> {
   try {
@@ -114,6 +193,12 @@ export async function saveWebsiteSettings(formData: FormData): Promise<ActionRes
       faviconUrl: safeUrl(input.faviconUrl),
       ogImageUrl: safeUrl(input.ogImageUrl),
       defaultCurrency: input.defaultCurrency.toUpperCase(),
+      // Font names are interpolated into a CSS custom property, so strip any
+      // character that could end the declaration early.
+      headingFont: cleanFontName(input.headingFont),
+      bodyFont: cleanFontName(input.bodyFont),
+      navFont: cleanFontName(input.navFont),
+      buttonFont: cleanFontName(input.buttonFont),
     };
 
     await prisma.websiteSettings.upsert({

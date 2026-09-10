@@ -43,12 +43,16 @@ export default async function EditProduct({ params }: { params: Promise<{ id: st
   await requirePermission('products.view');
   const { id } = await params;
 
-  const [product, categories, forms] = await Promise.all([
+  const [product, categories, brands, forms] = await Promise.all([
     prisma.product.findFirst({
       where: { id, deletedAt: null },
       include: { ctaForm: { select: { slug: true } }, _count: { select: { leads: true } } },
     }),
-    prisma.productCategory.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true } }),
+    prisma.productCategory.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true },
+    }),
+    prisma.brand.findMany({ orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: { id: true, name: true } }),
     prisma.form.findMany({ where: { deletedAt: null }, select: { id: true, slug: true } }),
   ]);
   if (!product) notFound();
@@ -62,6 +66,7 @@ export default async function EditProduct({ params }: { params: Promise<{ id: st
     publishedAt: toLocalInput(product.publishedAt),
     isFeatured: product.isFeatured,
     sortOrder: String(product.sortOrder),
+    featuredOrder: String(product.featuredOrder),
     shortDescription: product.shortDescription ?? '',
     description: product.description ?? '',
     storage: product.storage ?? '',
@@ -85,6 +90,7 @@ export default async function EditProduct({ params }: { params: Promise<{ id: st
     galleryIds: asStringArray(product.galleryIds),
     ogImageId: product.ogImageId,
     categoryId: product.categoryId ?? '',
+    brandId: product.brandId ?? '',
     seoTitle: product.seoTitle ?? '',
     seoDescription: product.seoDescription ?? '',
     canonicalUrl: product.canonicalUrl ?? '',
@@ -117,6 +123,7 @@ export default async function EditProduct({ params }: { params: Promise<{ id: st
       <ProductForm
         initial={initial}
         categories={categories}
+        brands={brands}
         formIdBySlug={Object.fromEntries(forms.map((f) => [f.slug, f.id]))}
         mode="edit"
       />

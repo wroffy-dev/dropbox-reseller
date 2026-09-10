@@ -270,6 +270,19 @@ async function seedProducts() {
     },
   });
 
+  // Brands are the second axis a product section can filter by.
+  const brand = await prisma.brand.upsert({
+    where: { slug: 'dropbox' },
+    update: {},
+    create: {
+      slug: 'dropbox',
+      name: 'Dropbox',
+      description: 'Cloud storage and collaboration for teams.',
+      websiteUrl: 'https://www.dropbox.com',
+      sortOrder: 1,
+    },
+  });
+
   for (const p of PRODUCTS) {
     await prisma.product.upsert({
       where: { slug: p.slug },
@@ -300,6 +313,9 @@ async function seedProducts() {
         benefits: p.benefits,
         specs: p.specs,
         categoryId: category.id,
+        brandId: brand.id,
+        // Featured ordering is explicit, never derived from creation date.
+        featuredOrder: p.sortOrder,
         seoTitle: `${p.name} — pricing and features`,
         seoDescription: p.shortDescription,
       },

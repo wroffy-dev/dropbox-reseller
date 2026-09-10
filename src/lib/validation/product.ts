@@ -47,6 +47,8 @@ export const productInputSchema = z
       .refine((d) => d === null || !Number.isNaN(d.getTime()), 'Enter a valid date'),
     isFeatured: z.coerce.boolean().default(false),
     sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
+    /** Position within the featured rail, independent of the catalogue order. */
+    featuredOrder: z.coerce.number().int().min(0).max(9999).default(0),
 
     shortDescription: optional(500),
     description: optional(20000),
@@ -78,6 +80,7 @@ export const productInputSchema = z
     imageId: optional(40),
     galleryIds: z.array(z.string().max(40)).max(20).default([]),
     categoryId: optional(40),
+    brandId: optional(40),
 
     seoTitle: optional(200),
     seoDescription: optional(400),
@@ -105,4 +108,16 @@ export const productCategorySchema = z.object({
   description: optional(1000),
   sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
   imageId: optional(40),
+});
+
+export const brandSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(120),
+  slug: z
+    .string()
+    .max(160)
+    .transform((v) => slugify(v)),
+  description: optional(1000),
+  websiteUrl: optional(300),
+  sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
+  logoId: optional(40),
 });

@@ -11,9 +11,10 @@ import { getMedia, getMediaByIds } from '@/lib/services/media';
 import { resolveCmsIcon } from '@/components/ui/icons';
 import { cn } from '@/lib/utils/cn';
 import { safeUrl } from '@/lib/utils/sanitize';
-import { SectionHeading, CtaLink, RichText, gridColsClass } from './shared';
+import { SectionHeading, CtaLink, RichText, type BlockContext, columnVars } from './shared';
 
-export function RichTextBlock({ content, inverted }: { content: RichTextContent; inverted: boolean }) {
+export function RichTextBlock({ content, ctx }: { content: RichTextContent; ctx: BlockContext }) {
+  const inverted = ctx.inverted;
   return (
     <div
       className={cn(
@@ -38,11 +39,12 @@ export function RichTextBlock({ content, inverted }: { content: RichTextContent;
 
 export async function ImageContentBlock({
   content,
-  inverted,
+  ctx,
 }: {
   content: ImageContentContent;
-  inverted: boolean;
+  ctx: BlockContext;
 }) {
+  const inverted = ctx.inverted;
   const image = await getMedia(content.imageId);
 
   return (
@@ -90,11 +92,12 @@ export async function ImageContentBlock({
 
 export async function FeatureGridBlock({
   content,
-  inverted,
+  ctx,
 }: {
   content: FeatureGridContent;
-  inverted: boolean;
+  ctx: BlockContext;
 }) {
+  const inverted = ctx.inverted;
   const items = content.items.filter((item) => item.title || item.description);
   const media = await getMediaByIds(items.map((i) => i.imageId).filter((id): id is string => Boolean(id)));
 
@@ -107,7 +110,7 @@ export async function FeatureGridBlock({
         className="mb-12"
       />
 
-      <ul className={cn('grid gap-5', gridColsClass(content.columns))}>
+      <ul className="cms-grid" style={columnVars(ctx.design, content.columns)}>
         {items.map((item, index) => {
           const Icon = resolveCmsIcon(item.icon);
           const image = item.imageId ? media.get(item.imageId) : null;
@@ -159,7 +162,8 @@ export async function FeatureGridBlock({
   );
 }
 
-export function StatsBlock({ content, inverted }: { content: StatsContent; inverted: boolean }) {
+export function StatsBlock({ content, ctx }: { content: StatsContent; ctx: BlockContext }) {
+  const inverted = ctx.inverted;
   const items = content.items.filter((i) => i.value || i.label);
   return (
     <>
@@ -169,12 +173,7 @@ export function StatsBlock({ content, inverted }: { content: StatsContent; inver
         inverted={inverted}
         className="mb-10"
       />
-      <dl
-        className={cn(
-          'grid gap-6 text-center',
-          items.length >= 4 ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3',
-        )}
-      >
+      <dl className="cms-grid text-center" style={columnVars(ctx.design, items.length >= 4 ? 4 : 3)}>
         {items.map((item, index) => (
           <div key={index} className={cn('rounded-xl p-5', inverted ? 'bg-white/10' : 'bg-muted/[0.05]')}>
             <dt className="sr-only">{item.label}</dt>
@@ -198,7 +197,8 @@ export function StatsBlock({ content, inverted }: { content: StatsContent; inver
   );
 }
 
-export function StepsBlock({ content, inverted }: { content: StepsContent; inverted: boolean }) {
+export function StepsBlock({ content, ctx }: { content: StepsContent; ctx: BlockContext }) {
+  const inverted = ctx.inverted;
   const items = content.items.filter((i) => i.title || i.description);
   return (
     <>
@@ -208,7 +208,7 @@ export function StepsBlock({ content, inverted }: { content: StepsContent; inver
         inverted={inverted}
         className="mb-12"
       />
-      <ol className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+      <ol className="cms-grid" style={columnVars(ctx.design, 3)}>
         {items.map((item, index) => (
           <li key={index} className="relative">
             <span
@@ -233,7 +233,8 @@ export function StepsBlock({ content, inverted }: { content: StepsContent; inver
   );
 }
 
-export async function LogoWallBlock({ content, inverted }: { content: LogoWallContent; inverted: boolean }) {
+export async function LogoWallBlock({ content, ctx }: { content: LogoWallContent; ctx: BlockContext }) {
+  const inverted = ctx.inverted;
   const logos = content.logos.filter((l) => l.label || l.imageId);
   const media = await getMediaByIds(logos.map((l) => l.imageId).filter((id): id is string => Boolean(id)));
 

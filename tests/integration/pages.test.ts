@@ -18,6 +18,7 @@ const {
   deletePage,
 } = await import('@/lib/actions/pages');
 const { getPublishedPage } = await import('@/lib/services/pages');
+const { parseSectionDesign } = await import('@/lib/cms/design');
 
 const created: string[] = [];
 const suffix = uniqueSuffix();
@@ -93,6 +94,8 @@ describe('page lifecycle', () => {
   it('validates section content against the block schema', async () => {
     const [hero] = await prisma.pageSection.findMany({ where: { pageId }, orderBy: { sortOrder: 'asc' } });
 
+    // Settings written in the original v1 shape are accepted and upgraded, so a
+    // page built before the design system still saves without losing its look.
     const good = await updateSection(hero!.id, {
       content: { heading: 'Real heading', description: 'Body copy', alignment: 'center' },
       settings: { background: 'brand', paddingTop: 'xl' },
@@ -101,7 +104,10 @@ describe('page lifecycle', () => {
 
     const stored = await prisma.pageSection.findUniqueOrThrow({ where: { id: hero!.id } });
     expect((stored.content as Record<string, unknown>).heading).toBe('Real heading');
-    expect((stored.settings as Record<string, unknown>).background).toBe('brand');
+
+    const design = parseSectionDesign(stored.settings);
+    expect(design.preset).toBe('brand');
+    expect(design.desktop.padding.top).toBe('7rem');
 
     const bad = await updateSection(hero!.id, { content: { alignment: 'diagonal' } });
     expect(bad.ok).toBe(false);

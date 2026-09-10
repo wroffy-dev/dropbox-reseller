@@ -3,9 +3,10 @@ import type { FaqContent, TestimonialsContent } from '@/lib/cms/blocks';
 import { getMediaByIds } from '@/lib/services/media';
 import { cn } from '@/lib/utils/cn';
 import { initials } from '@/lib/utils/format';
-import { SectionHeading, RichText, gridColsClass } from './shared';
+import { SectionHeading, RichText, type BlockContext, columnVars } from './shared';
 
-export function FaqBlock({ content, inverted }: { content: FaqContent; inverted: boolean }) {
+export function FaqBlock({ content, ctx }: { content: FaqContent; ctx: BlockContext }) {
+  const inverted = ctx.inverted;
   const items = content.items.filter((i) => i.question.trim());
   if (items.length === 0) return null;
 
@@ -65,11 +66,12 @@ export function FaqBlock({ content, inverted }: { content: FaqContent; inverted:
 
 export async function TestimonialsBlock({
   content,
-  inverted,
+  ctx,
 }: {
   content: TestimonialsContent;
-  inverted: boolean;
+  ctx: BlockContext;
 }) {
+  const inverted = ctx.inverted;
   const items = content.items.filter((i) => i.quote.trim());
   if (items.length === 0) return null;
 
@@ -83,7 +85,7 @@ export async function TestimonialsBlock({
         inverted={inverted}
         className="mb-12"
       />
-      <ul className={cn('grid gap-6', gridColsClass(content.columns))}>
+      <ul className="cms-grid" style={columnVars(ctx.design, content.columns)}>
         {items.map((item, index) => {
           const image = item.imageId ? media.get(item.imageId) : null;
           return (

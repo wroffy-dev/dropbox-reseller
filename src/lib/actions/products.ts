@@ -6,7 +6,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { authorize } from '@/lib/auth/guards';
 import { recordAudit } from '@/lib/services/audit';
-import { productInputSchema, productCategorySchema } from '@/lib/validation/product';
+import { productInputSchema, productCategorySchema, brandSchema } from '@/lib/validation/product';
 import { uniqueSlug, slugify } from '@/lib/utils/slug';
 import { toDecimal } from '@/lib/utils/money';
 import { sanitizeHtml, sanitizeText } from '@/lib/utils/sanitize';
@@ -38,6 +38,7 @@ function readProductForm(formData: FormData) {
     publishedAt: formData.get('publishedAt') || null,
     isFeatured: formData.get('isFeatured') === 'true',
     sortOrder: formData.get('sortOrder') || 0,
+    featuredOrder: formData.get('featuredOrder') || 0,
     shortDescription: formData.get('shortDescription'),
     description: formData.get('description'),
     storage: formData.get('storage'),
@@ -60,6 +61,7 @@ function readProductForm(formData: FormData) {
     imageId: formData.get('imageId'),
     galleryIds: parseJsonField<string[]>(formData.get('galleryIds'), []),
     categoryId: formData.get('categoryId'),
+    brandId: formData.get('brandId'),
     seoTitle: formData.get('seoTitle'),
     seoDescription: formData.get('seoDescription'),
     canonicalUrl: formData.get('canonicalUrl'),
@@ -75,6 +77,7 @@ function toPrismaData(input: ReturnType<typeof readProductForm>) {
     status: input.status,
     isFeatured: input.isFeatured,
     sortOrder: input.sortOrder,
+    featuredOrder: input.featuredOrder,
     shortDescription: input.shortDescription ? sanitizeText(input.shortDescription) : null,
     description: input.description ? sanitizeHtml(input.description) : null,
     storage: input.storage,
@@ -99,6 +102,7 @@ function toPrismaData(input: ReturnType<typeof readProductForm>) {
     imageId: input.imageId,
     galleryIds: input.galleryIds as Prisma.InputJsonValue,
     categoryId: input.categoryId,
+    brandId: input.brandId,
     seoTitle: input.seoTitle,
     seoDescription: input.seoDescription,
     canonicalUrl: input.canonicalUrl,
@@ -241,20 +245,97 @@ export async function setProductStatus(
   }
 }
 
+/**
+ * Featured is a plain flag, so any number of products can carry it.
+ *
+ * Newly featured products join the end of the featured order rather than
+ * jumping to the front, which keeps an existing arrangement stable.
+ */
 export async function toggleProductFeatured(productId: string): Promise<ActionResult> {
   try {
     const user = await authorize('products.edit');
     const product = await prisma.product.findUnique({ where: { id: productId } });
     if (!product) return failure('That product no longer exists.');
 
+    const nextFeatured = !product.isFeatured;
+    let featuredOrder = product.featuredOrder;
+
+    if (nextFeatured) {
+      const last = await prisma.product.findFirst({
+        where: { isFeatured: true, deletedAt: null },
+        orderBy: { featuredOrder: 'desc' },
+        select: { featuredOrder: true },
+      });
+      featuredOrder = (last?.featuredOrder ?? 0) + 10;
+    }
+
     await prisma.product.update({
       where: { id: productId },
-      data: { isFeatured: !product.isFeatured, updatedById: user.id },
+      data: { isFeatured: nextFeatured, featuredOrder, updatedById: user.id },
+    });
+
+    await recordAudit({
+      actor: user,
+      action: nextFeatured ? 'featured' : 'unfeatured',
+      entity: 'Product',
+      entityId: productId,
+      summary: `${nextFeatured ? 'Marked' : 'Removed'} “${product.name}” ${nextFeatured ? 'as featured' : 'from featured'}`,
     });
 
     revalidatePath('/admin/products');
     revalidateProduct(product.slug);
     return success(undefined, product.isFeatured ? 'Removed from featured.' : 'Marked as featured.');
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+const reorderSchema = z.object({
+  order: z.array(z.string().min(1)).min(1).max(500),
+  scope: z.enum(['catalogue', 'featured']).default('catalogue'),
+});
+
+/**
+ * Persists a manual product order.
+ *
+ * `catalogue` writes `sortOrder`, `featured` writes `featuredOrder`. Both are
+ * stored in the database so the arrangement survives restarts and is never
+ * derived from creation date.
+ */
+export async function reorderProducts(input: unknown): Promise<ActionResult> {
+  try {
+    const user = await authorize('products.edit');
+    const { order, scope } = reorderSchema.parse(input);
+
+    const owned = await prisma.product.findMany({
+      where: { id: { in: order }, deletedAt: null },
+      select: { id: true },
+    });
+    const ownedIds = new Set(owned.map((p) => p.id));
+    if (order.some((id) => !ownedIds.has(id))) return failure('Invalid product order.');
+
+    await prisma.$transaction(
+      order.map((id, index) =>
+        prisma.product.update({
+          where: { id },
+          data:
+            scope === 'featured'
+              ? { featuredOrder: (index + 1) * 10, updatedById: user.id }
+              : { sortOrder: (index + 1) * 10, updatedById: user.id },
+        }),
+      ),
+    );
+
+    await recordAudit({
+      actor: user,
+      action: 'reordered',
+      entity: 'Product',
+      summary: `Reordered ${order.length} ${scope === 'featured' ? 'featured product' : 'product'}(s)`,
+    });
+
+    revalidatePath('/admin/products');
+    revalidatePath('/', 'layout');
+    return success(undefined, 'Order saved.');
   } catch (error) {
     return toActionError(error);
   }
@@ -482,10 +563,31 @@ export async function bulkProductAction(input: unknown): Promise<ActionResult> {
         ),
       );
     } else if (action === 'feature' || action === 'unfeature') {
-      await prisma.product.updateMany({
-        where: { id: { in: products.map((p) => p.id) } },
-        data: { isFeatured: action === 'feature', updatedById: user.id },
-      });
+      if (action === 'feature') {
+        // Append to the featured order so an existing arrangement is preserved.
+        const last = await prisma.product.findFirst({
+          where: { isFeatured: true, deletedAt: null },
+          orderBy: { featuredOrder: 'desc' },
+          select: { featuredOrder: true },
+        });
+        let cursor = last?.featuredOrder ?? 0;
+        await prisma.$transaction(
+          products
+            .filter((p) => !p.isFeatured)
+            .map((product) => {
+              cursor += 10;
+              return prisma.product.update({
+                where: { id: product.id },
+                data: { isFeatured: true, featuredOrder: cursor, updatedById: user.id },
+              });
+            }),
+        );
+      } else {
+        await prisma.product.updateMany({
+          where: { id: { in: products.map((p) => p.id) } },
+          data: { isFeatured: false, updatedById: user.id },
+        });
+      }
     } else {
       const status = action === 'publish' ? 'PUBLISHED' : action === 'draft' ? 'DRAFT' : 'ARCHIVED';
       await prisma.product.updateMany({
@@ -508,6 +610,108 @@ export async function bulkProductAction(input: unknown): Promise<ActionResult> {
     revalidatePath('/admin/products');
     revalidatePath('/', 'layout');
     return success(undefined, `${products.length} product(s) updated.`);
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Brands
+// ---------------------------------------------------------------------------
+
+export async function saveBrand(
+  brandId: string | null,
+  formData: FormData,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const user = await authorize('products.edit');
+    const input = brandSchema.parse({
+      name: formData.get('name'),
+      slug: formData.get('slug') || String(formData.get('name') ?? ''),
+      description: formData.get('description'),
+      websiteUrl: formData.get('websiteUrl'),
+      sortOrder: formData.get('sortOrder') || 0,
+      logoId: formData.get('logoId'),
+    });
+
+    const slug =
+      brandId === null
+        ? await uniqueSlug(input.slug || slugify(input.name), async (candidate) => {
+            const existing = await prisma.brand.findUnique({
+              where: { slug: candidate },
+              select: { id: true },
+            });
+            return Boolean(existing);
+          })
+        : input.slug;
+
+    if (brandId) {
+      const clash = await prisma.brand.findFirst({
+        where: { slug, id: { not: brandId } },
+        select: { id: true },
+      });
+      if (clash) return failure('Another brand already uses that URL.', { slug: ['This URL is taken'] });
+    }
+
+    const data = {
+      name: sanitizeText(input.name),
+      slug,
+      description: input.description ? sanitizeText(input.description) : null,
+      websiteUrl: input.websiteUrl,
+      sortOrder: input.sortOrder,
+      logoId: input.logoId,
+    };
+
+    const brand = brandId
+      ? await prisma.brand.update({ where: { id: brandId }, data })
+      : await prisma.brand.create({ data });
+
+    await recordAudit({
+      actor: user,
+      action: brandId ? 'updated' : 'created',
+      entity: 'Brand',
+      entityId: brand.id,
+      summary: `${brandId ? 'Updated' : 'Created'} brand “${brand.name}”`,
+    });
+
+    revalidatePath('/admin/products/brands');
+    revalidatePath('/admin/products');
+    revalidatePath('/', 'layout');
+    return success({ id: brand.id }, 'Brand saved.');
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+export async function deleteBrand(brandId: string): Promise<ActionResult> {
+  try {
+    const user = await authorize('products.delete');
+    const brand = await prisma.brand.findUnique({
+      where: { id: brandId },
+      include: { _count: { select: { products: true } } },
+    });
+    if (!brand) return failure('That brand no longer exists.');
+
+    // Products survive: the relation is SET NULL, so nothing is cascaded away.
+    await prisma.brand.delete({ where: { id: brandId } });
+
+    await recordAudit({
+      actor: user,
+      action: 'deleted',
+      entity: 'Brand',
+      entityId: brandId,
+      summary: `Deleted brand “${brand.name}” (${brand._count.products} product(s) kept)`,
+    });
+
+    revalidatePath('/admin/products/brands');
+    revalidatePath('/admin/products');
+    revalidatePath('/', 'layout');
+    return success(
+      undefined,
+      brand._count.products > 0
+        ? `Brand deleted. ${brand._count.products} product(s) no longer have a brand.`
+        : 'Brand deleted.',
+    );
   } catch (error) {
     return toActionError(error);
   }

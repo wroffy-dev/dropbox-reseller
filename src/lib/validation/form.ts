@@ -35,7 +35,13 @@ export const formFieldSchema = z.object({
   name: z
     .string()
     .max(60)
-    .transform((v) => v.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '')),
+    .transform((v) =>
+      v
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_]+/g, '_')
+        .replace(/^_+|_+$/g, ''),
+    ),
   placeholder: optional(160),
   helpText: optional(200),
   defaultValue: optional(200),
@@ -66,6 +72,9 @@ export const formInputSchema = z.object({
   createsLead: z.boolean().default(true),
   notifyEmails: optional(500),
   consentText: optional(600),
+  // Defaults to false so a payload from an older client — or an existing form
+  // saved before this existed — never silently switches the CAPTCHA on.
+  requireCaptcha: z.boolean().default(false),
   fields: z.array(formFieldSchema).max(40).default([]),
 });
 

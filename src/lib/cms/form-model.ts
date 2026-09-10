@@ -40,6 +40,7 @@ export type FormBuilderValues = {
   createsLead: boolean;
   notifyEmails: string;
   consentText: string;
+  requireCaptcha: boolean;
   fields: BuilderField[];
 };
 
@@ -78,6 +79,7 @@ export const EMPTY_FORM: FormBuilderValues = {
   createsLead: true,
   notifyEmails: '',
   consentText: '',
+  requireCaptcha: false,
   fields: [],
 };
 

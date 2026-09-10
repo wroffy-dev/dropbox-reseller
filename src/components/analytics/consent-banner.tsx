@@ -28,7 +28,7 @@ export function ConsentBanner({ message }: { message: string }) {
     <div
       role="dialog"
       aria-label="Cookie consent"
-      className="fixed inset-x-3 bottom-3 z-[70] mx-auto max-w-3xl rounded-xl border border-hairline bg-surface p-4 shadow-2xl sm:inset-x-6 sm:p-5"
+      className="fixed inset-x-3 bottom-3 z-toast mx-auto max-w-3xl rounded-xl border border-hairline bg-surface p-4 shadow-2xl sm:inset-x-6 sm:p-5"
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted">{message}</p>

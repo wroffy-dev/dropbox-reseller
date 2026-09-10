@@ -11,6 +11,7 @@ import { notifyNewLead, logLeadActivity } from '@/lib/services/leads';
 import { getEmailSettings, getWebsiteSettings } from '@/lib/services/settings';
 import { sendTemplate } from '@/lib/email/mailer';
 import { rateLimit } from '@/lib/utils/rate-limit';
+import { verifyCaptcha, CAPTCHA_MESSAGES } from '@/lib/forms/captcha';
 import { requestContext } from '@/lib/utils/request';
 import { hashIp } from '@/lib/utils/crypto';
 import { sanitizeText } from '@/lib/utils/sanitize';
@@ -32,7 +33,11 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
 
   // Spam gates: honeypot + minimum fill time.
   if (envelope.website) return success({ message: 'Thank you.', redirectUrl: null });
-  if (typeof envelope.elapsedMs === 'number' && envelope.elapsedMs > 0 && envelope.elapsedMs < 1200) {
+  if (
+    typeof envelope.elapsedMs === 'number' &&
+    envelope.elapsedMs > 0 &&
+    envelope.elapsedMs < 1200
+  ) {
     return failure('That was submitted too quickly. Please try again.');
   }
 
@@ -45,6 +50,19 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
 
   const form = await getPublicForm(envelope.formSlug);
   if (!form) return failure('This form is no longer available.');
+
+  // Math CAPTCHA, when the admin switched it on for this form. Verified here
+  // and nowhere else: the browser only ever held a question and a signed
+  // token, so this is the first and only place the answer is judged. Forms
+  // without the flag skip it entirely and submit exactly as they always did.
+  if (form.requireCaptcha) {
+    const verdict = verifyCaptcha(envelope.captchaToken, envelope.captchaAnswer);
+    if (!verdict.ok) {
+      return failure(CAPTCHA_MESSAGES[verdict.reason], {
+        _captcha: [CAPTCHA_MESSAGES[verdict.reason]],
+      });
+    }
+  }
 
   const fieldSchema = buildFieldSchema(form.fields);
   const valuesResult = fieldSchema.safeParse(envelope.values);
@@ -62,7 +80,13 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
 
   const formRecord = await prisma.form.findUnique({
     where: { id: form.id },
-    select: { createsLead: true, leadSource: true, defaultProductId: true, notifyEmails: true, name: true },
+    select: {
+      createsLead: true,
+      leadSource: true,
+      defaultProductId: true,
+      notifyEmails: true,
+      name: true,
+    },
   });
 
   const attribution = envelope.attribution ?? {};
@@ -104,7 +128,8 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
         firstUtmTerm: attribution.firstUtmTerm ?? attribution.utmTerm ?? null,
         firstUtmContent: attribution.firstUtmContent ?? attribution.utmContent ?? null,
         firstLandingUrl: attribution.firstLandingUrl ?? attribution.landingUrl ?? null,
-        firstTouchAt: firstTouchAt && !Number.isNaN(firstTouchAt.getTime()) ? firstTouchAt : new Date(),
+        firstTouchAt:
+          firstTouchAt && !Number.isNaN(firstTouchAt.getTime()) ? firstTouchAt : new Date(),
         referrer: attribution.referrer ?? null,
         landingUrl: attribution.landingUrl ?? attribution.pagePath ?? null,
         userAgent,
@@ -142,14 +167,23 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
     },
   });
 
-  void notifySubmission(form.id, form.name, values, attribution.landingUrl ?? null, formRecord?.notifyEmails);
+  void notifySubmission(
+    form.id,
+    form.name,
+    values,
+    attribution.landingUrl ?? null,
+    formRecord?.notifyEmails,
+  );
 
   return success({ message: form.successMessage, redirectUrl: form.redirectUrl });
 }
 
 function splitEmails(raw: string | null | undefined): string[] {
   if (!raw) return [];
-  return raw.split(/[,;\n]/).map((e) => e.trim()).filter((e) => e.includes('@'));
+  return raw
+    .split(/[,;\n]/)
+    .map((e) => e.trim())
+    .filter((e) => e.includes('@'));
 }
 
 async function sendLeadConfirmation(to: string, name: string, productName: string | null) {

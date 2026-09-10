@@ -91,6 +91,54 @@ export function AdminSidebar({
     }
   }, []);
 
+  const asideRef = React.useRef<HTMLElement | null>(null);
+
+  /**
+   * Drawer behaviour on small screens: Escape closes it, the page behind stops
+   * scrolling, and focus moves into the drawer and returns to the trigger on
+   * close. None of this applies to the docked desktop sidebar, which is part of
+   * the page rather than an overlay.
+   */
+  React.useEffect(() => {
+    if (!open) return;
+
+    const trigger = document.activeElement as HTMLElement | null;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      // Trap Tab inside the drawer while it covers the page.
+      const focusable = asideRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    asideRef.current?.querySelector<HTMLElement>('a[href], button:not([disabled])')?.focus();
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      trigger?.focus?.();
+    };
+  }, [open, onClose]);
+
   const isExpanded = (moduleId: string) =>
     moduleId === activeModuleId ? !manuallyClosed.includes(moduleId) : extraOpen.includes(moduleId);
 
@@ -114,21 +162,28 @@ export function AdminSidebar({
     <>
       {open ? (
         <div
-          className="fixed inset-0 z-40 bg-[rgb(var(--brand-secondary))]/50 lg:hidden"
+          className="fixed inset-0 z-backdrop bg-[rgb(var(--brand-secondary))]/50 lg:hidden"
           onClick={onClose}
           aria-hidden="true"
         />
       ) : null}
 
       <aside
+        ref={asideRef}
         id="admin-sidebar"
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-hairline bg-surface',
+          'fixed inset-y-0 left-0 flex flex-col border-r border-hairline bg-surface',
           'transition-[transform,width] duration-200 ease-out lg:translate-x-0',
           collapsed ? 'w-64 lg:w-[4.5rem]' : 'w-64',
           open ? 'translate-x-0' : '-translate-x-full',
+          // One element, two roles: an off-canvas drawer on small screens (so
+          // it must clear the backdrop and the top bar) and a docked column on
+          // large ones (where it sits below the top bar).
+          'z-drawer lg:z-sidebar',
         )}
         aria-label="Admin navigation"
+        aria-modal={open ? true : undefined}
+        role={open ? 'dialog' : undefined}
       >
         <div
           className={cn(
@@ -281,7 +336,7 @@ function SidebarModule({
 
         <div
           className={cn(
-            'pointer-events-none absolute left-full top-0 z-50 ml-2 w-56 origin-left scale-95 opacity-0',
+            'pointer-events-none absolute left-full top-0 z-tooltip ml-2 w-56 origin-left scale-95 opacity-0',
             'rounded-xl border border-hairline bg-surface p-1.5 shadow-xl transition',
             'group-hover/group:pointer-events-auto group-hover/group:scale-100 group-hover/group:opacity-100',
             'group-focus-within/group:pointer-events-auto group-focus-within/group:scale-100 group-focus-within/group:opacity-100',

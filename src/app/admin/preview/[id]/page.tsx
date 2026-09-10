@@ -28,7 +28,7 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
   if (!page) notFound();
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-surface">
+    <div className="fixed inset-0 z-modal flex flex-col bg-surface">
       <div className="flex flex-wrap items-center gap-3 bg-amber-500 px-4 py-2 text-sm text-amber-950">
         <strong className="font-semibold">Preview</strong>
         <span className="min-w-0 truncate">

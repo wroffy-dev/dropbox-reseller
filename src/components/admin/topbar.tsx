@@ -48,7 +48,7 @@ export function AdminTopbar({
   const createOptions = QUICK_CREATE.filter((option) => can(option.permission));
 
   return (
-    <header className="sticky top-0 z-30 border-b border-hairline bg-surface/95 backdrop-blur supports-[backdrop-filter]:bg-surface/80">
+    <header className="sticky top-0 z-topbar border-b border-hairline bg-surface/95 backdrop-blur supports-[backdrop-filter]:bg-surface/80">
       <div className="flex h-16 items-center gap-2 px-4 sm:gap-3 sm:px-6">
         <button
           type="button"

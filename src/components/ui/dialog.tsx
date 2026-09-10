@@ -55,7 +55,7 @@ export function Dialog({
   const sizes = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' } as const;
 
   return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-end justify-center p-0 sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-modal flex items-end justify-center p-0 sm:items-center sm:p-4">
       <div
         className="absolute inset-0 animate-fade-in bg-[rgb(var(--brand-secondary))]/50 backdrop-blur-[2px]"
         onClick={onClose}

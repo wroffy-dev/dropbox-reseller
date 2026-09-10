@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { CheckCircle, Spinner } from '@/components/ui/icons';
 import type { PublicForm } from '@/lib/services/forms';
 import { submitForm } from '@/lib/actions/submit-form';
+import { requestCaptchaChallenge } from '@/lib/actions/captcha';
+import type { CaptchaChallenge } from '@/lib/forms/captcha';
 import { collectAttribution, trackConversion } from '@/lib/analytics/attribution';
 import { Input, Textarea, Select, Label, FieldError, Checkbox } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
@@ -43,6 +45,27 @@ export function PublicFormRenderer({
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string[]>>({});
   const mountedAt = React.useRef<number>(Date.now());
   const headingId = React.useId();
+  const captchaId = React.useId();
+
+  /**
+   * Math CAPTCHA. The challenge is fetched on mount rather than rendered into
+   * the page, so a cached or statically rendered page can never hand a visitor
+   * an already-expired token. A fresh one is pulled whenever the previous
+   * answer was rejected, which is what makes the "expired" message true.
+   */
+  const [captcha, setCaptcha] = React.useState<CaptchaChallenge | null>(null);
+  const [captchaAnswer, setCaptchaAnswer] = React.useState('');
+
+  const loadCaptcha = React.useCallback(() => {
+    if (!form.requireCaptcha) return;
+    requestCaptchaChallenge(form.slug)
+      .then((challenge) => setCaptcha(challenge))
+      .catch(() => setCaptcha(null));
+  }, [form.requireCaptcha, form.slug]);
+
+  React.useEffect(() => {
+    loadCaptcha();
+  }, [loadCaptcha]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -67,6 +90,8 @@ export function PublicFormRenderer({
       elapsedMs: Date.now() - mountedAt.current,
       values,
       attribution: collectAttribution({ ctaLabel, ctaLocation }),
+      captchaToken: captcha?.token ?? null,
+      captchaAnswer: form.requireCaptcha ? captchaAnswer : null,
     });
 
     setPending(false);
@@ -74,6 +99,12 @@ export function PublicFormRenderer({
     if (!result.ok) {
       setFormError(result.error);
       setFieldErrors(result.fieldErrors ?? {});
+      // A rejected answer burns the challenge: issue a new question so the
+      // visitor is never asked to re-answer one the server will not accept.
+      if (form.requireCaptcha) {
+        setCaptchaAnswer('');
+        loadCaptcha();
+      }
       return;
     }
 
@@ -103,13 +134,21 @@ export function PublicFormRenderer({
   }
 
   return (
-    <form onSubmit={handleSubmit} className={cn('space-y-4', className)} noValidate aria-labelledby={headingId}>
+    <form
+      onSubmit={handleSubmit}
+      className={cn('space-y-4', className)}
+      noValidate
+      aria-labelledby={headingId}
+    >
       <h2 id={headingId} className="sr-only">
         {form.name}
       </h2>
 
       {formError ? (
-        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+        >
           {formError}
         </div>
       ) : null}
@@ -118,7 +157,12 @@ export function PublicFormRenderer({
         {form.fields.map((field) => {
           if (field.type === 'HIDDEN') {
             return (
-              <input key={field.id} type="hidden" name={field.name} defaultValue={field.defaultValue ?? ''} />
+              <input
+                key={field.id}
+                type="hidden"
+                name={field.name}
+                defaultValue={field.defaultValue ?? ''}
+              />
             );
           }
 
@@ -157,7 +201,8 @@ export function PublicFormRenderer({
                   value="true"
                   required={field.isRequired}
                   defaultChecked={
-                    field.type === 'CONSENT' && /^(true|checked|on|yes)$/i.test(field.defaultValue ?? '')
+                    field.type === 'CONSENT' &&
+                    /^(true|checked|on|yes)$/i.test(field.defaultValue ?? '')
                   }
                   label={field.label}
                   hint={field.helpText ?? undefined}
@@ -183,7 +228,10 @@ export function PublicFormRenderer({
                   ) : field.type === 'RADIO' ? (
                     <div className="space-y-2 pt-1" role="radiogroup" aria-label={field.label}>
                       {field.options.map((option) => (
-                        <label key={option.value} className="flex items-center gap-2 text-sm text-content">
+                        <label
+                          key={option.value}
+                          className="flex items-center gap-2 text-sm text-content"
+                        >
                           <input
                             type="radio"
                             name={field.name}
@@ -222,13 +270,48 @@ export function PublicFormRenderer({
         })}
       </div>
 
+      {form.requireCaptcha ? (
+        <div className="rounded-lg border border-hairline bg-muted/[0.03] p-4">
+          <label htmlFor={captchaId} className="block text-sm font-medium text-content">
+            {captcha ? captcha.question : 'Loading verification question…'}
+            <span className="text-red-600" aria-hidden="true">
+              {' '}
+              *
+            </span>
+          </label>
+          <p className="mt-1 text-xs text-muted">
+            A quick check to help us keep out automated spam.
+          </p>
+          <input
+            id={captchaId}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            required
+            disabled={!captcha}
+            value={captchaAnswer}
+            onChange={(event) => setCaptchaAnswer(event.target.value)}
+            aria-describedby={fieldErrors._captcha ? `${captchaId}-error` : undefined}
+            aria-invalid={fieldErrors._captcha ? true : undefined}
+            className="mt-2 h-11 w-32 rounded-lg border border-hairline bg-surface px-3 text-sm text-content focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 disabled:opacity-50"
+          />
+          {fieldErrors._captcha ? (
+            <p id={`${captchaId}-error`} className="mt-1.5 text-xs text-red-600" role="alert">
+              {fieldErrors._captcha[0]}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Honeypot — hidden from users and screen readers, filled by bots. */}
       <div aria-hidden="true" className="absolute left-[-9999px] h-0 w-0 overflow-hidden">
         <label htmlFor={`hp-${form.slug}`}>Leave this field empty</label>
         <input id={`hp-${form.slug}`} type="text" name="website" tabIndex={-1} autoComplete="off" />
       </div>
 
-      {form.consentText ? <p className="text-xs leading-relaxed text-muted">{form.consentText}</p> : null}
+      {form.consentText ? (
+        <p className="text-xs leading-relaxed text-muted">{form.consentText}</p>
+      ) : null}
 
       <Button type="submit" size="lg" disabled={pending} className="w-full sm:w-auto">
         {pending ? (

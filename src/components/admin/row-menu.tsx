@@ -41,7 +41,7 @@ export function RowMenu({ label = 'More actions', children }: { label?: string; 
         <div
           role="menu"
           onClick={() => setOpen(false)}
-          className="absolute right-0 top-full z-20 mt-1 w-52 rounded-lg border border-hairline bg-surface p-1 shadow-xl"
+          className="absolute right-0 top-full z-dropdown mt-1 w-52 rounded-lg border border-hairline bg-surface p-1 shadow-xl"
         >
           {children}
         </div>

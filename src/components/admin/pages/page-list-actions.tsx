@@ -94,7 +94,7 @@ export function PageRowActions({
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-full z-20 mt-1 w-52 rounded-lg border border-hairline bg-surface p-1 shadow-xl"
+          className="absolute right-0 top-full z-dropdown mt-1 w-52 rounded-lg border border-hairline bg-surface p-1 shadow-xl"
         >
           {can.publish && status !== 'PUBLISHED' ? (
             <MenuItem onClick={() => run(() => setPageStatus(pageId, 'PUBLISHED'))} disabled={busy}>

@@ -50,7 +50,7 @@ export function SiteHeader({ nav, brand }: { nav: ResolvedNavItem[]; brand: Head
     href !== '/' && href !== '#' ? pathname === href || pathname.startsWith(`${href}/`) : pathname === href;
 
   return (
-    <header className="sticky top-0 z-50 w-full">
+    <header className="sticky top-0 z-topbar w-full">
       {brand.announcement ? (
         <div className="bg-[rgb(var(--brand-secondary))] px-4 py-2 text-center text-xs text-white sm:text-sm">
           {brand.announcement.url ? (
@@ -173,7 +173,7 @@ export function SiteHeader({ nav, brand }: { nav: ResolvedNavItem[]; brand: Head
       {mobileOpen ? (
         <div
           id="mobile-menu"
-          className="fixed inset-x-0 bottom-0 top-[var(--header-offset,4rem)] z-40 overflow-y-auto border-t border-hairline bg-surface lg:hidden"
+          className="fixed inset-x-0 bottom-0 top-[var(--header-offset,4rem)] z-drawer overflow-y-auto border-t border-hairline bg-surface lg:hidden"
         >
           <ul className="space-y-1 px-4 py-4">
             {nav.map((item) => (

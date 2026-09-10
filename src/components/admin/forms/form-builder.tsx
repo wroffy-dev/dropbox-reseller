@@ -352,6 +352,20 @@ export function FormBuilder({
                   hint="Inactive forms stop accepting submissions everywhere they appear."
                 />
               </div>
+
+              <div className="rounded-lg border border-hairline p-4">
+                <p className="mb-3 text-sm font-medium text-content">Spam protection</p>
+                <Switch
+                  checked={values.requireCaptcha}
+                  onChange={(next) => set('requireCaptcha', next)}
+                  label="Enable Math CAPTCHA"
+                  hint="Adds a simple verification question to help reduce automated spam."
+                />
+                <p className="mt-3 text-xs text-muted">
+                  Every form is already protected by a hidden trap field, a minimum fill time and a
+                  per-visitor submission limit. Turn this on for forms that attract bots anyway.
+                </p>
+              </div>
             </TabPanel>
 
             <TabPanel id="after" active={settingsTab} className="space-y-4">

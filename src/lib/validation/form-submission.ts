@@ -34,6 +34,14 @@ export const submissionEnvelopeSchema = z.object({
   elapsedMs: z.coerce.number().optional().nullable(),
   values: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
   attribution: attributionSchema.optional(),
+  /**
+   * Math CAPTCHA: the signed challenge the visitor was shown, and their
+   * answer. Only present when the form has it switched on. The expected answer
+   * is never sent to the browser and never comes back from it — the server
+   * recomputes it from the signed token.
+   */
+  captchaToken: z.string().max(400).optional().nullable(),
+  captchaAnswer: z.string().max(10).optional().nullable(),
 });
 
 export type SubmissionEnvelope = z.infer<typeof submissionEnvelopeSchema>;
@@ -68,9 +76,9 @@ export function buildFieldSchema(fields: PublicFormField[]): z.ZodType<Record<st
       }
 
       case 'CHECKBOX':
-        rule = z.union([z.string(), z.array(z.string())]).transform((v) =>
-          Array.isArray(v) ? v.join(', ') : v,
-        );
+        rule = z
+          .union([z.string(), z.array(z.string())])
+          .transform((v) => (Array.isArray(v) ? v.join(', ') : v));
         if (field.isRequired) {
           rule = rule.refine((v) => Boolean(v && v !== 'false'), {
             message: `${field.label} is required`,
@@ -135,11 +143,17 @@ export function buildFieldSchema(fields: PublicFormField[]): z.ZodType<Record<st
       }
 
       case 'TEXTAREA':
-        rule = z.string().trim().max(field.maxLength ?? 5000);
+        rule = z
+          .string()
+          .trim()
+          .max(field.maxLength ?? 5000);
         break;
 
       default:
-        rule = z.string().trim().max(field.maxLength ?? 500);
+        rule = z
+          .string()
+          .trim()
+          .max(field.maxLength ?? 500);
     }
 
     let stringRule = rule as z.ZodType<string>;
@@ -194,9 +208,12 @@ export function extractLeadCore(values: Record<string, unknown>, fields: PublicF
 
   const email = get((f) => f.type === 'EMAIL') || get((f) => /email/i.test(f.name));
   const phone = get((f) => f.type === 'PHONE') || get((f) => /phone|mobile/i.test(f.name));
-  const company = get((f) => f.type === 'COMPANY') || get((f) => /company|organisation|organization/i.test(f.name));
+  const company =
+    get((f) => f.type === 'COMPANY') ||
+    get((f) => /company|organisation|organization/i.test(f.name));
   const jobTitle = get((f) => /job_?title|designation|role/i.test(f.name));
-  const message = get((f) => f.type === 'TEXTAREA') || get((f) => /message|comments|requirement/i.test(f.name));
+  const message =
+    get((f) => f.type === 'TEXTAREA') || get((f) => /message|comments|requirement/i.test(f.name));
 
   return { name, email, phone, company, jobTitle, message };
 }

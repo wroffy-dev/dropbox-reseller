@@ -130,7 +130,7 @@ export function PopupHost({ popups }: { popups: PopupConfig[] }) {
   if (!active) return null;
 
   return (
-    <div className="fixed inset-0 z-[75] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-[rgb(var(--brand-secondary))]/50" onClick={close} aria-hidden="true" />
       <div
         role="dialog"

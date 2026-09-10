@@ -28,6 +28,12 @@ export type PublicForm = {
   successMessage: string;
   redirectUrl: string | null;
   consentText: string | null;
+  /**
+   * Whether this form shows a math CAPTCHA. Only the flag travels with the
+   * cached form — the challenge itself is fetched fresh by the runtime so a
+   * statically rendered page can never serve a stale or expired token.
+   */
+  requireCaptcha: boolean;
   fields: PublicFormField[];
 };
 
@@ -35,7 +41,10 @@ function parseOptions(raw: unknown): Array<{ label: string; value: string }> {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter((o): o is { label?: unknown; value?: unknown } => typeof o === 'object' && o !== null)
-    .map((o) => ({ label: String(o.label ?? o.value ?? ''), value: String(o.value ?? o.label ?? '') }))
+    .map((o) => ({
+      label: String(o.label ?? o.value ?? ''),
+      value: String(o.value ?? o.label ?? ''),
+    }))
     .filter((o) => o.value !== '');
 }
 
@@ -57,6 +66,7 @@ export const getPublicForm = cache(async (slug: string): Promise<PublicForm | nu
     successMessage: form.successMessage,
     redirectUrl: form.redirectUrl,
     consentText: form.consentText,
+    requireCaptcha: form.requireCaptcha,
     fields: form.fields.map((f) => ({
       id: f.id,
       type: f.type,

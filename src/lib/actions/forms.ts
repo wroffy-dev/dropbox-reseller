@@ -50,7 +50,8 @@ export async function saveForm(
         where: { slug, id: { not: formId } },
         select: { id: true },
       });
-      if (clash) return failure('Another form already uses that slug.', { slug: ['This slug is taken'] });
+      if (clash)
+        return failure('Another form already uses that slug.', { slug: ['This slug is taken'] });
     }
 
     const data = {
@@ -66,6 +67,7 @@ export async function saveForm(
       createsLead: input.createsLead,
       notifyEmails: input.notifyEmails,
       consentText: input.consentText ? sanitizeText(input.consentText) : null,
+      requireCaptcha: input.requireCaptcha,
     };
 
     const form = await prisma.$transaction(async (tx) => {
@@ -158,7 +160,10 @@ export async function duplicateForm(formId: string): Promise<ActionResult<{ id: 
     if (!source) return failure('That form no longer exists.');
 
     const slug = await uniqueSlug(`${source.slug}-copy`, async (candidate) => {
-      const existing = await prisma.form.findUnique({ where: { slug: candidate }, select: { id: true } });
+      const existing = await prisma.form.findUnique({
+        where: { slug: candidate },
+        select: { id: true },
+      });
       return Boolean(existing);
     });
 
@@ -176,6 +181,7 @@ export async function duplicateForm(formId: string): Promise<ActionResult<{ id: 
         createsLead: source.createsLead,
         notifyEmails: source.notifyEmails,
         consentText: source.consentText,
+        requireCaptcha: source.requireCaptcha,
         fields: {
           create: source.fields.map((field) => ({
             type: field.type,
@@ -245,7 +251,9 @@ export async function deleteForm(formId: string): Promise<ActionResult> {
 const exportSchema = z.object({ formId: z.string().min(1) });
 
 /** CSV of a form's submissions. Header order follows the current field order. */
-export async function exportSubmissions(input: unknown): Promise<ActionResult<{ csv: string; filename: string }>> {
+export async function exportSubmissions(
+  input: unknown,
+): Promise<ActionResult<{ csv: string; filename: string }>> {
   try {
     const user = await authorize('forms.view');
     const { formId } = exportSchema.parse(input);

@@ -339,7 +339,7 @@ export function LeadDetail({
         pending={busy}
       />
       {askReason ? (
-        <div className="fixed inset-x-4 bottom-24 z-[95] mx-auto max-w-sm">
+        <div className="fixed inset-x-4 bottom-24 z-toast mx-auto max-w-sm">
           <label htmlFor="lost-reason" className="sr-only">
             Reason lost
           </label>

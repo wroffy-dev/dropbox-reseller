@@ -663,6 +663,10 @@ model Form {
   notifyEmails String? @db.Text // comma-separated
   consentText  String? @db.Text
 
+  // Spam protection. Defaults to false so every form published before this
+  // existed keeps submitting exactly as it did.
+  requireCaptcha Boolean @default(false)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?

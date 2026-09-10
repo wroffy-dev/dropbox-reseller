@@ -86,7 +86,7 @@ export function Menu({
           aria-label={label}
           onClick={() => setOpen(false)}
           className={cn(
-            'absolute top-full z-40 mt-1.5 animate-slide-up overflow-hidden rounded-xl border border-hairline',
+            'absolute top-full z-dropdown mt-1.5 animate-slide-up overflow-hidden rounded-xl border border-hairline',
             'bg-surface p-1.5 shadow-xl',
             width,
             align === 'right' ? 'right-0' : 'left-0',

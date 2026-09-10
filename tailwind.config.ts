@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import { Z_INDEX } from './src/lib/ui/z-index';
 
 const config: Config = {
   content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
@@ -10,6 +11,10 @@ const config: Config = {
       screens: { '2xl': '1280px' },
     },
     extend: {
+      // Named layers instead of ad-hoc numbers — see src/lib/ui/z-index.ts.
+      zIndex: Object.fromEntries(
+        Object.entries(Z_INDEX).map(([name, value]) => [name, String(value)]),
+      ) as Record<keyof typeof Z_INDEX, string>,
       colors: {
         brand: {
           DEFAULT: 'rgb(var(--brand-primary) / <alpha-value>)',

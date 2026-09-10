@@ -344,7 +344,7 @@ function DateRangeControl({
       </Button>
 
       {open ? (
-        <div className="absolute left-0 top-full z-30 mt-1.5 w-72 rounded-xl border border-hairline bg-surface p-3 shadow-xl">
+        <div className="absolute left-0 top-full z-dropdown mt-1.5 w-72 rounded-xl border border-hairline bg-surface p-3 shadow-xl">
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <Label htmlFor="filter-from" className="text-xs font-normal text-muted">
@@ -427,7 +427,7 @@ function AdvancedFilterDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex justify-end"
+      className="fixed inset-0 z-drawer flex justify-end"
       role="dialog"
       aria-modal="true"
       aria-label="More filters"

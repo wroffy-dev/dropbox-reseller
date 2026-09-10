@@ -245,7 +245,7 @@ export function LeadsTable({
       <TableWrap className="hidden md:block">
         <Table className="min-w-[64rem]">
           <caption className="sr-only">Leads</caption>
-          <thead className="sticky top-16 z-10">
+          <thead className="sticky top-16 z-sticky">
             <tr>
               {can.edit ? (
                 <Th className="w-10">

@@ -233,7 +233,7 @@ export function AdminSearch({
 
       {open ? (
         <div
-          className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[10vh] sm:pt-[15vh]"
+          className="fixed inset-0 z-modal flex items-start justify-center p-4 pt-[10vh] sm:pt-[15vh]"
           role="dialog"
           aria-modal="true"
           aria-label="Command palette"

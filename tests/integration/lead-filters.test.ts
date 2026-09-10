@@ -4,7 +4,7 @@ import { mockAuth, uniqueSuffix, TEST_ACTOR } from '../helpers';
 mockAuth();
 
 const { prisma } = await import('@/lib/db/prisma');
-const { buildLeadWhere, buildLeadOrderBy } = await import('@/lib/crm/query');
+const { buildLeadWhere, buildLeadOrderBy, NO_ATTRIBUTION } = await import('@/lib/crm/query');
 
 const suffix = uniqueSuffix();
 const created: string[] = [];
@@ -162,7 +162,12 @@ describe('lead filters', () => {
     expect(await count({ status: 'QUALIFIED', source: 'linkedin' })).toBe(0);
     expect(await count({ source: 'google', utmMedium: 'social' })).toBe(0);
     expect(
-      await count({ status: 'QUALIFIED', source: 'google', assignedTo: 'unassigned', utmCampaign: 'brand' }),
+      await count({
+        status: 'QUALIFIED',
+        source: 'google',
+        assignedTo: 'unassigned',
+        utmCampaign: 'brand',
+      }),
     ).toBe(1);
   });
 
@@ -198,5 +203,61 @@ describe('lead sorting', () => {
   it('falls back rather than trusting a hand-edited URL', () => {
     expect(buildLeadOrderBy({ sort: 'password', dir: 'asc' })).toEqual({ createdAt: 'asc' });
     expect(buildLeadOrderBy({ sort: 'name', dir: 'sideways' })).toEqual({ name: 'desc' });
+  });
+});
+
+describe('the "no attribution" drill-down', () => {
+  // Created here rather than in the shared fixture so the exact counts the
+  // other tests assert stay as they are.
+  let untaggedId = '';
+
+  beforeAll(async () => {
+    const lead = await prisma.lead.create({
+      data: {
+        name: `Untagged ${suffix}`,
+        email: `untagged-${suffix}@example.test`,
+        status: 'NEW',
+        source: 'Direct visit',
+      },
+    });
+    untaggedId = lead.id;
+    created.push(lead.id);
+  });
+
+  it('resolves the Direct / none sentinel to the leads with nothing recorded', async () => {
+    // The CRM dashboard groups untagged leads under "Direct / none" and links
+    // through with this value; it has to select those same leads, not zero.
+    expect(await count({ source: NO_ATTRIBUTION })).toBe(1);
+
+    const [{ id }] = await prisma.lead.findMany({
+      where: { AND: [buildLeadWhere({ source: NO_ATTRIBUTION }), { id: { in: created } }] },
+      select: { id: true },
+    });
+    expect(id).toBe(untaggedId);
+  });
+
+  it('is not treated as a literal utm_source value', async () => {
+    expect(await count({ source: 'direct-literal-no-lead-has' })).toBe(0);
+    // The tagged and untagged groups together account for every lead, which is
+    // what makes the dashboard's source table add up to its total.
+    expect((await count({ source: NO_ATTRIBUTION })) + (await count({ source: 'google' }))).toBe(4);
+  });
+
+  it('applies per column, so a lead can be tagged on one dimension and not another', async () => {
+    // One fixture lead carries utm_source=google with no medium, campaign or
+    // content, plus the untagged lead created above. Each column is judged on
+    // its own, which is what makes each dashboard table add up independently.
+    expect(await count({ utmMedium: NO_ATTRIBUTION })).toBe(2);
+    expect(await count({ utmCampaign: NO_ATTRIBUTION })).toBe(3);
+    expect(await count({ utmContent: NO_ATTRIBUTION })).toBe(4);
+
+    // That lead is "no medium" while still being "source = google".
+    expect(await count({ source: 'google', utmMedium: NO_ATTRIBUTION })).toBe(1);
+  });
+
+  it('still narrows rather than widens when combined with other filters', async () => {
+    expect(await count({ status: 'NEW', source: NO_ATTRIBUTION })).toBe(1);
+    expect(await count({ status: 'QUALIFIED', source: NO_ATTRIBUTION })).toBe(0);
+    expect(await count({ source: NO_ATTRIBUTION, assignedTo: ownerId })).toBe(0);
   });
 });

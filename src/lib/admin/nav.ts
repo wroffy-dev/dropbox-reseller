@@ -125,6 +125,12 @@ export const ADMIN_NAV: AdminNavModule[] = [
     icon: 'inbox',
     items: [
       {
+        label: 'CRM Dashboard',
+        href: '/admin/crm',
+        permission: 'leads.view',
+        description: 'Lead performance for any date range',
+      },
+      {
         label: 'Leads',
         href: '/admin/leads',
         permission: 'leads.view',
@@ -199,6 +205,12 @@ export const ADMIN_NAV: AdminNavModule[] = [
         href: '/admin/marketing',
         permission: 'marketing.manage',
         description: 'Analytics and advertising tags',
+      },
+      {
+        label: 'UTM Campaigns',
+        href: '/admin/marketing/campaigns',
+        permission: 'marketing.manage',
+        description: 'Build tagged campaign links',
       },
       {
         label: 'Lead Magnets',

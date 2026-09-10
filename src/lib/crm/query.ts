@@ -73,10 +73,13 @@ export function buildLeadWhere(filters: LeadFilters): Prisma.LeadWhereInput {
   if (filters.formId) where.formId = filters.formId;
   if (filters.pageId) where.landingPageId = filters.pageId;
 
-  if (filters.source) where.utmSource = filters.source;
-  if (filters.utmMedium) where.utmMedium = filters.utmMedium;
-  if (filters.utmCampaign) where.utmCampaign = filters.utmCampaign;
-  if (filters.utmContent) where.utmContent = filters.utmContent;
+  // The CRM dashboard groups leads with no attribution under "Direct / none".
+  // Clicking that row has to mean "the ones with nothing recorded", so the
+  // sentinel resolves to IS NULL rather than to a literal value no lead holds.
+  applyAttribution(where, 'utmSource', filters.source);
+  applyAttribution(where, 'utmMedium', filters.utmMedium);
+  applyAttribution(where, 'utmCampaign', filters.utmCampaign);
+  applyAttribution(where, 'utmContent', filters.utmContent);
   if (filters.leadSource) where.source = filters.leadSource;
 
   if (filters.followUp === 'due') {
@@ -109,6 +112,21 @@ export function buildLeadWhere(filters: LeadFilters): Prisma.LeadWhereInput {
   if (and.length > 0) where.AND = and;
 
   return where;
+}
+
+/**
+ * Value used in a URL to mean "no campaign recorded". Real UTM values are
+ * lowercased slugs, so this cannot collide with one a visitor could arrive on.
+ */
+export const NO_ATTRIBUTION = 'direct';
+
+function applyAttribution(
+  where: Prisma.LeadWhereInput,
+  column: 'utmSource' | 'utmMedium' | 'utmCampaign' | 'utmContent',
+  value: string | undefined,
+): void {
+  if (!value) return;
+  where[column] = value === NO_ATTRIBUTION ? null : value;
 }
 
 export const LEAD_SORT_FIELDS = ['createdAt', 'updatedAt', 'name', 'status', 'value'] as const;

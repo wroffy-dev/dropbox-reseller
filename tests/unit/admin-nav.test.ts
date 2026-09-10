@@ -46,7 +46,14 @@ describe('admin navigation', () => {
     expect(ids).not.toContain('settings');
 
     const crm = groups.find((group) => group.id === 'crm')!;
-    expect(crm.items.map((item) => item.label)).toEqual(['Leads', 'Pipeline', 'Customers']);
+    expect(crm.items.map((item) => item.label)).toEqual([
+      'CRM Dashboard',
+      'Leads',
+      'Pipeline',
+      'Customers',
+    ]);
+    // Forms and Submissions need forms.view, which this user does not have.
+    expect(crm.items.map((item) => item.label)).not.toContain('Forms');
   });
 
   it('matches a detail route to its list item', () => {

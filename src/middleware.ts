@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import NextAuth from 'next-auth';
 import { authConfig } from '@/lib/auth/config';
+import { decideAttribution, parseTouch, touchFromVisit, UTM_KEYS } from '@/lib/analytics/touch';
 
 const { auth } = NextAuth(authConfig);
 
-const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as const;
 const FIRST_TOUCH_COOKIE = 'attr_first';
 const LAST_TOUCH_COOKIE = 'attr_last';
 const ONE_YEAR = 60 * 60 * 24 * 365;
@@ -55,24 +55,21 @@ function captureAttribution(request: NextRequest, response: NextResponse) {
     return;
   }
 
-  const params = nextUrl.searchParams;
-  const hasUtm = UTM_KEYS.some((key) => params.get(key));
   const referrer = request.headers.get('referer');
-  const isExternalReferrer =
-    referrer && !referrer.includes(nextUrl.host) ? referrer.slice(0, 500) : null;
+  const externalReferrer = referrer && !referrer.includes(nextUrl.host) ? referrer : null;
 
-  if (!hasUtm && !isExternalReferrer) return;
+  const visit = touchFromVisit({
+    params: Object.fromEntries(UTM_KEYS.map((key) => [key, nextUrl.searchParams.get(key)])),
+    externalReferrer,
+    path: nextUrl.pathname,
+  });
 
-  const touch: Record<string, string> = {};
-  for (const key of UTM_KEYS) {
-    const value = params.get(key);
-    if (value) touch[key] = value.slice(0, 200);
-  }
-  if (isExternalReferrer) touch.referrer = isExternalReferrer;
-  touch.landing = nextUrl.pathname.slice(0, 300);
-  touch.at = new Date().toISOString();
+  const decision = decideAttribution({
+    visit,
+    storedFirst: parseTouch(request.cookies.get(FIRST_TOUCH_COOKIE)?.value),
+    storedLast: parseTouch(request.cookies.get(LAST_TOUCH_COOKIE)?.value),
+  });
 
-  const encoded = encodeURIComponent(JSON.stringify(touch));
   const options = {
     httpOnly: false, // read by the client attribution helper before form submit
     sameSite: 'lax' as const,
@@ -80,10 +77,26 @@ function captureAttribution(request: NextRequest, response: NextResponse) {
     secure: process.env.NODE_ENV === 'production',
   };
 
-  if (!request.cookies.get(FIRST_TOUCH_COOKIE)) {
-    response.cookies.set(FIRST_TOUCH_COOKIE, encoded, { ...options, maxAge: ONE_YEAR });
+  if (decision.writeFirst) {
+    response.cookies.set(
+      FIRST_TOUCH_COOKIE,
+      encodeURIComponent(JSON.stringify(decision.writeFirst)),
+      {
+        ...options,
+        maxAge: ONE_YEAR,
+      },
+    );
   }
-  response.cookies.set(LAST_TOUCH_COOKIE, encoded, { ...options, maxAge: THIRTY_DAYS });
+  if (decision.writeLast) {
+    response.cookies.set(
+      LAST_TOUCH_COOKIE,
+      encodeURIComponent(JSON.stringify(decision.writeLast)),
+      {
+        ...options,
+        maxAge: THIRTY_DAYS,
+      },
+    );
+  }
 }
 
 export const config = {

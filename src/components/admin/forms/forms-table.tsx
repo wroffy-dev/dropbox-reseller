@@ -9,12 +9,13 @@ import {
   duplicateForm,
   deleteForm,
   exportSubmissions,
+  bulkFormAction,
 } from '@/lib/actions/forms';
-import { RowMenu, RowMenuItem } from '@/components/admin/row-menu';
+import { RowMenu, RowMenuItem, BulkBar, useSelection } from '@/components/admin/row-menu';
 import { ActiveBadge } from '@/components/admin/status-badge';
 import { Table, TableWrap, Th, Td, Tr } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/states';
-import { ButtonLink } from '@/components/ui/button';
+import { Button, ButtonLink } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/toast';
@@ -44,8 +45,15 @@ export function FormsTable({
 }) {
   const router = useRouter();
   const { toast } = useToast();
+  const selection = useSelection(rows);
   const [busy, setBusy] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState<FormRow | null>(null);
+  const [confirmBulkDelete, setConfirmBulkDelete] = React.useState(false);
+
+  const applyBulk = (action: string) =>
+    run(() => bulkFormAction({ ids: selection.selected, action })).then(
+      (ok) => ok && selection.clear(),
+    );
 
   async function run(fn: () => Promise<{ ok: boolean; error?: string; message?: string }>) {
     setBusy(true);
@@ -92,11 +100,75 @@ export function FormsTable({
 
   return (
     <>
+      {can.edit || can.delete ? (
+        <div className="px-4 pt-4 sm:px-5">
+          <BulkBar count={selection.selected.length} onClear={selection.clear}>
+            {can.edit ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => applyBulk('activate')}
+                >
+                  Activate
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => applyBulk('deactivate')}
+                >
+                  Deactivate
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => applyBulk('captchaOn')}
+                >
+                  CAPTCHA on
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => applyBulk('captchaOff')}
+                >
+                  CAPTCHA off
+                </Button>
+              </>
+            ) : null}
+            {can.delete ? (
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={busy}
+                onClick={() => setConfirmBulkDelete(true)}
+              >
+                Delete
+              </Button>
+            ) : null}
+          </BulkBar>
+        </div>
+      ) : null}
+
       <TableWrap className="hidden md:block">
         <Table className="min-w-[52rem]">
           <caption className="sr-only">Forms</caption>
           <thead>
             <tr>
+              {can.edit || can.delete ? (
+                <Th className="w-10">
+                  <input
+                    type="checkbox"
+                    checked={selection.allSelected}
+                    onChange={selection.toggleAll}
+                    aria-label="Select all forms on this page"
+                    className="h-4 w-4 rounded border-hairline text-brand focus:ring-brand/30"
+                  />
+                </Th>
+              ) : null}
               <Th>Form</Th>
               <Th align="center">Fields</Th>
               <Th align="center">Submissions</Th>
@@ -110,6 +182,17 @@ export function FormsTable({
           <tbody>
             {rows.map((row) => (
               <Tr key={row.id}>
+                {can.edit || can.delete ? (
+                  <Td>
+                    <input
+                      type="checkbox"
+                      checked={selection.selected.includes(row.id)}
+                      onChange={() => selection.toggle(row.id)}
+                      aria-label={`Select ${row.name}`}
+                      className="h-4 w-4 rounded border-hairline text-brand focus:ring-brand/30"
+                    />
+                  </Td>
+                ) : null}
                 <Td>
                   <Link
                     href={`/admin/forms/${row.id}`}
@@ -274,6 +357,20 @@ export function FormsTable({
             : ''
         }
         confirmLabel="Delete form"
+        pending={busy}
+      />
+
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        onClose={() => setConfirmBulkDelete(false)}
+        onConfirm={async () => {
+          const ok = await applyBulk('delete');
+          setConfirmBulkDelete(false);
+          if (ok) selection.clear();
+        }}
+        title={`Delete ${selection.selected.length} form(s)?`}
+        message="Each form stops accepting submissions and disappears from any section using it. Existing submissions and leads are kept."
+        confirmLabel="Delete forms"
         pending={busy}
       />
     </>

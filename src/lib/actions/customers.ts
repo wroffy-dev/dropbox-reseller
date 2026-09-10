@@ -157,3 +157,81 @@ export async function deleteCustomer(customerId: string): Promise<ActionResult> 
     return toActionError(error);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Bulk actions
+// ---------------------------------------------------------------------------
+
+const customerBulkSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(100),
+  action: z.enum(['status', 'assign', 'unassign', 'delete']),
+  /** Required by `status`; the target CustomerStatus. */
+  status: z.string().max(40).optional(),
+  /** Required by `assign`; the staff member to own these customers. */
+  assignedToId: z.string().max(40).optional(),
+});
+
+/**
+ * Applies one change to several customers at once.
+ *
+ * Each branch takes the same permission the single-record action does — a bulk
+ * route must never be a way around a check. Deletes stay soft, exactly as
+ * deleteCustomer does, so nothing is actually destroyed.
+ */
+export async function bulkCustomerAction(input: unknown): Promise<ActionResult> {
+  try {
+    const { ids, action, status, assignedToId } = customerBulkSchema.parse(input);
+    const user =
+      action === 'delete' ? await authorize('customers.delete') : await authorize('customers.edit');
+
+    const customers = await prisma.customer.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      select: { id: true },
+    });
+    if (customers.length === 0) return failure('Those customers no longer exist.');
+    const targetIds = customers.map((customer) => customer.id);
+
+    if (action === 'delete') {
+      await prisma.customer.updateMany({
+        where: { id: { in: targetIds } },
+        data: { deletedAt: new Date() },
+      });
+    } else if (action === 'assign') {
+      if (!assignedToId) return failure('Choose who should own these customers.');
+      const owner = await prisma.user.findFirst({
+        where: { id: assignedToId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!owner) return failure('That staff member no longer exists.');
+      await prisma.customer.updateMany({
+        where: { id: { in: targetIds } },
+        data: { assignedToId: owner.id },
+      });
+    } else if (action === 'unassign') {
+      await prisma.customer.updateMany({
+        where: { id: { in: targetIds } },
+        data: { assignedToId: null },
+      });
+    } else {
+      if (!status) return failure('Choose a status to apply.');
+      const allowed = ['PROSPECT', 'ACTIVE', 'INACTIVE', 'FORMER'];
+      if (!allowed.includes(status)) return failure('That is not a customer status.');
+      await prisma.customer.updateMany({
+        where: { id: { in: targetIds } },
+        data: { status: status as never },
+      });
+    }
+
+    await recordAudit({
+      actor: user,
+      action: `bulk.${action}`,
+      entity: 'Customer',
+      summary: `${action} applied to ${targetIds.length} customer(s)`,
+    });
+
+    revalidatePath('/admin/customers');
+    return success(undefined, `${targetIds.length} customer(s) updated.`);
+  } catch (error) {
+    return toActionError(error);
+  }
+}

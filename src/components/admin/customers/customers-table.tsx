@@ -4,11 +4,12 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Building2, Plus, Pencil, Trash } from 'lucide-react';
-import { deleteCustomer } from '@/lib/actions/customers';
-import { RowMenu, RowMenuItem } from '@/components/admin/row-menu';
+import { deleteCustomer, bulkCustomerAction } from '@/lib/actions/customers';
+import { RowMenu, RowMenuItem, BulkBar, useSelection } from '@/components/admin/row-menu';
 import { Table, TableWrap, Th, Td, Tr } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/states';
-import { ButtonLink } from '@/components/ui/button';
+import { Button, ButtonLink } from '@/components/ui/button';
+import { Select } from '@/components/ui/field';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/toast';
@@ -47,8 +48,24 @@ export function CustomersTable({
 }) {
   const router = useRouter();
   const { toast } = useToast();
+  const selection = useSelection(rows);
   const [busy, setBusy] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState<CustomerRow | null>(null);
+  const [confirmBulkDelete, setConfirmBulkDelete] = React.useState(false);
+
+  async function applyBulk(payload: Record<string, unknown>) {
+    setBusy(true);
+    const result = await bulkCustomerAction({ ids: selection.selected, ...payload });
+    setBusy(false);
+    if (!result.ok) {
+      toast(result.error ?? 'Something went wrong.', 'error');
+      return false;
+    }
+    toast(result.message ?? 'Done.');
+    selection.clear();
+    router.refresh();
+    return true;
+  }
 
   if (rows.length === 0) {
     return (
@@ -74,11 +91,74 @@ export function CustomersTable({
 
   return (
     <>
+      {can.edit || can.delete ? (
+        <div className="px-4 pt-4 sm:px-5">
+          <BulkBar count={selection.selected.length} onClear={selection.clear}>
+            {can.edit ? (
+              <>
+                <label htmlFor="bulk-customer-status" className="sr-only">
+                  Set status for the selected customers
+                </label>
+                <Select
+                  id="bulk-customer-status"
+                  value=""
+                  disabled={busy}
+                  onChange={(event) => {
+                    const status = event.target.value;
+                    // The select is an action, not a stored value — it resets
+                    // itself so the same status can be applied twice.
+                    event.target.value = '';
+                    if (status) void applyBulk({ action: 'status', status });
+                  }}
+                  className="h-8 w-auto py-0 text-sm"
+                >
+                  <option value="">Set status…</option>
+                  {Object.entries(CUSTOMER_STATUS_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void applyBulk({ action: 'unassign' })}
+                >
+                  Unassign
+                </Button>
+              </>
+            ) : null}
+            {can.delete ? (
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={busy}
+                onClick={() => setConfirmBulkDelete(true)}
+              >
+                Delete
+              </Button>
+            ) : null}
+          </BulkBar>
+        </div>
+      ) : null}
+
       <TableWrap>
         <Table className="min-w-[46rem]">
           <caption className="sr-only">Customers</caption>
           <thead>
             <tr>
+              {can.edit || can.delete ? (
+                <Th className="w-10">
+                  <input
+                    type="checkbox"
+                    checked={selection.allSelected}
+                    onChange={selection.toggleAll}
+                    aria-label="Select all customers on this page"
+                    className="h-4 w-4 rounded border-hairline text-brand focus:ring-brand/30"
+                  />
+                </Th>
+              ) : null}
               <Th className="w-14">Ref</Th>
               <Th>Customer</Th>
               <Th>Company</Th>
@@ -93,6 +173,17 @@ export function CustomersTable({
           <tbody>
             {rows.map((row) => (
               <Tr key={row.id}>
+                {can.edit || can.delete ? (
+                  <Td>
+                    <input
+                      type="checkbox"
+                      checked={selection.selected.includes(row.id)}
+                      onChange={() => selection.toggle(row.id)}
+                      aria-label={`Select ${row.name}`}
+                      className="h-4 w-4 rounded border-hairline text-brand focus:ring-brand/30"
+                    />
+                  </Td>
+                ) : null}
                 <Td className="font-mono text-xs text-muted">#{row.reference}</Td>
                 <Td>
                   <Link
@@ -116,7 +207,9 @@ export function CustomersTable({
                     {CUSTOMER_STATUS_LABELS[row.status] ?? row.status}
                   </Badge>
                 </Td>
-                <Td className="whitespace-nowrap text-sm text-muted">{formatDate(row.createdAt)}</Td>
+                <Td className="whitespace-nowrap text-sm text-muted">
+                  {formatDate(row.createdAt)}
+                </Td>
                 <Td align="right">
                   <div className="flex items-center justify-end gap-1">
                     <Link
@@ -135,7 +228,11 @@ export function CustomersTable({
                         Email customer
                       </RowMenuItem>
                       {can.delete ? (
-                        <RowMenuItem tone="danger" onClick={() => setConfirmDelete(row)} disabled={busy}>
+                        <RowMenuItem
+                          tone="danger"
+                          onClick={() => setConfirmDelete(row)}
+                          disabled={busy}
+                        >
                           <Trash className="h-3.5 w-3.5" aria-hidden="true" />
                           Delete
                         </RowMenuItem>
@@ -167,6 +264,19 @@ export function CustomersTable({
         }}
         title="Delete this customer?"
         message="The customer is hidden from the CRM. Linked leads keep their history."
+        pending={busy}
+      />
+
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        onClose={() => setConfirmBulkDelete(false)}
+        onConfirm={async () => {
+          await applyBulk({ action: 'delete' });
+          setConfirmBulkDelete(false);
+        }}
+        title={`Delete ${selection.selected.length} customer(s)?`}
+        message="They are hidden from the CRM. Linked leads keep their history."
+        confirmLabel="Delete customers"
         pending={busy}
       />
     </>

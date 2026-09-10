@@ -21,6 +21,8 @@ export type LeadFilters = {
   utmContent?: string;
   /** The free-text `source` column (e.g. "Contact form"). */
   leadSource?: string;
+  /** First page of the visit that converted, as recorded on the lead. */
+  landingUrl?: string;
   /** 'due' = follow-up on or before today, 'set' = has one, 'none' = has none. */
   followUp?: string;
   /** Filter dates against creation or last update. */
@@ -81,6 +83,11 @@ export function buildLeadWhere(filters: LeadFilters): Prisma.LeadWhereInput {
   applyAttribution(where, 'utmCampaign', filters.utmCampaign);
   applyAttribution(where, 'utmContent', filters.utmContent);
   if (filters.leadSource) where.source = filters.leadSource;
+  // Matches the dimension the CRM dashboard's "Top landing pages" groups by,
+  // so clicking a bar selects exactly the leads that bar counted.
+  if (filters.landingUrl) {
+    where.landingUrl = filters.landingUrl === NO_ATTRIBUTION ? null : filters.landingUrl;
+  }
 
   if (filters.followUp === 'due') {
     and.push({

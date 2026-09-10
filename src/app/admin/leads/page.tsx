@@ -2,7 +2,12 @@ import type { Metadata } from 'next';
 import { Plus } from 'lucide-react';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
-import { buildLeadWhere, buildLeadOrderBy, type LeadFilters } from '@/lib/crm/query';
+import {
+  buildLeadWhere,
+  buildLeadOrderBy,
+  NO_ATTRIBUTION,
+  type LeadFilters,
+} from '@/lib/crm/query';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { FilterBar } from '@/components/admin/filter-bar';
 import { AdminPagination } from '@/components/admin/admin-pagination';
@@ -26,6 +31,24 @@ export const dynamic = 'force-dynamic';
 const PER_PAGE = 25;
 
 type SearchParams = LeadFilters & { page?: string };
+
+/** Most-used landing URLs, so the CRM dashboard's drill-down has a chip to show. */
+async function landingUrlOptions() {
+  const rows = await prisma.lead.groupBy({
+    by: ['landingUrl'],
+    where: { deletedAt: null, landingUrl: { not: null } },
+    _count: { _all: true },
+    orderBy: { _count: { landingUrl: 'desc' } },
+    take: 25,
+  });
+  return rows
+    .map((row) => ({
+      value: String(row.landingUrl ?? ''),
+      label: String(row.landingUrl ?? ''),
+      hint: String(row._count._all),
+    }))
+    .filter((option) => option.value);
+}
 
 /** Distinct non-null values of an attribution column, for its filter dropdown. */
 async function attributionOptions(
@@ -74,6 +97,7 @@ export default async function LeadsAdmin({
     utmCampaigns,
     utmContents,
     leadSources,
+    landingUrls,
     statusCounts,
     unassignedCount,
     followUpCount,
@@ -130,6 +154,7 @@ export default async function LeadsAdmin({
     attributionOptions('utmCampaign'),
     attributionOptions('utmContent'),
     attributionOptions('source'),
+    landingUrlOptions(),
     prisma.lead.groupBy({
       by: ['status'],
       where: { deletedAt: null },
@@ -227,6 +252,13 @@ export default async function LeadsAdmin({
       label: 'Landing page',
       allLabel: 'Any page',
       options: pages.map((p) => ({ label: p.title, value: p.id })),
+      advanced: true,
+    },
+    {
+      name: 'landingUrl',
+      label: 'Landing URL',
+      allLabel: 'Any landing URL',
+      options: [...landingUrls, { label: 'Not recorded', value: NO_ATTRIBUTION }],
       advanced: true,
     },
     {

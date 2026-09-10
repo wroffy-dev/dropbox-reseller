@@ -20,10 +20,11 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, ArrowUp, ArrowDown, Star, Package } from 'lucide-react';
-import { reorderProducts } from '@/lib/actions/products';
+import { GripVertical, ArrowUp, ArrowDown, Star, Package, Search } from 'lucide-react';
+import { reorderProducts, toggleProductFeatured } from '@/lib/actions/products';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/field';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/states';
 import { ContentStatusBadge } from '@/components/admin/lead-status-badge';
@@ -105,11 +106,46 @@ export function ProductOrderList({
     router.refresh();
   }
 
+  // Search narrows what is shown without touching the stored order: dragging
+  // is disabled while filtering, because a drop position within a filtered
+  // subset does not mean the same thing in the full list.
+  const [query, setQuery] = React.useState('');
+  const term = query.trim().toLowerCase();
+  const filtering = term.length > 0;
+  const visible = filtering
+    ? items.filter(
+        (product) =>
+          product.name.toLowerCase().includes(term) ||
+          product.slug.toLowerCase().includes(term) ||
+          (product.categoryName ?? '').toLowerCase().includes(term) ||
+          (product.brandName ?? '').toLowerCase().includes(term),
+      )
+    : items;
+
+  const [featurePending, setFeaturePending] = React.useState<string | null>(null);
+
+  async function toggleFeatured(product: OrderableProduct) {
+    setFeaturePending(product.id);
+    const result = await toggleProductFeatured(product.id);
+    setFeaturePending(null);
+    if (!result.ok) {
+      toast(result.error, 'error');
+      return;
+    }
+    toast(
+      result.message ?? (product.isFeatured ? 'Removed from featured.' : 'Marked as featured.'),
+    );
+    // The featured rail is a different query, so let the server resend both.
+    router.refresh();
+  }
+
   if (items.length === 0) {
     return (
       <Card>
         <EmptyState
-          icon={scope === 'featured' ? <Star className="h-5 w-5" /> : <Package className="h-5 w-5" />}
+          icon={
+            scope === 'featured' ? <Star className="h-5 w-5" /> : <Package className="h-5 w-5" />
+          }
           title={scope === 'featured' ? 'No featured products yet' : 'No products yet'}
           description={
             scope === 'featured'
@@ -130,21 +166,60 @@ export function ProductOrderList({
             ? 'The order featured products appear in, wherever a section uses the “Featured” source.'
             : 'The default order for product sections, category pages and the product index.'
         }
+        actions={
+          <div className="relative w-full sm:w-64">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+              aria-hidden="true"
+            />
+            <Input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search products"
+              aria-label={`Search ${scope === 'featured' ? 'featured products' : 'products'}`}
+              className="pl-9"
+            />
+          </div>
+        }
       />
       <CardBody>
+        {filtering ? (
+          <p className="mb-3 rounded-lg bg-muted/[0.06] px-3 py-2 text-xs text-muted">
+            Showing {visible.length} of {items.length}. Clear the search to change the order —
+            dragging is disabled while a filter is applied.
+          </p>
+        ) : null}
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={items.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext items={visible.map((p) => p.id)} strategy={verticalListSortingStrategy}>
             <ol className="space-y-2">
-              {items.map((product, index) => (
-                <SortableRow
-                  key={product.id}
-                  product={product}
-                  index={index}
-                  canEdit={canEdit}
-                  onMoveUp={index > 0 ? () => move(product.id, -1) : undefined}
-                  onMoveDown={index < items.length - 1 ? () => move(product.id, 1) : undefined}
-                />
-              ))}
+              {visible.length === 0 ? (
+                <li className="rounded-lg border border-dashed border-hairline px-3 py-8 text-center text-sm text-muted">
+                  No product matches “{query}”.
+                </li>
+              ) : (
+                visible.map((product) => {
+                  // Position is always the one in the real list, never the
+                  // filtered one, so the number on screen matches what saves.
+                  const index = items.findIndex((candidate) => candidate.id === product.id);
+                  return (
+                    <SortableRow
+                      key={product.id}
+                      product={product}
+                      index={index}
+                      canEdit={canEdit && !filtering}
+                      onMoveUp={!filtering && index > 0 ? () => move(product.id, -1) : undefined}
+                      onMoveDown={
+                        !filtering && index < items.length - 1
+                          ? () => move(product.id, 1)
+                          : undefined
+                      }
+                      onToggleFeatured={canEdit ? () => toggleFeatured(product) : undefined}
+                      featurePending={featurePending === product.id}
+                    />
+                  );
+                })
+              )}
             </ol>
           </SortableContext>
         </DndContext>
@@ -186,12 +261,16 @@ function SortableRow({
   canEdit,
   onMoveUp,
   onMoveDown,
+  onToggleFeatured,
+  featurePending,
 }: {
   product: OrderableProduct;
   index: number;
   canEdit: boolean;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
+  onToggleFeatured?: () => void;
+  featurePending?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: product.id,
@@ -269,7 +348,28 @@ function SortableRow({
         </span>
       </span>
 
-      {product.isFeatured ? (
+      {onToggleFeatured ? (
+        <button
+          type="button"
+          onClick={onToggleFeatured}
+          disabled={featurePending}
+          aria-pressed={product.isFeatured}
+          title={product.isFeatured ? 'Remove from featured' : 'Mark as featured'}
+          className={cn(
+            'flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1',
+            product.isFeatured
+              ? 'bg-brand/10 text-brand hover:bg-brand/15'
+              : 'text-muted hover:bg-muted/10 hover:text-content',
+          )}
+        >
+          <Star
+            className={cn('h-3 w-3', product.isFeatured && 'fill-current')}
+            aria-hidden="true"
+          />
+          <span className="hidden sm:inline">{product.isFeatured ? 'Featured' : 'Feature'}</span>
+        </button>
+      ) : product.isFeatured ? (
         <Badge tone="brand">
           <Star className="h-3 w-3" aria-hidden="true" />
           Featured

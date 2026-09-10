@@ -329,8 +329,10 @@ export async function getTopEntryPoints(range: DateRange): Promise<{
 
   return {
     landingPages: landing.map((row) => ({
-      key: row.landingUrl ?? 'unknown',
-      label: row.landingUrl || 'Unknown',
+      // Same sentinel the leads list understands, so an unrecorded landing
+      // page still drills through to the leads it counted.
+      key: row.landingUrl || NO_ATTRIBUTION,
+      label: row.landingUrl || 'Not recorded',
       count: row._count._all,
     })),
     forms: forms.map((row) => ({

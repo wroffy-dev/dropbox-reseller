@@ -261,3 +261,36 @@ describe('the "no attribution" drill-down', () => {
     expect(await count({ source: NO_ATTRIBUTION, assignedTo: ownerId })).toBe(0);
   });
 });
+
+describe('landing URL filter (CRM dashboard drill-down)', () => {
+  it('selects exactly the leads a "Top landing pages" bar counted', async () => {
+    // The dashboard groups by landingUrl, so the filter must match on the same
+    // column — otherwise the bar says 3 and the list shows something else.
+    const grouped = await prisma.lead.groupBy({
+      by: ['landingUrl'],
+      where: { id: { in: created }, landingUrl: { not: null } },
+      _count: { _all: true },
+      orderBy: { _count: { landingUrl: 'desc' } },
+      take: 1,
+    });
+
+    if (grouped.length === 0) return; // no fixture lead carries a landing URL
+    const [top] = grouped;
+    expect(await count({ landingUrl: top.landingUrl! })).toBe(top._count._all);
+  });
+
+  it('resolves the sentinel to leads with no landing URL recorded', async () => {
+    const unrecorded = await count({ landingUrl: NO_ATTRIBUTION });
+    const direct = await prisma.lead.count({
+      where: { id: { in: created }, landingUrl: null },
+    });
+    expect(unrecorded).toBe(direct);
+  });
+
+  it('narrows rather than widens when combined', async () => {
+    expect(await count({ status: 'QUALIFIED', landingUrl: NO_ATTRIBUTION })).toBeLessThanOrEqual(
+      await count({ status: 'QUALIFIED' }),
+    );
+    expect(await count({ landingUrl: 'no-lead-landed-here' })).toBe(0);
+  });
+});

@@ -251,6 +251,81 @@ export async function deleteForm(formId: string): Promise<ActionResult> {
 const exportSchema = z.object({ formId: z.string().min(1) });
 
 /** CSV of a form's submissions. Header order follows the current field order. */
+// ---------------------------------------------------------------------------
+// Bulk actions
+// ---------------------------------------------------------------------------
+
+const formBulkSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(100),
+  action: z.enum(['activate', 'deactivate', 'captchaOn', 'captchaOff', 'delete']),
+});
+
+/**
+ * Applies one change to several forms at once.
+ *
+ * Takes the same permission the single-record action does, and deletes stay
+ * soft with the slug freed — submissions and leads reference the form, so
+ * removing the row would take their history with it.
+ */
+export async function bulkFormAction(input: unknown): Promise<ActionResult> {
+  try {
+    const { ids, action } = formBulkSchema.parse(input);
+    const user =
+      action === 'delete' ? await authorize('forms.delete') : await authorize('forms.edit');
+
+    const forms = await prisma.form.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      select: { id: true, slug: true },
+    });
+    if (forms.length === 0) return failure('Those forms no longer exist.');
+    const targetIds = forms.map((form) => form.id);
+
+    if (action === 'delete') {
+      // Each slug is freed individually, so a later form may reuse the name.
+      await prisma.$transaction(
+        forms.map((form) =>
+          prisma.form.update({
+            where: { id: form.id },
+            data: {
+              deletedAt: new Date(),
+              isActive: false,
+              slug: `${form.slug}-deleted-${Date.now()}`,
+            },
+          }),
+        ),
+      );
+    } else if (action === 'activate' || action === 'deactivate') {
+      await prisma.form.updateMany({
+        where: { id: { in: targetIds } },
+        data: { isActive: action === 'activate' },
+      });
+    } else {
+      await prisma.form.updateMany({
+        where: { id: { in: targetIds } },
+        data: { requireCaptcha: action === 'captchaOn' },
+      });
+    }
+
+    await recordAudit({
+      actor: user,
+      action: `bulk.${action}`,
+      entity: 'Form',
+      summary: `${action} applied to ${targetIds.length} form(s)`,
+    });
+
+    revalidatePath('/admin/forms');
+    revalidatePath('/', 'layout');
+    return success(
+      undefined,
+      action === 'delete'
+        ? `${targetIds.length} form(s) deleted. Existing submissions and leads are retained.`
+        : `${targetIds.length} form(s) updated.`,
+    );
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
 export async function exportSubmissions(
   input: unknown,
 ): Promise<ActionResult<{ csv: string; filename: string }>> {

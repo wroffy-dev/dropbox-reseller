@@ -182,6 +182,7 @@ export default async function CrmDashboard({
               items={entryPoints.landingPages.map((row) => ({
                 label: row.label,
                 count: row.count,
+                href: `/admin/leads?landingUrl=${encodeURIComponent(row.key)}&${rangeQuery}`,
               }))}
               emptyLabel="No landing pages recorded in this period."
             />
@@ -191,7 +192,11 @@ export default async function CrmDashboard({
           <CardHeader title="Top forms" description="Which form captured the lead." />
           <CardBody>
             <HorizontalBars
-              items={entryPoints.forms.map((row) => ({ label: row.label, count: row.count }))}
+              items={entryPoints.forms.map((row) => ({
+                label: row.label,
+                count: row.count,
+                href: `/admin/leads?formId=${encodeURIComponent(row.key)}&${rangeQuery}`,
+              }))}
               emptyLabel="No form-captured leads in this period."
             />
           </CardBody>

@@ -9,8 +9,13 @@ import { ProductCta } from './product-cta';
 /**
  * Product card.
  *
- * The show/hide props default to the original behaviour, so existing callers are
- * unaffected; the CMS product grid passes the admin's own toggles through.
+ * Every show/hide prop defaults to what the card did before they existed, so a
+ * caller that passes none — and a CMS section saved before these toggles were
+ * added — renders exactly as it always has.
+ *
+ * `showActions` is the master switch over the two action controls: when it is
+ * off neither the primary CTA nor the details link renders, whatever their own
+ * toggles say.
  */
 export function ProductCard({
   product,
@@ -19,7 +24,11 @@ export function ProductCard({
   showFeatures = true,
   showImage = true,
   showDescription = true,
+  showName = true,
+  linkName = true,
   showCta = true,
+  showDetailsLink = true,
+  showActions = true,
   ctaLabel,
   highlight,
   ctaLocation = 'product-card',
@@ -30,7 +39,15 @@ export function ProductCard({
   showFeatures?: boolean;
   showImage?: boolean;
   showDescription?: boolean;
+  /** Off hides the product name entirely. */
+  showName?: boolean;
+  /** Off renders the name as plain text instead of a link. */
+  linkName?: boolean;
   showCta?: boolean;
+  /** The "View full details" link. */
+  showDetailsLink?: boolean;
+  /** Master switch: off hides the CTA and the details link together. */
+  showActions?: boolean;
   ctaLabel?: string;
   highlight?: boolean;
   ctaLocation?: string;
@@ -38,11 +55,16 @@ export function ProductCard({
   const price = billing === 'annual' ? product.annualPrice : product.monthlyPrice;
   const period = billing === 'annual' ? '/year' : '/month';
 
+  const withCta = showActions && showCta;
+  const withDetails = showActions && showDetailsLink;
+
   return (
     <article
       className={cn(
         'flex flex-col rounded-2xl border bg-surface p-6 transition-shadow',
-        highlight ? 'border-brand shadow-lg ring-1 ring-brand/20' : 'border-hairline shadow-sm hover:shadow-md',
+        highlight
+          ? 'border-brand shadow-lg ring-1 ring-brand/20'
+          : 'border-hairline shadow-sm hover:shadow-md',
       )}
     >
       {highlight ? (
@@ -62,11 +84,17 @@ export function ProductCard({
         />
       ) : null}
 
-      <h3 className="font-heading text-lg font-bold text-content">
-        <Link href={`/products/${product.slug}`} className="hover:text-brand">
-          {product.name}
-        </Link>
-      </h3>
+      {showName ? (
+        <h3 className="font-heading text-lg font-bold text-content">
+          {linkName ? (
+            <Link href={`/products/${product.slug}`} className="hover:text-brand">
+              {product.name}
+            </Link>
+          ) : (
+            product.name
+          )}
+        </h3>
+      ) : null}
 
       {showDescription && product.shortDescription ? (
         <p className="mt-2 text-sm leading-relaxed text-muted">{product.shortDescription}</p>
@@ -82,18 +110,26 @@ export function ProductCard({
                 </span>
                 <span className="text-sm text-muted">{period}</span>
               </p>
-              {product.priceSuffix ? <p className="mt-1 text-xs text-muted">{product.priceSuffix}</p> : null}
+              {product.priceSuffix ? (
+                <p className="mt-1 text-xs text-muted">{product.priceSuffix}</p>
+              ) : null}
               {product.compareAtPrice ? (
                 <p className="mt-1 text-xs text-muted">
-                  <span className="line-through">{formatMoney(product.compareAtPrice, product.currency)}</span>
+                  <span className="line-through">
+                    {formatMoney(product.compareAtPrice, product.currency)}
+                  </span>
                   {product.discountPercent ? (
-                    <span className="ml-2 font-medium text-emerald-600">Save {product.discountPercent}%</span>
+                    <span className="ml-2 font-medium text-emerald-600">
+                      Save {product.discountPercent}%
+                    </span>
                   ) : null}
                 </p>
               ) : null}
             </>
           ) : (
-            <p className="font-heading text-2xl font-bold text-content">{product.priceNote || 'Custom pricing'}</p>
+            <p className="font-heading text-2xl font-bold text-content">
+              {product.priceNote || 'Custom pricing'}
+            </p>
           )}
         </div>
       ) : null}
@@ -109,20 +145,31 @@ export function ProductCard({
         </ul>
       ) : null}
 
-      <div className="mt-auto pt-6">
-        {showCta ? (
-          <ProductCta product={product} label={ctaLabel} className="w-full" ctaLocation={ctaLocation} />
-        ) : null}
-        <Link
-          href={`/products/${product.slug}`}
-          className={cn(
-            'block text-center text-xs font-medium text-muted underline-offset-4 hover:text-brand hover:underline',
-            showCta && 'mt-3',
-          )}
-        >
-          View full details
-        </Link>
-      </div>
+      {/* Dropped entirely when neither action shows, so the card does not end
+          with an empty block of padding. */}
+      {withCta || withDetails ? (
+        <div className="mt-auto pt-6">
+          {withCta ? (
+            <ProductCta
+              product={product}
+              label={ctaLabel}
+              className="w-full"
+              ctaLocation={ctaLocation}
+            />
+          ) : null}
+          {withDetails ? (
+            <Link
+              href={`/products/${product.slug}`}
+              className={cn(
+                'block text-center text-xs font-medium text-muted underline-offset-4 hover:text-brand hover:underline',
+                withCta && 'mt-3',
+              )}
+            >
+              View full details
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   );
 }

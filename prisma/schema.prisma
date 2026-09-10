@@ -286,6 +286,28 @@ model VerificationToken {
 // CMS — PAGES & SECTIONS
 // ---------------------------------------------------------------------------
 
+/// Nested taxonomy for pages, e.g. Solutions → Cloud Solutions.
+/// Deleting a category never deletes its pages: the relation is SetNull, so
+/// they simply become uncategorised.
+model PageCategory {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String? @db.Text
+  parentId    String?
+  sortOrder   Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent   PageCategory?  @relation("PageCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children PageCategory[] @relation("PageCategoryTree")
+  pages    Page[]
+
+  @@index([slug])
+  @@index([parentId])
+}
+
 model Page {
   id          String        @id @default(cuid())
   title       String
@@ -293,6 +315,9 @@ model Page {
   status      ContentStatus @default(DRAFT)
   publishedAt DateTime?
   isHomepage  Boolean       @default(false)
+
+  // Optional taxonomy. Nullable so every existing page stays valid.
+  categoryId String?
 
   // Layout controls
   showHeader Boolean @default(true)
@@ -318,6 +343,7 @@ model Page {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  category        PageCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   ogImage         Media?            @relation("PageOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
   twitterImage    Media?            @relation("PageTwitterImage", fields: [twitterImageId], references: [id], onDelete: SetNull)
   sections        PageSection[]
@@ -326,6 +352,7 @@ model Page {
   navigationItems NavigationItem[]
 
   @@index([slug])
+  @@index([categoryId])
   @@index([status, publishedAt])
   @@index([deletedAt])
 }
@@ -504,16 +531,23 @@ model BlogCategory {
   description String? @db.Text
   sortOrder   Int     @default(0)
 
+  /// Optional parent, e.g. Microsoft → Azure. Nullable so every existing
+  /// category stays a valid top-level one and current URLs keep working.
+  parentId String?
+
   seoTitle       String?
   seoDescription String? @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  parent   BlogCategory?    @relation("BlogCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children BlogCategory[]   @relation("BlogCategoryTree")
   posts    BlogPost[]
   navItems NavigationItem[]
 
   @@index([slug])
+  @@index([parentId])
 }
 
 model BlogTag {
@@ -598,6 +632,24 @@ model BlogPostRelation {
 // MEDIA
 // ---------------------------------------------------------------------------
 
+/// User-facing media folders, nested without limit. Separate from the
+/// storage key's YYYY/MM prefix, which stays exactly as it is so existing
+/// media URLs never change.
+model MediaFolder {
+  id       String  @id @default(cuid())
+  name     String
+  parentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent   MediaFolder?  @relation("MediaFolderTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children MediaFolder[] @relation("MediaFolderTree")
+  media    Media[]
+
+  @@index([parentId])
+}
+
 model Media {
   id          String    @id @default(cuid())
   filename    String
@@ -613,7 +665,10 @@ model Media {
   title       String?
   caption     String?   @db.Text
   description String?   @db.Text
+  /// Legacy free-text label, kept so nothing that reads it breaks.
   folder      String?
+  /// The folder this item lives in. Null means Uncategorised.
+  folderId    String?
 
   uploadedById String?
 
@@ -621,7 +676,8 @@ model Media {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  uploadedBy User? @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedBy  User?        @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  mediaFolder MediaFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
   pageOgImages       Page[]            @relation("PageOgImage")
   pageTwitterImages  Page[]            @relation("PageTwitterImage")

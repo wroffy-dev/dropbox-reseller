@@ -9,7 +9,7 @@ import { bulkLeadAction, exportLeads } from '@/lib/actions/leads';
 import { RowMenu, RowMenuItem, BulkBar, useSelection } from '@/components/admin/row-menu';
 import { LeadStatusBadge } from '@/components/admin/status-badge';
 import { SortableTh } from '@/components/admin/sortable-th';
-import { Table, TableWrap, Th, Td, Tr } from '@/components/ui/table';
+import { Table, TableWrap, StickyThead, Th, Td, Tr } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/states';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Select } from '@/components/ui/field';
@@ -242,10 +242,18 @@ export function LeadsTable({
       ) : null}
 
       {/* Desktop: full table. */}
-      <TableWrap className="hidden md:block">
-        <Table className="min-w-[64rem]">
+      {/*
+        The wrapper is the scroll container (overflow-x makes overflow-y
+        compute to auto), so the header sticks to it rather than to the
+        viewport. Bounding the height in viewport units gives it something to
+        stick to at any window size, and leaves room for the admin chrome and
+        the pagination bar beneath. A short list never reaches the cap, so it
+        simply does not scroll.
+      */}
+      <TableWrap className="hidden md:block" maxHeight="calc(100vh - 22rem)">
+        <Table className="min-w-[64rem]" stickyHeader>
           <caption className="sr-only">Leads</caption>
-          <thead className="sticky top-16 z-sticky">
+          <StickyThead>
             <tr>
               {can.edit ? (
                 <Th className="w-10">
@@ -272,7 +280,7 @@ export function LeadsTable({
               <SortableTh field="createdAt">Created</SortableTh>
               <Th align="right">Actions</Th>
             </tr>
-          </thead>
+          </StickyThead>
           <tbody>
             {rows.map((row) => (
               <Tr key={row.id}>

@@ -26,6 +26,7 @@ export async function createPage(formData: FormData): Promise<ActionResult<{ id:
       title: formData.get('title'),
       slug: formData.get('slug') || String(formData.get('title') ?? ''),
       status: formData.get('status') || 'DRAFT',
+      categoryId: formData.get('categoryId'),
       publishedAt: formData.get('publishedAt') || null,
       isHomepage: formData.get('isHomepage') === 'true',
       showHeader: formData.get('showHeader') !== 'false',
@@ -46,7 +47,10 @@ export async function createPage(formData: FormData): Promise<ActionResult<{ id:
     if (parsed.status === 'PUBLISHED') await authorize('pages.publish');
 
     const slug = await uniqueSlug(parsed.slug || pageSlug(parsed.title), async (candidate) => {
-      const existing = await prisma.page.findUnique({ where: { slug: candidate }, select: { id: true } });
+      const existing = await prisma.page.findUnique({
+        where: { slug: candidate },
+        select: { id: true },
+      });
       return Boolean(existing);
     });
 
@@ -95,6 +99,7 @@ export async function updatePage(pageId: string, formData: FormData): Promise<Ac
       title: formData.get('title'),
       slug: formData.get('slug'),
       status: formData.get('status') || before.status,
+      categoryId: formData.get('categoryId'),
       publishedAt: formData.get('publishedAt') || null,
       isHomepage: formData.get('isHomepage') === 'true',
       showHeader: formData.get('showHeader') !== 'false',
@@ -124,7 +129,8 @@ export async function updatePage(pageId: string, formData: FormData): Promise<Ac
         where: { slug, id: { not: pageId } },
         select: { id: true },
       });
-      if (clash) return failure('Another page already uses that URL.', { slug: ['This URL is taken'] });
+      if (clash)
+        return failure('Another page already uses that URL.', { slug: ['This URL is taken'] });
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -171,7 +177,8 @@ export async function setPageStatus(
   status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED',
 ): Promise<ActionResult> {
   try {
-    const user = status === 'PUBLISHED' ? await authorize('pages.publish') : await authorize('pages.edit');
+    const user =
+      status === 'PUBLISHED' ? await authorize('pages.publish') : await authorize('pages.edit');
     const page = await prisma.page.findUnique({ where: { id: pageId } });
     if (!page) return failure('That page no longer exists.');
 
@@ -212,7 +219,10 @@ export async function duplicatePage(pageId: string): Promise<ActionResult<{ id: 
     if (!source) return failure('That page no longer exists.');
 
     const slug = await uniqueSlug(`${source.slug || 'home'}-copy`, async (candidate) => {
-      const existing = await prisma.page.findUnique({ where: { slug: candidate }, select: { id: true } });
+      const existing = await prisma.page.findUnique({
+        where: { slug: candidate },
+        select: { id: true },
+      });
       return Boolean(existing);
     });
 
@@ -266,12 +276,17 @@ export async function deletePage(pageId: string): Promise<ActionResult> {
     const user = await authorize('pages.delete');
     const page = await prisma.page.findUnique({ where: { id: pageId } });
     if (!page) return failure('That page no longer exists.');
-    if (page.isHomepage) return failure('Set another page as the homepage before deleting this one.');
+    if (page.isHomepage)
+      return failure('Set another page as the homepage before deleting this one.');
 
     // Soft delete keeps inbound lead attribution intact.
     await prisma.page.update({
       where: { id: pageId },
-      data: { deletedAt: new Date(), status: 'ARCHIVED', slug: `${page.slug}-deleted-${Date.now()}` },
+      data: {
+        deletedAt: new Date(),
+        status: 'ARCHIVED',
+        slug: `${page.slug}-deleted-${Date.now()}`,
+      },
     });
 
     await recordAudit({
@@ -295,7 +310,10 @@ export async function deletePage(pageId: string): Promise<ActionResult> {
 // Sections
 // ---------------------------------------------------------------------------
 
-export async function addSection(pageId: string, blockType: string): Promise<ActionResult<{ id: string }>> {
+export async function addSection(
+  pageId: string,
+  blockType: string,
+): Promise<ActionResult<{ id: string }>> {
   try {
     const user = await authorize('pages.edit');
     const definition = getBlock(blockType);
@@ -368,11 +386,16 @@ export async function updateSection(
           where: { pageId: section.page.id, id: { not: sectionId } },
           select: { settings: true },
         });
-        const taken = siblings.some((s) => parseSectionDesign(s.settings).anchorId === design.anchorId);
+        const taken = siblings.some(
+          (s) => parseSectionDesign(s.settings).anchorId === design.anchorId,
+        );
         if (taken) {
-          return failure(`Another section on this page already uses the anchor “${design.anchorId}”.`, {
-            anchorId: ['This anchor is already used on this page'],
-          });
+          return failure(
+            `Another section on this page already uses the anchor “${design.anchorId}”.`,
+            {
+              anchorId: ['This anchor is already used on this page'],
+            },
+          );
         }
       }
 
@@ -479,7 +502,10 @@ async function normaliseOrder(pageId: string) {
   });
   await prisma.$transaction(
     sections.map((section, index) =>
-      prisma.pageSection.update({ where: { id: section.id }, data: { sortOrder: (index + 1) * 10 } }),
+      prisma.pageSection.update({
+        where: { id: section.id },
+        data: { sortOrder: (index + 1) * 10 },
+      }),
     ),
   );
 }

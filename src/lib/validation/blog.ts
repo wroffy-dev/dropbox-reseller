@@ -48,6 +48,13 @@ export const blogPostSchema = z
 
 export const blogCategorySchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(120),
+  /** Optional parent, e.g. Microsoft → Azure. Empty means top level. */
+  parentId: z
+    .string()
+    .max(40)
+    .optional()
+    .nullable()
+    .transform((v) => (v ? v : null)),
   slug: z
     .string()
     .max(160)
@@ -56,4 +63,19 @@ export const blogCategorySchema = z.object({
   sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
   seoTitle: optional(240),
   seoDescription: optional(400),
+});
+
+/** A blog tag. Slug uniqueness is enforced in the action. */
+export const blogTagSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(80),
+  slug: z
+    .string()
+    .max(120)
+    .transform((v) => slugify(v)),
+});
+
+export type BlogTagInput = z.infer<typeof blogTagSchema>;
+
+export const blogCategoryOrderSchema = z.object({
+  ids: z.array(z.string().min(1)).max(500),
 });

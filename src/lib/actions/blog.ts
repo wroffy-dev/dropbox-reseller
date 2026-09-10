@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
 import { authorize } from '@/lib/auth/guards';
 import { recordAudit } from '@/lib/services/audit';
+import { canSetParent } from '@/lib/utils/tree';
 import { blogPostSchema, blogCategorySchema } from '@/lib/validation/blog';
 import { uniqueSlug, slugify } from '@/lib/utils/slug';
 import { sanitizeHtml, sanitizeText } from '@/lib/utils/sanitize';
@@ -93,7 +94,8 @@ export async function createBlogPost(formData: FormData): Promise<ActionResult<{
         title: sanitizeText(input.title),
         slug,
         status: input.status,
-        publishedAt: input.status === 'PUBLISHED' ? (input.publishedAt ?? new Date()) : input.publishedAt,
+        publishedAt:
+          input.status === 'PUBLISHED' ? (input.publishedAt ?? new Date()) : input.publishedAt,
         excerpt: input.excerpt ? sanitizeText(input.excerpt) : plainExcerpt(content, 200) || null,
         content,
         readingTime: readingTimeMinutes(content),
@@ -138,7 +140,8 @@ export async function updateBlogPost(postId: string, formData: FormData): Promis
     if (!before || before.deletedAt) return failure('That post no longer exists.');
 
     const input = readPostForm(formData);
-    if (input.status === 'PUBLISHED' && before.status !== 'PUBLISHED') await authorize('blog.publish');
+    if (input.status === 'PUBLISHED' && before.status !== 'PUBLISHED')
+      await authorize('blog.publish');
 
     const slug = input.slug || before.slug;
     if (slug !== before.slug) {
@@ -146,7 +149,8 @@ export async function updateBlogPost(postId: string, formData: FormData): Promis
         where: { slug, id: { not: postId } },
         select: { id: true },
       });
-      if (clash) return failure('Another post already uses that URL.', { slug: ['This URL is taken'] });
+      if (clash)
+        return failure('Another post already uses that URL.', { slug: ['This URL is taken'] });
     }
 
     const content = sanitizeHtml(input.content);
@@ -215,7 +219,8 @@ export async function setBlogPostStatus(
   status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED',
 ): Promise<ActionResult> {
   try {
-    const user = status === 'PUBLISHED' ? await authorize('blog.publish') : await authorize('blog.edit');
+    const user =
+      status === 'PUBLISHED' ? await authorize('blog.publish') : await authorize('blog.edit');
     const post = await prisma.blogPost.findUnique({ where: { id: postId } });
     if (!post) return failure('That post no longer exists.');
 
@@ -338,10 +343,25 @@ export async function saveBlogCategory(
       name: formData.get('name'),
       slug: formData.get('slug') || String(formData.get('name') ?? ''),
       description: formData.get('description'),
+      parentId: formData.get('parentId'),
       sortOrder: formData.get('sortOrder') || 0,
       seoTitle: formData.get('seoTitle'),
       seoDescription: formData.get('seoDescription'),
     });
+
+    // A category may not sit inside itself or inside one of its own children;
+    // a cycle would make the tree and breadcrumb reads loop forever.
+    const parentCheck = canSetParent(
+      await prisma.blogCategory.findMany({ select: { id: true, parentId: true } }),
+      categoryId,
+      input.parentId,
+      {
+        self: 'A category cannot be its own parent.',
+        cycle: 'That would place a category inside one of its own subcategories.',
+        missing: 'That parent category no longer exists.',
+      },
+    );
+    if (!parentCheck.ok) return failure(parentCheck.error);
 
     const slug =
       categoryId === null
@@ -358,6 +378,7 @@ export async function saveBlogCategory(
       name: sanitizeText(input.name),
       slug,
       description: input.description ? sanitizeText(input.description) : null,
+      parentId: input.parentId,
       sortOrder: input.sortOrder,
       seoTitle: input.seoTitle,
       seoDescription: input.seoDescription,
@@ -388,18 +409,28 @@ export async function deleteBlogCategory(categoryId: string): Promise<ActionResu
     const user = await authorize('blog.delete');
     const category = await prisma.blogCategory.findUnique({
       where: { id: categoryId },
-      include: { _count: { select: { posts: true } } },
+      include: { _count: { select: { posts: true, children: true } } },
     });
     if (!category) return failure('That category no longer exists.');
 
-    await prisma.blogCategory.delete({ where: { id: categoryId } });
+    await prisma.$transaction(async (tx) => {
+      // Subcategories rise to the deleted category's own parent rather than
+      // being orphaned at the root — the hierarchy stays meaningful.
+      await tx.blogCategory.updateMany({
+        where: { parentId: categoryId },
+        data: { parentId: category.parentId },
+      });
+      await tx.blogCategory.delete({ where: { id: categoryId } });
+    });
 
     await recordAudit({
       actor: user,
       action: 'deleted',
       entity: 'BlogCategory',
       entityId: categoryId,
-      summary: `Deleted category “${category.name}”`,
+      summary:
+        `Deleted category “${category.name}” — ${category._count.posts} post(s) uncategorised, ` +
+        `${category._count.children} subcategory(ies) promoted`,
     });
 
     revalidatePath('/admin/blog/categories');

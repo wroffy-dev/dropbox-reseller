@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { pageSlug } from '@/lib/utils/slug';
+import { pageSlug, slugify } from '@/lib/utils/slug';
 
 export const contentStatusSchema = z.enum(['DRAFT', 'PUBLISHED', 'SCHEDULED', 'ARCHIVED']);
 
@@ -20,6 +20,13 @@ export const pageInputSchema = z
       .max(300)
       .transform((v) => pageSlug(v)),
     status: contentStatusSchema.default('DRAFT'),
+    /** Optional taxonomy; an empty string from a <select> means uncategorised. */
+    categoryId: z
+      .string()
+      .max(40)
+      .optional()
+      .nullable()
+      .transform((v) => (v ? v : null)),
     publishedAt: z
       .string()
       .optional()
@@ -61,4 +68,33 @@ export const sectionInputSchema = z.object({
 export const sectionOrderSchema = z.object({
   pageId: z.string().min(1),
   order: z.array(z.string().min(1)).max(200),
+});
+
+/** A page category. Slug uniqueness and cycle safety are enforced in the action. */
+export const pageCategorySchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(120),
+  slug: z
+    .string()
+    .max(160)
+    .transform((v) => slugify(v)),
+  description: z
+    .string()
+    .max(1000)
+    .optional()
+    .nullable()
+    .transform((v) => (v?.trim() ? v.trim() : null)),
+  parentId: z
+    .string()
+    .max(40)
+    .optional()
+    .nullable()
+    .transform((v) => (v ? v : null)),
+  sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
+});
+
+export type PageCategoryInput = z.infer<typeof pageCategorySchema>;
+
+/** Reordering payload: the categories in their new order. */
+export const pageCategoryOrderSchema = z.object({
+  ids: z.array(z.string().min(1)).max(500),
 });

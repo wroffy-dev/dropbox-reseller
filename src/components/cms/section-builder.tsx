@@ -41,6 +41,7 @@ import {
   toggleSectionVisibility,
 } from '@/lib/actions/pages';
 import { FieldList, type FieldValues } from './field-renderer';
+import { writeFieldPath } from '@/lib/cms/fields';
 import { DesignPanel } from './design-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/field';
@@ -559,7 +560,7 @@ function SectionEditor({
               values={content}
               idPrefix={`c-${section.id}`}
               onChange={(field, value) => {
-                setContent((current) => ({ ...current, [field]: value }));
+                setContent((current) => writeFieldPath(current, field, value) as FieldValues);
                 setDirty(true);
               }}
             />

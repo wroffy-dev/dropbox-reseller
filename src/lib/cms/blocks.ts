@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { panelDesignSchema } from '@/lib/cms/design';
 import type { FieldDescriptor } from './fields';
 
 /**
@@ -135,8 +136,20 @@ const productCardsSchema = z.object({
   productIds: z.array(z.string()).default([]),
   limit: z.coerce.number().int().min(1).max(12).default(3),
   columns: z.coerce.number().int().min(2).max(4).default(3),
+  showImage: z.boolean().default(true),
+  showDescription: z.boolean().default(true),
   showPrice: z.boolean().default(true),
   showFeatures: z.boolean().default(true),
+  showCta: z.boolean().default(true),
+  /**
+   * Card appearance and action toggles. Every one defaults to true, which is
+   * exactly what these blocks rendered before the toggles existed — so a
+   * section saved earlier is unchanged by this.
+   */
+  showName: z.boolean().default(true),
+  linkName: z.boolean().default(true),
+  showDetailsLink: z.boolean().default(true),
+  showActions: z.boolean().default(true),
   billing: z.enum(['monthly', 'annual']).default('monthly'),
 });
 
@@ -191,14 +204,28 @@ const testimonialsSchema = z.object({
 
 // --- cta -------------------------------------------------------------------
 const ctaSchema = z.object({
+  eyebrow: z.string().max(120).default(''),
   heading: z.string().max(240).default(''),
   description: z.string().max(800).default(''),
   primaryCtaLabel: z.string().max(60).default(''),
   primaryCtaUrl: z.string().max(500).default(''),
+  /** Off hides the primary button even when a label is set. */
+  showPrimaryCta: z.boolean().default(true),
   secondaryCtaLabel: z.string().max(60).default(''),
   secondaryCtaUrl: z.string().max(500).default(''),
+  showSecondaryCta: z.boolean().default(true),
+  alignment: z.enum(['left', 'center', 'right']).catch('center').default('center'),
   formSlug: z.string().max(120).default(''),
-  variant: z.enum(['panel', 'plain', 'split']).default('panel'),
+  /**
+   * `simple` is the new unstyled variant; `plain` is kept as its historical
+   * name so sections saved under it keep rendering the same way.
+   */
+  variant: z.enum(['panel', 'plain', 'simple', 'split']).catch('panel').default('panel'),
+  /**
+   * Styling for the panel itself, distinct from the section band around it.
+   * Defaults are empty, so an untouched CTA keeps its original brand panel.
+   */
+  panel: panelDesignSchema.default(panelDesignSchema.parse({})),
   /**
    * Internal CTA attribution. Names *where on the site* this form sits, so a
    * lead can be traced to the placement that converted it — separately from
@@ -463,6 +490,15 @@ const productGridSchema = z.object({
   showPrice: z.boolean().default(true),
   showFeatures: z.boolean().default(true),
   showCta: z.boolean().default(true),
+  /**
+   * Card appearance and action toggles. Every one defaults to true, which is
+   * exactly what these blocks rendered before the toggles existed — so a
+   * section saved earlier is unchanged by this.
+   */
+  showName: z.boolean().default(true),
+  linkName: z.boolean().default(true),
+  showDetailsLink: z.boolean().default(true),
+  showActions: z.boolean().default(true),
   ctaLabel: z.string().max(60).default(''),
 });
 
@@ -764,8 +800,32 @@ export const BLOCKS: Record<string, BlockDefinition> = {
           { label: 'Annual', value: 'annual' },
         ],
       },
+      { kind: 'boolean', name: 'showImage', label: 'Show product image', width: 'half' },
+      { kind: 'boolean', name: 'showDescription', label: 'Show description', width: 'half' },
       { kind: 'boolean', name: 'showPrice', label: 'Show pricing', width: 'half' },
       { kind: 'boolean', name: 'showFeatures', label: 'Show feature list', width: 'half' },
+      { kind: 'boolean', name: 'showName', label: 'Show product name', width: 'half' },
+      {
+        kind: 'boolean',
+        name: 'linkName',
+        label: 'Product name links to the product',
+        width: 'half',
+        help: 'Off renders the name as plain text.',
+      },
+      {
+        kind: 'boolean',
+        name: 'showActions',
+        label: 'Show all actions',
+        width: 'half',
+        help: 'Off hides the button and the details link together.',
+      },
+      { kind: 'boolean', name: 'showCta', label: 'Show primary button', width: 'half' },
+      {
+        kind: 'boolean',
+        name: 'showDetailsLink',
+        label: 'Show “View full details”',
+        width: 'half',
+      },
     ],
   },
 
@@ -859,17 +919,37 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     icon: 'megaphone',
     schema: ctaSchema,
     fields: [
+      {
+        kind: 'text',
+        name: 'eyebrow',
+        label: 'Eyebrow',
+        width: 'half',
+        help: 'Optional small label above the heading',
+      },
       { kind: 'text', name: 'heading', label: 'Heading' },
       { kind: 'textarea', name: 'description', label: 'Description', rows: 2 },
       {
         kind: 'select',
         name: 'variant',
-        label: 'Style',
+        label: 'Layout',
         width: 'half',
         options: [
+          { label: 'Simple', value: 'simple' },
           { label: 'Panel', value: 'panel' },
-          { label: 'Plain', value: 'plain' },
           { label: 'Split with form', value: 'split' },
+          // Kept so sections saved under the old name keep their layout.
+          { label: 'Plain (legacy)', value: 'plain' },
+        ],
+      },
+      {
+        kind: 'select',
+        name: 'alignment',
+        label: 'Alignment',
+        width: 'half',
+        options: [
+          { label: 'Left', value: 'left' },
+          { label: 'Centre', value: 'center' },
+          { label: 'Right', value: 'right' },
         ],
       },
       {
@@ -877,7 +957,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
         name: 'formSlug',
         label: 'Inline form',
         width: 'half',
-        help: 'Used by the split style',
+        help: 'Used by the split layout',
       },
       {
         kind: 'text',
@@ -887,7 +967,136 @@ export const BLOCKS: Record<string, BlockDefinition> = {
         help: 'Optional. Names this placement on leads it captures, e.g. homepage_hero. Separate from UTM campaign tracking.',
       },
       ...linkFields('primaryCta', 'Primary button'),
+      { kind: 'boolean', name: 'showPrimaryCta', label: 'Show primary button', width: 'half' },
       ...linkFields('secondaryCta', 'Secondary button'),
+      { kind: 'boolean', name: 'showSecondaryCta', label: 'Show secondary button', width: 'half' },
+
+      // --- Panel styling -----------------------------------------------------
+      // Applies to the panel layout's box. The section's own background,
+      // spacing and width stay where they already are, in the Design tab.
+      {
+        kind: 'select',
+        name: 'panel.background.type',
+        label: 'Panel background',
+        width: 'half',
+        help: 'Leave transparent to keep the default brand panel.',
+        options: [
+          { label: 'Transparent', value: 'none' },
+          { label: 'Solid colour', value: 'solid' },
+          { label: 'Gradient', value: 'gradient' },
+          { label: 'Image', value: 'image' },
+        ],
+      },
+      { kind: 'color', name: 'panel.background.color', label: 'Panel colour', width: 'half' },
+      {
+        kind: 'color',
+        name: 'panel.background.gradientFrom',
+        label: 'Gradient from',
+        width: 'half',
+      },
+      { kind: 'color', name: 'panel.background.gradientTo', label: 'Gradient to', width: 'half' },
+      {
+        kind: 'number',
+        name: 'panel.background.gradientAngle',
+        label: 'Gradient angle',
+        min: 0,
+        max: 360,
+        width: 'half',
+      },
+      {
+        kind: 'media',
+        name: 'panel.background.imageId',
+        label: 'Panel background image',
+        width: 'half',
+      },
+      {
+        kind: 'select',
+        name: 'panel.background.imagePosition',
+        label: 'Image position',
+        width: 'half',
+        options: [
+          { label: 'Centre', value: 'center' },
+          { label: 'Top', value: 'top' },
+          { label: 'Bottom', value: 'bottom' },
+          { label: 'Left', value: 'left' },
+          { label: 'Right', value: 'right' },
+        ],
+      },
+      {
+        kind: 'select',
+        name: 'panel.background.imageSize',
+        label: 'Image size',
+        width: 'half',
+        options: [
+          { label: 'Cover', value: 'cover' },
+          { label: 'Contain', value: 'contain' },
+          { label: 'Original', value: 'auto' },
+        ],
+      },
+      {
+        kind: 'select',
+        name: 'panel.background.imageRepeat',
+        label: 'Image repeat',
+        width: 'half',
+        options: [
+          { label: 'No repeat', value: 'no-repeat' },
+          { label: 'Repeat', value: 'repeat' },
+          { label: 'Repeat across', value: 'repeat-x' },
+          { label: 'Repeat down', value: 'repeat-y' },
+        ],
+      },
+      {
+        kind: 'select',
+        name: 'panel.background.imageAttachment',
+        label: 'Image attachment',
+        width: 'half',
+        options: [
+          { label: 'Scroll', value: 'scroll' },
+          { label: 'Fixed', value: 'fixed' },
+        ],
+      },
+      {
+        kind: 'color',
+        name: 'panel.background.overlayColor',
+        label: 'Overlay colour',
+        width: 'half',
+      },
+      {
+        kind: 'number',
+        name: 'panel.background.overlayOpacity',
+        label: 'Overlay opacity (%)',
+        min: 0,
+        max: 100,
+        width: 'half',
+      },
+      { kind: 'boolean', name: 'panel.borderEnabled', label: 'Panel border', width: 'half' },
+      { kind: 'color', name: 'panel.borderColor', label: 'Border colour', width: 'half' },
+      { kind: 'length', name: 'panel.borderWidth', label: 'Border width', width: 'half' },
+      { kind: 'length', name: 'panel.radius', label: 'Corner radius', width: 'half' },
+      {
+        kind: 'select',
+        name: 'panel.shadow',
+        label: 'Panel shadow',
+        width: 'half',
+        options: [
+          { label: 'None', value: 'none' },
+          { label: 'Small', value: 'sm' },
+          { label: 'Medium', value: 'md' },
+          { label: 'Large', value: 'lg' },
+          { label: 'Extra large', value: 'xl' },
+        ],
+      },
+      { kind: 'length', name: 'panel.padding.top', label: 'Panel padding top', width: 'half' },
+      {
+        kind: 'length',
+        name: 'panel.padding.bottom',
+        label: 'Panel padding bottom',
+        width: 'half',
+      },
+      { kind: 'length', name: 'panel.padding.left', label: 'Panel padding left', width: 'half' },
+      { kind: 'length', name: 'panel.padding.right', label: 'Panel padding right', width: 'half' },
+      { kind: 'color', name: 'panel.headingColor', label: 'Heading colour', width: 'half' },
+      { kind: 'color', name: 'panel.textColor', label: 'Description colour', width: 'half' },
     ],
   },
 
@@ -1499,7 +1708,28 @@ export const BLOCKS: Record<string, BlockDefinition> = {
       { kind: 'boolean', name: 'showDescription', label: 'Show description', width: 'half' },
       { kind: 'boolean', name: 'showPrice', label: 'Show pricing', width: 'half' },
       { kind: 'boolean', name: 'showFeatures', label: 'Show feature list', width: 'half' },
-      { kind: 'boolean', name: 'showCta', label: 'Show button', width: 'half' },
+      { kind: 'boolean', name: 'showName', label: 'Show product name', width: 'half' },
+      {
+        kind: 'boolean',
+        name: 'linkName',
+        label: 'Product name links to the product',
+        width: 'half',
+        help: 'Off renders the name as plain text.',
+      },
+      {
+        kind: 'boolean',
+        name: 'showActions',
+        label: 'Show all actions',
+        width: 'half',
+        help: 'Off hides the button and the details link together.',
+      },
+      { kind: 'boolean', name: 'showCta', label: 'Show primary button', width: 'half' },
+      {
+        kind: 'boolean',
+        name: 'showDetailsLink',
+        label: 'Show “View full details”',
+        width: 'half',
+      },
     ],
   },
 };

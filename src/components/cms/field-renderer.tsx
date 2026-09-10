@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Plus, Trash, ChevronDown, GripVertical } from 'lucide-react';
 import type { FieldDescriptor } from '@/lib/cms/fields';
-import { isFieldVisible } from '@/lib/cms/fields';
+import { isFieldVisible, readFieldPath, writeFieldPath } from '@/lib/cms/fields';
 import { Field, Input, Textarea, Select, Switch, Label } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { MediaPicker } from '@/components/admin/media-picker';
@@ -42,16 +42,21 @@ export function FieldList({
 }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      {fields.filter((field) => isFieldVisible(field, values)).map((field) => (
-        <div key={field.name} className={cn(WIDTH_CLASS[('width' in field && field.width) || 'full'])}>
-          <FieldControl
-            field={field}
-            value={values[field.name]}
-            onChange={(value) => onChange(field.name, value)}
-            id={`${idPrefix}-${field.name}`}
-          />
-        </div>
-      ))}
+      {fields
+        .filter((field) => isFieldVisible(field, values))
+        .map((field) => (
+          <div
+            key={field.name}
+            className={cn(WIDTH_CLASS[('width' in field && field.width) || 'full'])}
+          >
+            <FieldControl
+              field={field}
+              value={readFieldPath(values, field.name)}
+              onChange={(value) => onChange(field.name, value)}
+              id={`${idPrefix}-${field.name}`}
+            />
+          </div>
+        ))}
     </div>
   );
 }
@@ -82,7 +87,11 @@ function FieldControl({
 
     case 'url':
       return (
-        <Field label={field.label} htmlFor={id} hint={field.help ?? 'Internal path (/pricing) or full URL'}>
+        <Field
+          label={field.label}
+          htmlFor={id}
+          hint={field.help ?? 'Internal path (/pricing) or full URL'}
+        >
           <Input
             id={id}
             type="text"
@@ -360,7 +369,10 @@ function Repeater({
                     {title}
                   </button>
                   <ChevronDown
-                    className={cn('h-4 w-4 shrink-0 text-muted transition-transform', isOpen && 'rotate-180')}
+                    className={cn(
+                      'h-4 w-4 shrink-0 text-muted transition-transform',
+                      isOpen && 'rotate-180',
+                    )}
                     aria-hidden="true"
                   />
                   <button

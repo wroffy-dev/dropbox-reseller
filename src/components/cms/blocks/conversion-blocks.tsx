@@ -7,38 +7,86 @@ import { PublicFormRenderer } from '@/components/forms/public-form';
 import { cn } from '@/lib/utils/cn';
 import { Check } from 'lucide-react';
 import { SectionHeading, CtaLink, type BlockContext, columnVars } from './shared';
+import { buildPanelStyles } from '@/lib/cms/design';
 
 export async function CtaBlock({ content, ctx }: { content: CtaContent; ctx: BlockContext }) {
   const inverted = ctx.inverted;
   const form =
     content.variant === 'split' && content.formSlug ? await getPublicForm(content.formSlug) : null;
 
-  const buttons = (
-    <div className={cn('flex flex-wrap gap-3', content.variant !== 'split' && 'justify-center')}>
-      <CtaLink
-        label={content.primaryCtaLabel}
-        url={content.primaryCtaUrl}
-        variant={inverted ? 'outline' : 'primary'}
-      />
-      <CtaLink
-        label={content.secondaryCtaLabel}
-        url={content.secondaryCtaUrl}
-        variant={inverted ? 'ghost' : 'outline'}
-      />
-    </div>
-  );
+  // Panel styling is resolved here so the frontend actually reflects what the
+  // admin chose. Until they choose something, `hasBackground` stays false and
+  // the panel keeps its original brand look.
+  const panelImage =
+    content.panel.background.type === 'image' && content.panel.background.imageId
+      ? await getMedia(content.panel.background.imageId)
+      : null;
+  const panel = buildPanelStyles(content.panel, panelImage?.url ?? null);
+
+  const align = content.alignment;
+  const alignClass =
+    align === 'left' ? 'text-left' : align === 'right' ? 'text-right' : 'text-center';
+  const justifyClass =
+    align === 'left' ? 'justify-start' : align === 'right' ? 'justify-end' : 'justify-center';
+
+  const showPrimary = content.showPrimaryCta && Boolean(content.primaryCtaLabel);
+  const showSecondary = content.showSecondaryCta && Boolean(content.secondaryCtaLabel);
+  const hasButtons = showPrimary || showSecondary;
+
+  const buttonRow = (variantFor: {
+    primary: 'primary' | 'outline';
+    secondary: 'outline' | 'ghost';
+  }) =>
+    hasButtons ? (
+      <div className={cn('flex flex-wrap gap-3', justifyClass)}>
+        {showPrimary ? (
+          <CtaLink
+            label={content.primaryCtaLabel}
+            url={content.primaryCtaUrl}
+            variant={variantFor.primary}
+          />
+        ) : null}
+        {showSecondary ? (
+          <CtaLink
+            label={content.secondaryCtaLabel}
+            url={content.secondaryCtaUrl}
+            variant={variantFor.secondary}
+          />
+        ) : null}
+      </div>
+    ) : null;
 
   if (content.variant === 'split' && form) {
     return (
       <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
         <div>
           <SectionHeading
+            eyebrow={content.eyebrow}
             heading={content.heading}
             description={content.description}
             align="left"
             inverted={inverted}
           />
-          <div className="mt-7">{buttons}</div>
+          {hasButtons ? (
+            <div className="mt-7">
+              <div className="flex flex-wrap gap-3">
+                {showPrimary ? (
+                  <CtaLink
+                    label={content.primaryCtaLabel}
+                    url={content.primaryCtaUrl}
+                    variant={inverted ? 'outline' : 'primary'}
+                  />
+                ) : null}
+                {showSecondary ? (
+                  <CtaLink
+                    label={content.secondaryCtaLabel}
+                    url={content.secondaryCtaUrl}
+                    variant={inverted ? 'ghost' : 'outline'}
+                  />
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </div>
         <div className="rounded-2xl border border-hairline bg-surface p-6 shadow-lg sm:p-8">
           <PublicFormRenderer
@@ -51,39 +99,77 @@ export async function CtaBlock({ content, ctx }: { content: CtaContent; ctx: Blo
     );
   }
 
-  const body = (
-    <>
-      <SectionHeading
-        heading={content.heading}
-        description={content.description}
-        inverted={inverted}
-      />
-      <div className="mt-8">{buttons}</div>
-    </>
-  );
-
   if (content.variant === 'panel') {
+    // The brand panel is the *fallback*, not a hardcoded rule: as soon as the
+    // admin sets any panel background it takes over, and the light-on-dark text
+    // treatment goes with it.
+    const usingCustom = panel.hasBackground;
     return (
       <div
         className={cn(
-          'rounded-2xl px-6 py-12 text-center sm:px-12',
-          inverted ? 'bg-white/10 backdrop-blur' : 'bg-brand text-white',
+          'relative overflow-hidden px-6 py-12 sm:px-12',
+          alignClass,
+          !panel.style.borderRadius && 'rounded-2xl',
+          usingCustom ? undefined : inverted ? 'bg-white/10 backdrop-blur' : 'bg-brand text-white',
         )}
+        style={panel.style}
       >
-        <SectionHeading heading={content.heading} description={content.description} inverted />
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <CtaLink label={content.primaryCtaLabel} url={content.primaryCtaUrl} variant="outline" />
-          <CtaLink
-            label={content.secondaryCtaLabel}
-            url={content.secondaryCtaUrl}
-            variant="ghost"
+        {panel.overlay ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+            style={{ backgroundColor: panel.overlay }}
           />
+        ) : null}
+
+        <div className="relative">
+          <SectionHeading
+            eyebrow={content.eyebrow}
+            heading={content.heading}
+            description={content.description}
+            align={align}
+            inverted={!usingCustom}
+            headingStyle={
+              content.panel.headingColor ? { color: content.panel.headingColor } : undefined
+            }
+            descriptionStyle={
+              content.panel.textColor ? { color: content.panel.textColor } : undefined
+            }
+          />
+          {hasButtons ? (
+            <div className="mt-8">
+              {buttonRow(
+                usingCustom
+                  ? { primary: 'primary', secondary: 'outline' }
+                  : { primary: 'outline', secondary: 'ghost' },
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
     );
   }
 
-  return <div className="text-center">{body}</div>;
+  // `plain` (historical) and `simple` both render without a panel.
+  return (
+    <div className={alignClass}>
+      <SectionHeading
+        eyebrow={content.eyebrow}
+        heading={content.heading}
+        description={content.description}
+        align={align}
+        inverted={inverted}
+      />
+      {hasButtons ? (
+        <div className="mt-8">
+          {buttonRow({
+            primary: inverted ? 'outline' : 'primary',
+            secondary: inverted ? 'ghost' : 'outline',
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export async function FormBlock({

@@ -108,17 +108,125 @@ const backgroundSchema = z.object({
   gradientAngle: z.coerce.number().int().min(0).max(360).catch(160).default(160),
   imageId: z.string().max(40).nullable().catch(null).default(null),
   imagePosition: z
-    .enum(['center', 'top', 'bottom', 'left', 'right', 'top left', 'top right', 'bottom left', 'bottom right'])
+    .enum([
+      'center',
+      'top',
+      'bottom',
+      'left',
+      'right',
+      'top left',
+      'top right',
+      'bottom left',
+      'bottom right',
+    ])
     .catch('center')
     .default('center'),
   imageSize: z.enum(['cover', 'contain', 'auto']).catch('cover').default('cover'),
-  imageRepeat: z.enum(['no-repeat', 'repeat', 'repeat-x', 'repeat-y']).catch('no-repeat').default('no-repeat'),
+  imageRepeat: z
+    .enum(['no-repeat', 'repeat', 'repeat-x', 'repeat-y'])
+    .catch('no-repeat')
+    .default('no-repeat'),
   imageAttachment: z.enum(['scroll', 'fixed']).catch('scroll').default('scroll'),
   overlayColor: hex,
   overlayOpacity: z.coerce.number().min(0).max(100).catch(0).default(0),
 });
 
+export { backgroundSchema };
 export type BackgroundDesign = z.infer<typeof backgroundSchema>;
+
+/**
+ * Styling for a *panel* drawn inside a section — the CTA box, for instance.
+ *
+ * This is not a duplicate of the section design: a section styles the full-width
+ * band, this styles the card sitting within it, and the two are set
+ * independently. It reuses the same background schema and the same length
+ * handling, so an admin learns one set of controls.
+ */
+export const panelDesignSchema = z.object({
+  background: backgroundSchema.default(backgroundSchema.parse({})),
+  borderEnabled: z.boolean().catch(false).default(false),
+  borderColor: hex,
+  borderWidth: z.string().max(20).catch('').default(''),
+  radius: z.string().max(20).catch('').default(''),
+  shadow: z.enum(['none', 'sm', 'md', 'lg', 'xl']).catch('none').default('none'),
+  padding: boxSchema.default(EMPTY_BOX),
+  headingColor: hex,
+  textColor: hex,
+});
+
+export type PanelDesign = z.infer<typeof panelDesignSchema>;
+
+export const DEFAULT_PANEL_DESIGN: PanelDesign = panelDesignSchema.parse({});
+
+const SHADOW_VALUES: Record<PanelDesign['shadow'], string> = {
+  none: 'none',
+  sm: '0 1px 2px rgb(0 0 0 / 0.05)',
+  md: '0 4px 12px rgb(0 0 0 / 0.08)',
+  lg: '0 10px 30px rgb(0 0 0 / 0.12)',
+  xl: '0 20px 50px rgb(0 0 0 / 0.18)',
+};
+
+export type PanelStyles = {
+  style: Record<string, string>;
+  /** True when the admin configured any background at all. */
+  hasBackground: boolean;
+  overlay: string | null;
+};
+
+/**
+ * Turns a panel's design into inline CSS.
+ *
+ * `hasBackground` lets a block keep its historical default — the CTA's brand
+ * panel — until the admin actually chooses something, so nothing changes
+ * underneath sections that were saved before these controls existed.
+ */
+export function buildPanelStyles(
+  panel: PanelDesign,
+  backgroundImageUrl: string | null = null,
+): PanelStyles {
+  const style: Record<string, string> = {};
+  const bg = panel.background;
+
+  let hasBackground = false;
+  if (bg.type === 'solid' && bg.color) {
+    style.backgroundColor = bg.color;
+    hasBackground = true;
+  } else if (bg.type === 'gradient' && (bg.gradientFrom || bg.gradientTo)) {
+    style.backgroundImage = `linear-gradient(${bg.gradientAngle}deg, ${bg.gradientFrom || 'transparent'}, ${bg.gradientTo || 'transparent'})`;
+    hasBackground = true;
+  } else if (bg.type === 'image' && backgroundImageUrl) {
+    style.backgroundImage = `url("${backgroundImageUrl.replace(/"/g, '%22')}")`;
+    style.backgroundPosition = bg.imagePosition;
+    style.backgroundSize = bg.imageSize;
+    style.backgroundRepeat = bg.imageRepeat;
+    style.backgroundAttachment = bg.imageAttachment;
+    hasBackground = true;
+  }
+
+  if (panel.borderEnabled) {
+    style.borderStyle = 'solid';
+    style.borderWidth = normaliseLength(panel.borderWidth) || '1px';
+    style.borderColor = panel.borderColor || 'rgb(var(--brand-border))';
+  }
+
+  const radius = normaliseLength(panel.radius);
+  if (radius) style.borderRadius = radius;
+  if (panel.shadow !== 'none') style.boxShadow = SHADOW_VALUES[panel.shadow];
+
+  for (const [side, value] of Object.entries(panel.padding)) {
+    const length = normaliseLength(value);
+    if (!length) continue;
+    style[`padding${side.charAt(0).toUpperCase()}${side.slice(1)}`] = length;
+  }
+
+  if (panel.headingColor) style['--panel-heading'] = panel.headingColor;
+  if (panel.textColor) style['--panel-text'] = panel.textColor;
+
+  const overlay =
+    bg.overlayColor && bg.overlayOpacity > 0 ? hexToRgba(bg.overlayColor, bg.overlayOpacity) : null;
+
+  return { style, hasBackground, overlay };
+}
 
 const colorsSchema = z.object({
   primary: hex,
@@ -276,7 +384,10 @@ function hexToRgba(value: string, alpha: number): string {
 }
 
 /** Background colour + text colour implied by a preset, before overrides. */
-const PRESET_TOKENS: Record<SectionPreset, { bg: string; text: string; heading: string; inverted: boolean }> = {
+const PRESET_TOKENS: Record<
+  SectionPreset,
+  { bg: string; text: string; heading: string; inverted: boolean }
+> = {
   default: {
     bg: 'rgb(var(--brand-background))',
     text: 'rgb(var(--brand-muted))',
@@ -381,7 +492,13 @@ export type SectionStyles = {
   /** Tablet and mobile overrides, or "" when there are none. */
   css: string;
   /** Absolutely-positioned background layer, or null. */
-  layer: { image: string | null; position: string; size: string; repeat: string; attachment: string } | null;
+  layer: {
+    image: string | null;
+    position: string;
+    size: string;
+    repeat: string;
+    attachment: string;
+  } | null;
   overlay: string | null;
   inverted: boolean;
 };
@@ -411,15 +528,17 @@ export function buildSectionStyles(
   // Colours: an explicit value always beats the preset.
   const solid =
     design.colors.background ||
-    (design.background.type === 'solid' && design.background.color ? design.background.color : '') ||
+    (design.background.type === 'solid' && design.background.color
+      ? design.background.color
+      : '') ||
     preset.bg;
   style['--sec-bg'] = solid;
   style['--sec-text'] = design.colors.text || (inverted ? 'rgba(255,255,255,0.85)' : preset.text);
-  style['--sec-heading-color'] =
-    design.colors.heading || (inverted ? '#FFFFFF' : preset.heading);
+  style['--sec-heading-color'] = design.colors.heading || (inverted ? '#FFFFFF' : preset.heading);
   style['--sec-primary'] = design.colors.primary || 'rgb(var(--brand-primary))';
   style['--sec-secondary'] = design.colors.secondary || 'rgb(var(--brand-secondary))';
-  style['--sec-button'] = design.colors.button || design.colors.primary || 'rgb(var(--brand-primary))';
+  style['--sec-button'] =
+    design.colors.button || design.colors.primary || 'rgb(var(--brand-primary))';
   style['--sec-button-text'] = design.colors.buttonText || '#FFFFFF';
   style['--sec-link'] = design.colors.link || design.colors.primary || 'rgb(var(--brand-primary))';
 
@@ -457,7 +576,9 @@ export function buildSectionStyles(
 }
 
 /** Anchor IDs must be unique within a page; later duplicates are dropped. */
-export function resolveAnchors(sections: Array<{ id: string; settings: unknown }>): Map<string, string> {
+export function resolveAnchors(
+  sections: Array<{ id: string; settings: unknown }>,
+): Map<string, string> {
   const used = new Set<string>();
   const resolved = new Map<string, string>();
   for (const section of sections) {

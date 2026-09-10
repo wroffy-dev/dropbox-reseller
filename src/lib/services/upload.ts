@@ -1,23 +1,32 @@
 import 'server-only';
 import path from 'node:path';
 import { randomToken } from '@/lib/utils/crypto';
+import {
+  ALLOWED_EXTENSIONS,
+  ACCEPT_ATTRIBUTE,
+  DEFAULT_MAX_UPLOAD_KB,
+  UNSUPPORTED_TYPE_MESSAGE,
+  TOO_LARGE_MESSAGE,
+} from '@/lib/media/constants';
 
-export const ALLOWED_MIME: Record<string, { ext: string; kind: 'IMAGE' | 'VIDEO' | 'DOCUMENT' }> = {
+// Re-exported so existing server-side imports keep working from one place.
+export { ALLOWED_EXTENSIONS, ACCEPT_ATTRIBUTE, UNSUPPORTED_TYPE_MESSAGE, TOO_LARGE_MESSAGE };
+
+/**
+ * The only file types this installation accepts.
+ *
+ * Deliberately narrow: AVIF, MP4, WEBM, DOC, DOCX and CSV were removed because
+ * nothing on the site renders them and each one widens the parser surface a
+ * hostile upload can reach. Adding a type here means also adding a signature
+ * below — a declared MIME type is never trusted on its own.
+ */
+export const ALLOWED_MIME: Record<string, { ext: string; kind: 'IMAGE' | 'DOCUMENT' }> = {
   'image/jpeg': { ext: 'jpg', kind: 'IMAGE' },
   'image/png': { ext: 'png', kind: 'IMAGE' },
   'image/webp': { ext: 'webp', kind: 'IMAGE' },
-  'image/avif': { ext: 'avif', kind: 'IMAGE' },
   'image/gif': { ext: 'gif', kind: 'IMAGE' },
   'image/svg+xml': { ext: 'svg', kind: 'IMAGE' },
-  'video/mp4': { ext: 'mp4', kind: 'VIDEO' },
-  'video/webm': { ext: 'webm', kind: 'VIDEO' },
   'application/pdf': { ext: 'pdf', kind: 'DOCUMENT' },
-  'application/msword': { ext: 'doc', kind: 'DOCUMENT' },
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
-    ext: 'docx',
-    kind: 'DOCUMENT',
-  },
-  'text/csv': { ext: 'csv', kind: 'DOCUMENT' },
 };
 
 /** Magic-byte signatures. A declared MIME type is never trusted on its own. */
@@ -30,37 +39,50 @@ const SIGNATURES: Array<{ mime: string; test: (buf: Buffer) => boolean }> = [
   { mime: 'image/gif', test: (b) => b.subarray(0, 3).toString('ascii') === 'GIF' },
   {
     mime: 'image/webp',
-    test: (b) => b.subarray(0, 4).toString('ascii') === 'RIFF' && b.subarray(8, 12).toString('ascii') === 'WEBP',
+    test: (b) =>
+      b.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      b.subarray(8, 12).toString('ascii') === 'WEBP',
   },
-  { mime: 'image/avif', test: (b) => b.subarray(4, 8).toString('ascii') === 'ftyp' },
-  { mime: 'video/mp4', test: (b) => b.subarray(4, 8).toString('ascii') === 'ftyp' },
   { mime: 'application/pdf', test: (b) => b.subarray(0, 4).toString('ascii') === '%PDF' },
 ];
 
+/**
+ * Upload ceiling in bytes.
+ *
+ * MAX_UPLOAD_KB may raise or lower it, but a missing, non-numeric or
+ * non-positive value always falls back to 150 KB — a misconfigured environment
+ * must never silently remove the limit.
+ */
 export function maxUploadBytes(): number {
-  return Number(process.env.MAX_UPLOAD_MB || 12) * 1024 * 1024;
+  const configured = Number(process.env.MAX_UPLOAD_KB);
+  const kb = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_UPLOAD_KB;
+  return kb * 1024;
 }
 
 export type UploadValidation =
-  | { ok: true; mimeType: string; kind: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; extension: string }
+  | { ok: true; mimeType: string; kind: 'IMAGE' | 'DOCUMENT'; extension: string }
   | { ok: false; error: string };
 
-export function validateUpload(declaredMime: string, buffer: Buffer, size: number): UploadValidation {
-  if (size > maxUploadBytes()) {
-    return { ok: false, error: `Files must be ${process.env.MAX_UPLOAD_MB || 12} MB or smaller.` };
-  }
+export function validateUpload(
+  declaredMime: string,
+  buffer: Buffer,
+  size: number,
+): UploadValidation {
+  if (size > maxUploadBytes()) return { ok: false, error: TOO_LARGE_MESSAGE };
   if (size === 0) return { ok: false, error: 'That file is empty.' };
 
   const allowed = ALLOWED_MIME[declaredMime];
-  if (!allowed) return { ok: false, error: `${declaredMime} files are not allowed.` };
+  // The declared type is not echoed back: it is attacker-controlled, and the
+  // admin only needs to know which formats are accepted.
+  if (!allowed) return { ok: false, error: UNSUPPORTED_TYPE_MESSAGE };
 
-  // SVG can carry script, so it is stored but never rendered through next/image
-  // without an explicit sanitisation pass. Reject it outright here.
+  // SVG is XML, so it can carry script, external references and entity
+  // expansions. It has no magic byte to check, which makes the content scan the
+  // only real defence — so it reads the whole file rather than a 4 KB window an
+  // attacker could simply pad past.
   if (declaredMime === 'image/svg+xml') {
-    const head = buffer.subarray(0, 4096).toString('utf8').toLowerCase();
-    if (head.includes('<script') || head.includes('javascript:') || head.includes('onload=')) {
-      return { ok: false, error: 'That SVG contains script and cannot be uploaded.' };
-    }
+    const problem = inspectSvg(buffer);
+    if (problem) return { ok: false, error: problem };
     return { ok: true, mimeType: declaredMime, kind: allowed.kind, extension: allowed.ext };
   }
 
@@ -76,27 +98,86 @@ export function validateUpload(declaredMime: string, buffer: Buffer, size: numbe
   return { ok: true, mimeType: declaredMime, kind: allowed.kind, extension: allowed.ext };
 }
 
-// mp4 and avif share the ISO-BMFF "ftyp" box.
+/**
+ * Rejects an SVG that could execute or fetch something when rendered.
+ *
+ * Returns the visitor-facing reason, or null when the file looks inert. The
+ * checks run over the entire decoded file, and over a copy with whitespace and
+ * XML/HTML comments stripped, so `<scr<!-- -->ipt>` and `java\nscript:` cannot
+ * slip past a naive substring match. This complements — never replaces —
+ * escaping at render time.
+ */
+function inspectSvg(buffer: Buffer): string | null {
+  const raw = buffer.toString('utf8');
+
+  // Must actually be an SVG, not something else wearing the MIME type.
+  if (!/<svg[\s>]/i.test(raw)) {
+    return 'That file does not look like an SVG.';
+  }
+
+  // Comments and numeric entities are the usual way a keyword gets broken up
+  // (`<scr<!-- -->ipt>`), so both are removed before anything is matched.
+  const base = raw
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/&#x?[0-9a-f]+;?/gi, '')
+    .toLowerCase();
+
+  // Two views of the same file, because the two attack shapes need opposite
+  // treatment: collapsing whitespace keeps attribute boundaries intact so an
+  // event handler is still recognisable, while removing it entirely defeats a
+  // scheme split over a newline ("java\nscript:").
+  const collapsed = base.replace(/\s+/g, ' ');
+  const stripped = base.replace(/\s+/g, '');
+
+  const checks: Array<[RegExp, string, string]> = [
+    [/<script/, stripped, 'script'],
+    [/<foreignobject/, stripped, 'embedded HTML'],
+    [/<iframe|<embed|<object/, stripped, 'an embedded frame'],
+    [/<use[^>]*href=["']?https?:/, stripped, 'a remote reference'],
+    [/<!entity|<!doctype[^>]*entity/, stripped, 'an XML entity'],
+    [/javascript:|data:text\/html/, stripped, 'a script URL'],
+    // Attribute boundary is a space, quote or the tag name itself.
+    [/[\s"'][a-z-]*on[a-z]+ ?=/, collapsed, 'an event handler'],
+    [/<set|<animate[^>]*attributename=["']? ?on/, collapsed, 'a scripted animation'],
+  ];
+
+  for (const [pattern, subject, what] of checks) {
+    if (pattern.test(subject)) {
+      return `That SVG contains ${what} and cannot be uploaded.`;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * No two accepted formats share a signature any more — the ISO-BMFF pair
+ * (AVIF/MP4) that needed this leniency is gone — so a detected type must equal
+ * the declared one exactly.
+ */
 function isCompatible(detected: string, declared: string): boolean {
-  const isoBmff = ['image/avif', 'video/mp4'];
-  return isoBmff.includes(detected) && isoBmff.includes(declared);
+  return detected === declared;
 }
 
 /** Namespaced, unguessable storage key. Never derived from user input alone. */
 export function buildStorageKey(filename: string, extension: string): string {
-  const base = path
-    .basename(filename, path.extname(filename))
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60) || 'file';
+  const base =
+    path
+      .basename(filename, path.extname(filename))
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'file';
   const now = new Date();
   const folder = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
   return `${folder}/${base}-${randomToken(6)}.${extension}`;
 }
 
 /** Reads intrinsic dimensions from PNG/JPEG/GIF/WebP headers without a decoder. */
-export function readImageDimensions(buffer: Buffer, mime: string): { width: number; height: number } | null {
+export function readImageDimensions(
+  buffer: Buffer,
+  mime: string,
+): { width: number; height: number } | null {
   try {
     if (mime === 'image/png' && buffer.length > 24) {
       return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
@@ -107,7 +188,10 @@ export function readImageDimensions(buffer: Buffer, mime: string): { width: numb
     if (mime === 'image/webp' && buffer.length > 30) {
       const format = buffer.subarray(12, 16).toString('ascii');
       if (format === 'VP8 ') {
-        return { width: buffer.readUInt16LE(26) & 0x3fff, height: buffer.readUInt16LE(28) & 0x3fff };
+        return {
+          width: buffer.readUInt16LE(26) & 0x3fff,
+          height: buffer.readUInt16LE(28) & 0x3fff,
+        };
       }
       if (format === 'VP8L') {
         const bits = buffer.readUInt32LE(21);
@@ -129,7 +213,10 @@ export function readImageDimensions(buffer: Buffer, mime: string): { width: numb
         const marker = buffer[offset + 1]!;
         // SOF0-SOF15, excluding DHT/JPG/DAC
         if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
-          return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
+          return {
+            height: buffer.readUInt16BE(offset + 5),
+            width: buffer.readUInt16BE(offset + 7),
+          };
         }
         offset += 2 + buffer.readUInt16BE(offset + 2);
       }

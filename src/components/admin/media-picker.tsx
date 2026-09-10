@@ -11,6 +11,7 @@ import { Spinner } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/toast';
 import { formatBytes } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
+import { ACCEPT_ATTRIBUTE, ACCEPT_IMAGES } from '@/lib/media/constants';
 
 /** Single-image field used throughout the CMS and product/blog editors. */
 export function MediaPicker({
@@ -60,7 +61,9 @@ export function MediaPicker({
             </span>
           )}
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-content">{selected.title || selected.filename}</p>
+            <p className="truncate text-sm font-medium text-content">
+              {selected.title || selected.filename}
+            </p>
             <p className="text-xs text-muted">
               {formatBytes(selected.size)}
               {selected.width ? ` · ${selected.width}×${selected.height}` : ''}
@@ -79,7 +82,12 @@ export function MediaPicker({
           </button>
         </div>
       ) : (
-        <Button variant="outline" size="sm" onClick={() => setOpen(true)} className="w-full justify-center">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setOpen(true)}
+          className="w-full justify-center"
+        >
           <Upload className="h-4 w-4" aria-hidden="true" />
           Choose {label.toLowerCase()}
         </Button>
@@ -187,12 +195,12 @@ export function MediaBrowser({
         ref={inputRef}
         type="file"
         multiple
+        accept={kind === 'IMAGE' ? ACCEPT_IMAGES : ACCEPT_ATTRIBUTE}
         className="sr-only"
         onChange={(e) => {
           void handleFiles(e.target.files);
           e.target.value = '';
         }}
-        accept={kind === 'IMAGE' ? 'image/*' : undefined}
       />
 
       <div className="relative mb-4">

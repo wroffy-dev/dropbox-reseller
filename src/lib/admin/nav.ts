@@ -58,6 +58,13 @@ export const ADMIN_NAV: AdminNavModule[] = [
         description: 'Build and publish website pages',
       },
       {
+        label: 'Page Categories',
+        href: '/admin/pages/categories',
+        permission: 'pages.view',
+        description: 'Group pages into a nested structure',
+        exact: true,
+      },
+      {
         label: 'Navigation',
         href: '/admin/navigation',
         permission: 'navigation.manage',
@@ -180,6 +187,13 @@ export const ADMIN_NAV: AdminNavModule[] = [
         href: '/admin/blog/categories',
         permission: 'blog.view',
         description: 'Organise articles by topic',
+      },
+      {
+        label: 'Blog Tags',
+        href: '/admin/blog/tags',
+        permission: 'blog.view',
+        description: 'Rename, re-slug and clean up tags',
+        exact: true,
       },
       {
         label: 'SEO',

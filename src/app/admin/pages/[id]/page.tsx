@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ExternalLink, Eye } from 'lucide-react';
 import { prisma } from '@/lib/db/prisma';
+import { listPageCategoryOptions } from '@/lib/services/page-categories';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { PageForm, type PageFormValues } from '@/components/admin/pages/page-form';
@@ -38,6 +39,7 @@ function toLocalInput(date: Date | null): string {
 export default async function EditPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePermission('pages.view');
   const { id } = await params;
+  const categoryOptions = await listPageCategoryOptions();
 
   const page = await prisma.page.findFirst({
     where: { id, deletedAt: null },
@@ -52,6 +54,7 @@ export default async function EditPage({ params }: { params: Promise<{ id: strin
     title: page.title,
     slug: page.slug,
     status: page.status,
+    categoryId: page.categoryId ?? '',
     publishedAt: toLocalInput(page.publishedAt),
     isHomepage: page.isHomepage,
     showHeader: page.showHeader,
@@ -95,10 +98,13 @@ export default async function EditPage({ params }: { params: Promise<{ id: strin
             <Link
               href={`/admin/preview/${page.id}`}
               target="_blank"
+              rel="noopener noreferrer"
               className={buttonClasses('outline', 'md')}
             >
               <Eye className="h-4 w-4" aria-hidden="true" />
-              Preview
+              Preview page
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="sr-only">(opens in a new tab)</span>
             </Link>
             {page.status === 'PUBLISHED' ? (
               <Link
@@ -131,17 +137,16 @@ export default async function EditPage({ params }: { params: Promise<{ id: strin
         sectionCount={sections.length}
         visibleCount={visibleCount}
         builder={
-          <PageWorkspace
-            pageId={page.id}
-            previewSrc={`/preview/${page.id}`}
-            publicPath={page.status === 'PUBLISHED' ? publicPath : ''}
-            initialSections={sections}
-            canEdit={canEdit}
-          />
+          <PageWorkspace pageId={page.id} initialSections={sections} canEdit={canEdit} />
         }
         settings={
           <div className="mx-auto max-w-3xl">
-            <PageForm initial={initial} canPublish={userCan(user, 'pages.publish')} mode="edit" />
+            <PageForm
+              initial={initial}
+              categories={categoryOptions}
+              canPublish={userCan(user, 'pages.publish')}
+              mode="edit"
+            />
           </div>
         }
       />

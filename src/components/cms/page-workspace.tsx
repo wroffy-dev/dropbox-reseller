@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Layers, Settings2, Monitor } from 'lucide-react';
+import { Layers, Settings2 } from 'lucide-react';
 import {
   addSection,
   updateSection,
@@ -13,7 +13,6 @@ import {
 } from '@/lib/actions/pages';
 import { parseSectionDesign } from '@/lib/cms/design';
 import { getBlock } from '@/lib/cms/blocks';
-import { PreviewFrame } from '@/components/admin/preview-frame';
 import { ConfirmDialog } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils/cn';
@@ -23,26 +22,30 @@ import { SectionListPanel } from './section-list-panel';
 import { SectionEditorPanel } from './section-editor-panel';
 import { AddSectionDialog } from './add-section-dialog';
 
-type MobilePane = 'sections' | 'preview' | 'editor';
+type MobilePane = 'sections' | 'editor';
 
 /**
  * The page builder workspace.
  *
- * Three panels on desktop — outline, preview, editor — and one pane at a time
- * on small screens, because a three-column builder is unusable on a phone.
+ * Two panels on desktop — the section outline and the editor for whichever
+ * section is selected — and one pane at a time on small screens, because a
+ * multi-column builder is unusable on a phone.
+ *
+ * There is deliberately no embedded preview: an iframe of the page competed
+ * for width with the editor and had to be reloaded after every save. Preview
+ * now opens in its own tab from the page header, where it gets the full
+ * viewport and behaves like the real page. The preview route itself is
+ * unchanged and still permission-protected.
+ *
  * Every mutation goes through the existing page Server Actions, so ordering,
  * visibility and content are persisted exactly as they were before.
  */
 export function PageWorkspace({
   pageId,
-  previewSrc,
-  publicPath,
   initialSections,
   canEdit,
 }: {
   pageId: string;
-  previewSrc: string;
-  publicPath: string;
   initialSections: BuilderSection[];
   canEdit: boolean;
 }) {
@@ -55,16 +58,12 @@ export function PageWorkspace({
   const [pendingDelete, setPendingDelete] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [mobilePane, setMobilePane] = React.useState<MobilePane>('sections');
-  // Bumped after every save so the preview iframe reloads with fresh content.
-  const [previewNonce, setPreviewNonce] = React.useState(0);
 
   React.useEffect(() => {
     setSections(initialSections);
   }, [initialSections]);
 
   const selected = sections.find((section) => section.id === selectedId) ?? null;
-
-  const refreshPreview = () => setPreviewNonce((value) => value + 1);
 
   const anchorsForOthers = React.useCallback(
     (sectionId: string) =>
@@ -87,7 +86,6 @@ export function PageWorkspace({
       toast(result.error, 'error');
       return;
     }
-    refreshPreview();
   }
 
   async function onAdd(blockType: string) {
@@ -115,7 +113,6 @@ export function PageWorkspace({
     setSections((current) => [...current, created]);
     setSelectedId(created.id);
     setMobilePane('editor');
-    refreshPreview();
     toast(result.message ?? 'Section added.');
   }
 
@@ -133,7 +130,6 @@ export function PageWorkspace({
     setSections((current) =>
       current.map((section) => (section.id === selected.id ? { ...section, ...next } : section)),
     );
-    refreshPreview();
     return true;
   }
 
@@ -148,7 +144,6 @@ export function PageWorkspace({
     toast('Section duplicated.');
     // The copy is created server-side, so pull the authoritative list back.
     router.refresh();
-    refreshPreview();
   }
 
   async function onDelete(sectionId: string) {
@@ -162,7 +157,6 @@ export function PageWorkspace({
     }
     setSections((current) => current.filter((section) => section.id !== sectionId));
     setSelectedId((current) => (current === sectionId ? null : current));
-    refreshPreview();
     toast('Section removed.');
   }
 
@@ -179,7 +173,6 @@ export function PageWorkspace({
       toast(result.error, 'error');
       return;
     }
-    refreshPreview();
   }
 
   const deleteTarget = sections.find((section) => section.id === pendingDelete);
@@ -187,11 +180,10 @@ export function PageWorkspace({
   return (
     <>
       {/* Pane switcher — small screens only. */}
-      <div className="mb-3 grid grid-cols-3 gap-1 rounded-lg bg-muted/[0.06] p-1 lg:hidden">
+      <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-muted/[0.06] p-1 lg:hidden">
         {(
           [
             ['sections', 'Sections', Layers],
-            ['preview', 'Preview', Monitor],
             ['editor', 'Edit', Settings2],
           ] as const
         ).map(([pane, label, Icon]) => (
@@ -213,7 +205,7 @@ export function PageWorkspace({
         ))}
       </div>
 
-      <div className="grid gap-4 lg:h-[calc(100vh-13rem)] lg:grid-cols-[17rem_1fr_22rem] lg:gap-3">
+      <div className="grid gap-4 lg:h-[calc(100vh-13rem)] lg:grid-cols-[18rem_1fr] lg:gap-3">
         {/* Left: outline */}
         <div
           className={cn(
@@ -239,24 +231,7 @@ export function PageWorkspace({
           />
         </div>
 
-        {/* Centre: live preview */}
-        <div
-          className={cn(
-            'overflow-hidden rounded-xl border border-hairline bg-surface',
-            'lg:flex lg:min-h-0 lg:flex-col',
-            mobilePane === 'preview' ? 'flex min-h-[30rem] flex-col' : 'hidden',
-          )}
-        >
-          <PreviewFrame
-            key={previewNonce}
-            src={previewSrc}
-            title="Page preview"
-            publicPath={publicPath}
-            compact
-          />
-        </div>
-
-        {/* Right: selected section */}
+        {/* Right: the selected section's editor */}
         <div
           className={cn(
             'overflow-hidden rounded-xl border border-hairline bg-surface',

@@ -18,6 +18,8 @@ export type PageFormValues = {
   title: string;
   slug: string;
   status: string;
+  /** Empty means uncategorised. */
+  categoryId: string;
   publishedAt: string;
   isHomepage: boolean;
   showHeader: boolean;
@@ -39,6 +41,7 @@ export const EMPTY_PAGE: PageFormValues = {
   title: '',
   slug: '',
   status: 'DRAFT',
+  categoryId: '',
   publishedAt: '',
   isHomepage: false,
   showHeader: true,
@@ -58,10 +61,13 @@ export const EMPTY_PAGE: PageFormValues = {
 
 export function PageForm({
   initial,
+  categories = [],
   canPublish,
   mode,
 }: {
   initial: PageFormValues;
+  /** Flattened category tree; `depth` drives the indent in the dropdown. */
+  categories?: Array<{ id: string; name: string; depth: number }>;
   canPublish: boolean;
   mode: 'create' | 'edit';
 }) {
@@ -87,8 +93,7 @@ export function PageForm({
       data.set(key, value === null ? '' : String(value));
     }
 
-    const result =
-      mode === 'create' ? await createPage(data) : await updatePage(initial.id!, data);
+    const result = mode === 'create' ? await createPage(data) : await updatePage(initial.id!, data);
     setPending(false);
 
     if (!result.ok) {
@@ -123,7 +128,9 @@ export function PageForm({
               aria-pressed={tab === t.id}
               className={cn(
                 'rounded-lg px-3 py-1.5 text-sm transition-colors',
-                tab === t.id ? 'bg-brand/10 font-medium text-brand' : 'text-muted hover:text-content',
+                tab === t.id
+                  ? 'bg-brand/10 font-medium text-brand'
+                  : 'text-muted hover:text-content',
               )}
             >
               {t.label}
@@ -170,6 +177,26 @@ export function PageForm({
                     placeholder="pricing"
                   />
                 </div>
+              </Field>
+
+              <Field
+                label="Category"
+                htmlFor="categoryId"
+                hint="Optional. Groups this page in the admin."
+                error={errors.categoryId}
+              >
+                <Select
+                  id="categoryId"
+                  value={values.categoryId}
+                  onChange={(e) => set('categoryId', e.target.value)}
+                >
+                  <option value="">Uncategorised</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {`${'— '.repeat(category.depth)}${category.name}`}
+                    </option>
+                  ))}
+                </Select>
               </Field>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -285,7 +312,11 @@ export function PageForm({
 
           {tab === 'social' ? (
             <>
-              <Field label="Open Graph title" htmlFor="ogTitle" hint="Used by LinkedIn, Facebook, Slack.">
+              <Field
+                label="Open Graph title"
+                htmlFor="ogTitle"
+                hint="Used by LinkedIn, Facebook, Slack."
+              >
                 <Input
                   id="ogTitle"
                   value={values.ogTitle}

@@ -1,7 +1,11 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { Check, Minus } from 'lucide-react';
-import type { ProductCardsContent, ProductTableContent, ProductGridContent } from '@/lib/cms/blocks';
+import type {
+  ProductCardsContent,
+  ProductTableContent,
+  ProductGridContent,
+} from '@/lib/cms/blocks';
 import { selectProducts } from '@/lib/services/products';
 import { formatMoney } from '@/lib/utils/money';
 import { cn } from '@/lib/utils/cn';
@@ -48,8 +52,15 @@ export async function ProductCardsBlock({
             key={product.id}
             product={product}
             billing={content.billing}
+            showImage={content.showImage}
+            showDescription={content.showDescription}
             showPrice={content.showPrice}
             showFeatures={content.showFeatures}
+            showName={content.showName}
+            linkName={content.linkName}
+            showCta={content.showCta}
+            showDetailsLink={content.showDetailsLink}
+            showActions={content.showActions}
             highlight={products.length > 1 && product.isFeatured && products.indexOf(product) === 1}
             ctaLocation="product-cards"
           />
@@ -91,10 +102,14 @@ export async function ProductTableBlock({
     );
   }
 
-  const rows: Array<{ label: string; render: (p: (typeof products)[number]) => React.ReactNode }> = [];
+  const rows: Array<{ label: string; render: (p: (typeof products)[number]) => React.ReactNode }> =
+    [];
 
   if (content.showStorage) {
-    rows.push({ label: 'Storage', render: (p) => p.storage ?? <Minus className="h-4 w-4 text-muted" /> });
+    rows.push({
+      label: 'Storage',
+      render: (p) => p.storage ?? <Minus className="h-4 w-4 text-muted" />,
+    });
   }
   if (content.showUsers) {
     rows.push({
@@ -112,7 +127,9 @@ export async function ProductTableBlock({
       label: 'Monthly',
       render: (p) =>
         p.monthlyPrice ? (
-          <span className="font-semibold text-content">{formatMoney(p.monthlyPrice, p.currency)}</span>
+          <span className="font-semibold text-content">
+            {formatMoney(p.monthlyPrice, p.currency)}
+          </span>
         ) : (
           <span className="text-muted">{p.priceNote || 'On request'}</span>
         ),
@@ -123,7 +140,9 @@ export async function ProductTableBlock({
       label: 'Annual',
       render: (p) =>
         p.annualPrice ? (
-          <span className="font-semibold text-content">{formatMoney(p.annualPrice, p.currency)}</span>
+          <span className="font-semibold text-content">
+            {formatMoney(p.annualPrice, p.currency)}
+          </span>
         ) : (
           <span className="text-muted">{p.priceNote || 'On request'}</span>
         ),
@@ -145,8 +164,13 @@ export async function ProductTableBlock({
           <caption className="sr-only">{content.heading || 'Product comparison'}</caption>
           <thead>
             <tr>
-              <th scope="col" className="w-52 border-b border-hairline bg-muted/[0.04] px-5 py-4 text-left">
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted">Plan</span>
+              <th
+                scope="col"
+                className="w-52 border-b border-hairline bg-muted/[0.04] px-5 py-4 text-left"
+              >
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  Plan
+                </span>
               </th>
               {products.map((product) => (
                 <th
@@ -154,7 +178,9 @@ export async function ProductTableBlock({
                   scope="col"
                   className="border-b border-l border-hairline bg-muted/[0.04] px-5 py-4 text-left align-top"
                 >
-                  <span className="block font-heading text-base font-bold text-content">{product.name}</span>
+                  <span className="block font-heading text-base font-bold text-content">
+                    {product.name}
+                  </span>
                   {product.shortDescription ? (
                     <span className="mt-1 block text-xs font-normal leading-relaxed text-muted">
                       {product.shortDescription}
@@ -167,11 +193,17 @@ export async function ProductTableBlock({
           <tbody>
             {rows.map((row) => (
               <tr key={row.label}>
-                <th scope="row" className="border-b border-hairline px-5 py-3.5 text-left font-medium text-muted">
+                <th
+                  scope="row"
+                  className="border-b border-hairline px-5 py-3.5 text-left font-medium text-muted"
+                >
                   {row.label}
                 </th>
                 {products.map((product) => (
-                  <td key={product.id} className="border-b border-l border-hairline px-5 py-3.5 text-content">
+                  <td
+                    key={product.id}
+                    className="border-b border-l border-hairline px-5 py-3.5 text-content"
+                  >
                     {row.render(product)}
                   </td>
                 ))}
@@ -180,15 +212,24 @@ export async function ProductTableBlock({
 
             {content.showFeatures ? (
               <tr>
-                <th scope="row" className="border-b border-hairline px-5 py-4 text-left align-top font-medium text-muted">
+                <th
+                  scope="row"
+                  className="border-b border-hairline px-5 py-4 text-left align-top font-medium text-muted"
+                >
                   Features
                 </th>
                 {products.map((product) => (
-                  <td key={product.id} className="border-b border-l border-hairline px-5 py-4 align-top">
+                  <td
+                    key={product.id}
+                    className="border-b border-l border-hairline px-5 py-4 align-top"
+                  >
                     <ul className="space-y-2">
                       {product.features.slice(0, 6).map((feature, index) => (
                         <li key={index} className="flex items-start gap-2 text-xs text-muted">
-                          <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand" aria-hidden="true" />
+                          <Check
+                            className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand"
+                            aria-hidden="true"
+                          />
                           <span>{feature}</span>
                         </li>
                       ))}
@@ -227,7 +268,9 @@ export async function ProductTableBlock({
           >
             <h3 className="font-heading text-base font-bold text-content">{product.name}</h3>
             {product.shortDescription ? (
-              <p className="mt-1.5 text-sm leading-relaxed text-muted">{product.shortDescription}</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted">
+                {product.shortDescription}
+              </p>
             ) : null}
 
             <dl className="mt-4 divide-y divide-hairline border-y border-hairline text-sm">
@@ -336,13 +379,29 @@ export async function ProductGridBlock({
               ) : null}
 
               <div className="min-w-0 flex-1">
-                <h3 className={cn('font-heading text-base font-bold', ctx.inverted ? 'text-white' : 'text-content')}>
-                  <Link href={`/products/${product.slug}`} className="hover:underline">
-                    {product.name}
-                  </Link>
-                </h3>
+                {content.showName ? (
+                  <h3
+                    className={cn(
+                      'font-heading text-base font-bold',
+                      ctx.inverted ? 'text-white' : 'text-content',
+                    )}
+                  >
+                    {content.linkName ? (
+                      <Link href={`/products/${product.slug}`} className="hover:underline">
+                        {product.name}
+                      </Link>
+                    ) : (
+                      product.name
+                    )}
+                  </h3>
+                ) : null}
                 {content.showDescription && product.shortDescription ? (
-                  <p className={cn('mt-1 text-sm leading-relaxed', ctx.inverted ? 'text-white/75' : 'text-muted')}>
+                  <p
+                    className={cn(
+                      'mt-1 text-sm leading-relaxed',
+                      ctx.inverted ? 'text-white/75' : 'text-muted',
+                    )}
+                  >
                     {product.shortDescription}
                   </p>
                 ) : null}
@@ -368,7 +427,7 @@ export async function ProductGridBlock({
                 <PriceTag product={product} billing={content.billing} inverted={ctx.inverted} />
               ) : null}
 
-              {content.showCta ? (
+              {content.showActions && content.showCta ? (
                 <ProductCta
                   product={product}
                   label={content.ctaLabel || undefined}
@@ -376,6 +435,18 @@ export async function ProductGridBlock({
                   className="shrink-0"
                   ctaLocation="product-grid"
                 />
+              ) : null}
+
+              {content.showActions && content.showDetailsLink ? (
+                <Link
+                  href={`/products/${product.slug}`}
+                  className={cn(
+                    'shrink-0 text-xs font-medium underline-offset-4 hover:underline',
+                    ctx.inverted ? 'text-white/75 hover:text-white' : 'text-muted hover:text-brand',
+                  )}
+                >
+                  View full details
+                </Link>
               ) : null}
             </li>
           ))}
@@ -397,7 +468,11 @@ export async function ProductGridBlock({
             showFeatures={content.showFeatures}
             showImage={content.showImage}
             showDescription={content.showDescription}
+            showName={content.showName}
+            linkName={content.linkName}
             showCta={content.showCta}
+            showDetailsLink={content.showDetailsLink}
+            showActions={content.showActions}
             ctaLabel={content.ctaLabel || undefined}
             ctaLocation="product-grid"
           />
@@ -425,7 +500,12 @@ function PriceTag({
     );
   }
   return (
-    <span className={cn('shrink-0 font-heading text-lg font-bold', inverted ? 'text-white' : 'text-content')}>
+    <span
+      className={cn(
+        'shrink-0 font-heading text-lg font-bold',
+        inverted ? 'text-white' : 'text-content',
+      )}
+    >
       {formatMoney(price, product.currency)}
       <span className={cn('ml-1 text-xs font-normal', inverted ? 'text-white/65' : 'text-muted')}>
         {billing === 'annual' ? '/year' : '/month'}

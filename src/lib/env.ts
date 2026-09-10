@@ -28,7 +28,8 @@ const serverSchema = z.object({
   S3_PUBLIC_URL: z.string().optional(),
   S3_FORCE_PATH_STYLE: z.string().optional(),
 
-  MAX_UPLOAD_MB: z.string().default('12'),
+  /** Upload ceiling in kilobytes. Falls back to 150 KB when unset or invalid. */
+  MAX_UPLOAD_KB: z.string().default('150'),
 });
 
 export type ServerEnv = z.infer<typeof serverSchema>;

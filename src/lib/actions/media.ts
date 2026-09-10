@@ -11,6 +11,7 @@ import {
   buildStorageKey,
   readImageDimensions,
   maxUploadBytes,
+  TOO_LARGE_MESSAGE,
 } from '@/lib/services/upload';
 import { sanitizeText } from '@/lib/utils/sanitize';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
@@ -27,6 +28,8 @@ export type MediaDto = {
   height: number | null;
   altText: string | null;
   title: string | null;
+  /** Null means the item is not in any folder (Uncategorised). */
+  folderId: string | null;
   createdAt: string;
 };
 
@@ -41,6 +44,7 @@ function toDto(row: {
   height: number | null;
   altText: string | null;
   title: string | null;
+  folderId: string | null;
   createdAt: Date;
 }): MediaDto {
   return { ...row, createdAt: row.createdAt.toISOString() };
@@ -52,9 +56,9 @@ export async function uploadMedia(formData: FormData): Promise<ActionResult<Medi
 
     const file = formData.get('file');
     if (!(file instanceof File)) return failure('No file was received.');
-    if (file.size > maxUploadBytes()) {
-      return failure(`Files must be ${process.env.MAX_UPLOAD_MB || 12} MB or smaller.`);
-    }
+    // Early reject on the declared size so an oversized body is not buffered
+    // into memory; validateUpload re-checks the real byte length after read.
+    if (file.size > maxUploadBytes()) return failure(TOO_LARGE_MESSAGE);
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const validation = validateUpload(file.type, buffer, buffer.byteLength);
@@ -161,14 +165,27 @@ export async function deleteMedia(mediaId: string): Promise<ActionResult> {
 export async function listMedia(input: {
   query?: string;
   kind?: MediaKind | 'ALL';
+  /**
+   * 'ALL' shows everything regardless of folder, 'NONE' only the items in no
+   * folder (Uncategorised), and an id restricts to that folder.
+   */
+  folderId?: string | 'ALL' | 'NONE';
   cursor?: string;
   take?: number;
 }): Promise<{ items: MediaDto[]; nextCursor: string | null }> {
   await authorize('media.view');
 
   const take = Math.min(input.take ?? 40, 100);
+  const folderFilter =
+    !input.folderId || input.folderId === 'ALL'
+      ? {}
+      : input.folderId === 'NONE'
+        ? { folderId: null }
+        : { folderId: input.folderId };
+
   const where = {
     deletedAt: null,
+    ...folderFilter,
     ...(input.kind && input.kind !== 'ALL' ? { kind: input.kind } : {}),
     ...(input.query?.trim()
       ? {
@@ -197,6 +214,7 @@ export async function listMedia(input: {
       height: true,
       altText: true,
       title: true,
+      folderId: true,
       createdAt: true,
     },
   });
@@ -223,6 +241,7 @@ export async function getMediaById(ids: string[]): Promise<MediaDto[]> {
       height: true,
       altText: true,
       title: true,
+      folderId: true,
       createdAt: true,
     },
   });

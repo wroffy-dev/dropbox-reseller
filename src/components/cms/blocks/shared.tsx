@@ -1,3 +1,4 @@
+import type * as React from 'react';
 import Link from 'next/link';
 import NextImage from 'next/image';
 import { cn } from '@/lib/utils/cn';
@@ -34,18 +35,30 @@ export function SectionHeading({
   inverted,
   className,
   as: Tag = 'h2',
+  headingStyle,
+  descriptionStyle,
 }: {
   eyebrow?: string | null;
   heading?: string | null;
   description?: string | null;
-  align?: 'left' | 'center';
+  align?: 'left' | 'center' | 'right';
   inverted?: boolean;
   className?: string;
   as?: 'h1' | 'h2' | 'h3';
+  /** Explicit colours from a block's own design controls, when set. */
+  headingStyle?: React.CSSProperties;
+  descriptionStyle?: React.CSSProperties;
 }) {
   if (!eyebrow && !heading && !description) return null;
   return (
-    <div className={cn('max-w-2xl', align === 'center' && 'mx-auto text-center', className)}>
+    <div
+      className={cn(
+        'max-w-2xl',
+        align === 'center' && 'mx-auto text-center',
+        align === 'right' && 'ml-auto text-right',
+        className,
+      )}
+    >
       {eyebrow ? (
         <p
           className={cn(
@@ -63,12 +76,19 @@ export function SectionHeading({
             Tag === 'h1' ? 'text-3xl sm:text-4xl lg:text-5xl' : 'text-2xl sm:text-3xl lg:text-4xl',
             inverted ? 'text-white' : 'text-content',
           )}
+          style={headingStyle}
         >
           {heading}
         </Tag>
       ) : null}
       {description ? (
-        <p className={cn('mt-4 text-base leading-relaxed sm:text-lg', inverted ? 'text-white/80' : 'text-muted')}>
+        <p
+          className={cn(
+            'mt-4 text-base leading-relaxed sm:text-lg',
+            inverted ? 'text-white/80' : 'text-muted',
+          )}
+          style={descriptionStyle}
+        >
           {description}
         </p>
       ) : null}
@@ -117,7 +137,13 @@ export function CtaLink({
 }
 
 /** Sanitised rich text from the CMS. */
-export function RichText({ html, className }: { html: string | null | undefined; className?: string }) {
+export function RichText({
+  html,
+  className,
+}: {
+  html: string | null | undefined;
+  className?: string;
+}) {
   const clean = sanitizeHtml(html);
   if (!clean) return null;
   return <div className={cn('prose-cms', className)} dangerouslySetInnerHTML={{ __html: clean }} />;
@@ -184,7 +210,10 @@ export function CmsImage({
     if (!placeholder) return null;
     return (
       <div
-        className={cn('w-full rounded-2xl border border-dashed border-hairline bg-muted/5', wrapperClassName)}
+        className={cn(
+          'w-full rounded-2xl border border-dashed border-hairline bg-muted/5',
+          wrapperClassName,
+        )}
         style={{ aspectRatio: aspect ?? '4 / 3', width: width || undefined }}
         aria-hidden="true"
       />
@@ -201,9 +230,7 @@ export function CmsImage({
       <NextImage
         src={media.url}
         alt={alt?.trim() || media.altText || ''}
-        {...(aspect
-          ? { fill: true }
-          : { width: media.width ?? 1200, height: media.height ?? 800 })}
+        {...(aspect ? { fill: true } : { width: media.width ?? 1200, height: media.height ?? 800 })}
         sizes={sizes}
         priority={priority}
         loading={priority ? undefined : 'lazy'}
@@ -238,7 +265,10 @@ export function IconBadge({
   const box = size || '2.75rem';
   if (style === 'plain') {
     return (
-      <span className={cn('inline-flex shrink-0 items-center justify-center', className)} style={{ width: box, height: box }}>
+      <span
+        className={cn('inline-flex shrink-0 items-center justify-center', className)}
+        style={{ width: box, height: box }}
+      >
         {children}
       </span>
     );
@@ -272,7 +302,11 @@ export function MaybeLink({
   if (!href) return <div className={className}>{children}</div>;
   const external = /^https?:\/\//i.test(href);
   return (
-    <Link href={href} className={className} {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>
+    <Link
+      href={href}
+      className={className}
+      {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+    >
       {children}
     </Link>
   );

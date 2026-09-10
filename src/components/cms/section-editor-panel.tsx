@@ -9,6 +9,7 @@ import { SaveStateIndicator, type SaveState } from '@/components/admin/save-stat
 import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/field';
 import { FieldList, type FieldValues } from './field-renderer';
+import { writeFieldPath } from '@/lib/cms/fields';
 import { DesignPanel } from './design-panel';
 import type { BuilderSection } from './section-builder';
 
@@ -123,7 +124,7 @@ export function SectionEditorPanel({
               values={content}
               idPrefix={`c-${section.id}`}
               onChange={(field, value) => {
-                setContent((current) => ({ ...current, [field]: value }));
+                setContent((current) => writeFieldPath(current, field, value) as FieldValues);
                 markDirty();
               }}
             />

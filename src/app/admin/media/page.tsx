@@ -33,6 +33,7 @@ export default async function MediaAdmin({
       height: true,
       altText: true,
       title: true,
+      folderId: true,
       createdAt: true,
     },
   });
@@ -41,6 +42,29 @@ export default async function MediaAdmin({
   const items: MediaDto[] = (hasMore ? rows.slice(0, PAGE_SIZE) : rows).map((row) => ({
     ...row,
     createdAt: row.createdAt.toISOString(),
+  }));
+
+  // Folder tree and the two synthetic buckets, counted on the server so the
+  // sidebar shows real totals rather than only what this page happened to load.
+  const [folderRows, totalCount, uncategorisedCount] = await Promise.all([
+    prisma.mediaFolder.findMany({
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        parentId: true,
+        _count: { select: { media: { where: { deletedAt: null } } } },
+      },
+    }),
+    prisma.media.count({ where: { deletedAt: null } }),
+    prisma.media.count({ where: { deletedAt: null, folderId: null } }),
+  ]);
+
+  const folders = folderRows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    parentId: row.parentId,
+    fileCount: row._count.media,
   }));
 
   const usedBytes = await prisma.media.aggregate({
@@ -58,6 +82,9 @@ export default async function MediaAdmin({
       />
       <MediaLibrary
         initialItems={items}
+        initialFolders={folders}
+        initialTotalCount={totalCount}
+        initialUncategorisedCount={uncategorisedCount}
         initialCursor={hasMore ? (items[items.length - 1]?.id ?? null) : null}
         can={{
           upload: userCan(user, 'media.upload'),

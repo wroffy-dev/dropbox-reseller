@@ -18,6 +18,8 @@ export type PageRow = {
   status: string;
   isHomepage: boolean;
   updatedAt: string;
+  /** Null when the page is uncategorised. */
+  categoryName: string | null;
   sectionCount: number;
 };
 
@@ -68,7 +70,9 @@ export function PagesTable({
 
   const allSelected = selected.length === rows.length;
   const toggle = (id: string) =>
-    setSelected((current) => (current.includes(id) ? current.filter((v) => v !== id) : [...current, id]));
+    setSelected((current) =>
+      current.includes(id) ? current.filter((v) => v !== id) : [...current, id],
+    );
 
   return (
     <>
@@ -96,6 +100,7 @@ export function PagesTable({
               ) : null}
               <Th>Title</Th>
               <Th>URL</Th>
+              <Th>Category</Th>
               <Th>Status</Th>
               <Th align="center">Sections</Th>
               <Th>Updated</Th>
@@ -134,13 +139,22 @@ export function PagesTable({
                     /{row.slug}
                   </code>
                 </Td>
+                <Td className="text-sm">
+                  {row.categoryName ? (
+                    <span className="text-content">{row.categoryName}</span>
+                  ) : (
+                    <span className="text-muted">—</span>
+                  )}
+                </Td>
                 <Td>
                   <ContentStatusBadge status={row.status} />
                 </Td>
                 <Td align="center" className="text-sm text-muted">
                   {row.sectionCount}
                 </Td>
-                <Td className="whitespace-nowrap text-sm text-muted">{formatDate(row.updatedAt)}</Td>
+                <Td className="whitespace-nowrap text-sm text-muted">
+                  {formatDate(row.updatedAt)}
+                </Td>
                 <Td align="right">
                   <PageRowActions
                     pageId={row.id}

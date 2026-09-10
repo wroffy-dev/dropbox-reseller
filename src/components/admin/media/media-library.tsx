@@ -26,16 +26,32 @@ import { EmptyState, Skeleton } from '@/components/ui/states';
 import { useToast } from '@/components/ui/toast';
 import { Spinner } from '@/components/ui/icons';
 import { formatBytes, formatDate } from '@/lib/utils/format';
+import { ACCEPT_ATTRIBUTE, MAX_UPLOAD_LABEL } from '@/lib/media/constants';
+import {
+  listMediaFolders,
+  moveMediaToFolder,
+  type MediaFolderNode,
+} from '@/lib/actions/media-folders';
+import { FolderSidebar, FolderBreadcrumb, type FolderSelection } from './folder-sidebar';
+import { flattenTree } from '@/lib/utils/tree';
+import { BulkBar } from '@/components/admin/row-menu';
+import { FolderInput } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
 export function MediaLibrary({
   initialItems,
   initialCursor,
+  initialFolders,
+  initialTotalCount,
+  initialUncategorisedCount,
   can,
   selectedId,
 }: {
   initialItems: MediaDto[];
   initialCursor: string | null;
+  initialFolders: MediaFolderNode[];
+  initialTotalCount: number;
+  initialUncategorisedCount: number;
   can: { upload: boolean; edit: boolean; delete: boolean };
   selectedId?: string;
 }) {
@@ -52,6 +68,31 @@ export function MediaLibrary({
   );
   const inputRef = React.useRef<HTMLInputElement>(null);
   const firstRender = React.useRef(true);
+
+  // Folder filing. Selection drives the listing query, so filtering happens on
+  // the server rather than by hiding rows the browser already downloaded.
+  const [folders, setFolders] = React.useState(initialFolders);
+  const [folderId, setFolderId] = React.useState<FolderSelection>('ALL');
+  const [selection, setSelection] = React.useState<string[]>([]);
+  const [moveOpen, setMoveOpen] = React.useState(false);
+  const [moveTarget, setMoveTarget] = React.useState('');
+
+  const refreshFolders = React.useCallback(() => {
+    listMediaFolders()
+      .then((next) => {
+        setFolders(next);
+        const filed = next.reduce((sum, folder) => sum + folder.fileCount, 0);
+        setCounts((current) => ({ ...current, uncategorised: Math.max(0, current.total - filed) }));
+      })
+      .catch(() => toast('Could not load folders.', 'error'));
+  }, [toast]);
+
+  // Seeded from the server and refreshed alongside the tree, so the counts
+  // stay honest after an upload, a move or a delete.
+  const [counts, setCounts] = React.useState({
+    total: initialTotalCount,
+    uncategorised: initialUncategorisedCount,
+  });
 
   // Grid reads better for photos, list for documents and for scanning alt
   // text. The choice is a per-admin convenience, so it lives in localStorage
@@ -83,16 +124,18 @@ export function MediaLibrary({
     }
     setLoading(true);
     const timer = window.setTimeout(() => {
-      listMedia({ query, kind })
+      listMedia({ query, kind, folderId })
         .then((result) => {
           setItems(result.items);
           setCursor(result.nextCursor);
+          // A selection from another folder is meaningless once the view changes.
+          setSelection([]);
         })
         .catch(() => toast('Could not load the media library.', 'error'))
         .finally(() => setLoading(false));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [query, kind, toast]);
+  }, [query, kind, folderId, toast]);
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -118,216 +161,291 @@ export function MediaLibrary({
   async function loadMore() {
     if (!cursor) return;
     setLoading(true);
-    const result = await listMedia({ query, kind, cursor });
+    const result = await listMedia({ query, kind, folderId, cursor });
     setItems((current) => [...current, ...result.items]);
     setCursor(result.nextCursor);
     setLoading(false);
   }
 
+  const orderedFolders = flattenTree(folders, (a, b) => a.name.localeCompare(b.name));
+
   return (
-    <>
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative min-w-0 flex-1 sm:max-w-xs">
-          <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
-            aria-hidden="true"
-          />
-          <Input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by filename or alt text"
-            aria-label="Search media"
-            className="pl-9"
-          />
+    <div className="grid gap-4 lg:grid-cols-[15rem_1fr]">
+      {/* Folder tree. Above the library on small screens, beside it on large. */}
+      <aside className="rounded-xl border border-hairline bg-surface p-2 lg:sticky lg:top-20 lg:self-start">
+        <FolderSidebar
+          folders={folders}
+          selected={folderId}
+          onSelect={setFolderId}
+          canEdit={can.edit}
+          canDelete={can.delete}
+          onChanged={refreshFolders}
+          totalCount={counts.total}
+          uncategorisedCount={counts.uncategorised}
+        />
+      </aside>
+
+      <div className="min-w-0">
+        <div className="mb-3">
+          <FolderBreadcrumb folders={folders} selected={folderId} onSelect={setFolderId} />
         </div>
-        <div>
-          <label htmlFor="media-kind" className="sr-only">
-            File type
-          </label>
-          <Select
-            id="media-kind"
-            value={kind}
-            onChange={(e) => setKind(e.target.value as typeof kind)}
-            className="w-auto"
-          >
-            <option value="ALL">All types</option>
-            <option value="IMAGE">Images</option>
-            <option value="DOCUMENT">Documents</option>
-            <option value="VIDEO">Video</option>
-          </Select>
-        </div>
-        <div
-          role="group"
-          aria-label="Layout"
-          className="flex shrink-0 items-center gap-0.5 rounded-lg border border-hairline p-0.5 sm:ml-auto"
-        >
-          {(
-            [
-              { id: 'grid', label: 'Grid view', Icon: LayoutGrid },
-              { id: 'list', label: 'List view', Icon: ListIcon },
-            ] as const
-          ).map(({ id, label, Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => chooseView(id)}
-              aria-pressed={view === id}
-              aria-label={label}
-              title={label}
-              className={cn(
-                'rounded-md p-1.5 transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
-                view === id
-                  ? 'bg-brand/10 text-brand'
-                  : 'text-muted hover:bg-muted/10 hover:text-content',
-              )}
+
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1 sm:max-w-xs">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+              aria-hidden="true"
+            />
+            <Input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by filename or alt text"
+              aria-label="Search media"
+              className="pl-9"
+            />
+          </div>
+          <div>
+            <label htmlFor="media-kind" className="sr-only">
+              File type
+            </label>
+            <Select
+              id="media-kind"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as typeof kind)}
+              className="w-auto"
             >
-              <Icon className="h-4 w-4" aria-hidden="true" />
-            </button>
-          ))}
+              <option value="ALL">All types</option>
+              <option value="IMAGE">Images</option>
+              <option value="DOCUMENT">Documents</option>
+              <option value="VIDEO">Video</option>
+            </Select>
+          </div>
+          <div
+            role="group"
+            aria-label="Layout"
+            className="flex shrink-0 items-center gap-0.5 rounded-lg border border-hairline p-0.5 sm:ml-auto"
+          >
+            {(
+              [
+                { id: 'grid', label: 'Grid view', Icon: LayoutGrid },
+                { id: 'list', label: 'List view', Icon: ListIcon },
+              ] as const
+            ).map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => chooseView(id)}
+                aria-pressed={view === id}
+                aria-label={label}
+                title={label}
+                className={cn(
+                  'rounded-md p-1.5 transition-colors',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+                  view === id
+                    ? 'bg-brand/10 text-brand'
+                    : 'text-muted hover:bg-muted/10 hover:text-content',
+                )}
+              >
+                <Icon className="h-4 w-4" aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+
+          {can.upload ? (
+            <Button onClick={() => inputRef.current?.click()} disabled={uploading}>
+              {uploading ? (
+                <>
+                  <Spinner className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  Uploading…
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" aria-hidden="true" />
+                  Upload files
+                </>
+              )}
+            </Button>
+          ) : null}
         </div>
 
-        {can.upload ? (
-          <Button onClick={() => inputRef.current?.click()} disabled={uploading}>
-            {uploading ? (
-              <>
-                <Spinner className="h-4 w-4 animate-spin" aria-hidden="true" />
-                Uploading…
-              </>
-            ) : (
-              <>
-                <Upload className="h-4 w-4" aria-hidden="true" />
-                Upload files
-              </>
-            )}
-          </Button>
+        {can.edit && selection.length > 0 ? (
+          <BulkBar count={selection.length} onClear={() => setSelection([])}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setMoveTarget(folderId !== 'ALL' && folderId !== 'NONE' ? folderId : '');
+                setMoveOpen(true);
+              }}
+            >
+              <FolderInput className="h-4 w-4" aria-hidden="true" />
+              Move to folder
+            </Button>
+          </BulkBar>
         ) : null}
-      </div>
 
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        className="sr-only"
-        onChange={(e) => {
-          void handleFiles(e.target.files);
-          e.target.value = '';
-        }}
-      />
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept={ACCEPT_ATTRIBUTE}
+          className="sr-only"
+          onChange={(e) => {
+            void handleFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
 
-      <Card
-        className={cn('p-4 transition-colors sm:p-5', dragOver && 'border-brand bg-brand/[0.04]')}
-        onDragOver={(e) => {
-          if (!can.upload) return;
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          if (!can.upload) return;
-          e.preventDefault();
-          setDragOver(false);
-          void handleFiles(e.dataTransfer.files);
-        }}
-      >
-        {loading && items.length === 0 ? (
-          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <li key={i}>
-                <Skeleton className="aspect-square" />
-              </li>
-            ))}
-          </ul>
-        ) : items.length === 0 ? (
-          <EmptyState
-            icon={<ImageIcon className="h-5 w-5" />}
-            title={query ? `No files match “${query}”` : 'No files yet'}
-            description={
-              can.upload
-                ? 'Drag files here, or use the upload button. Images up to the configured size limit.'
-                : 'Ask an administrator to upload files.'
-            }
-            action={
-              can.upload ? (
-                <Button onClick={() => inputRef.current?.click()}>Upload files</Button>
-              ) : undefined
-            }
-          />
-        ) : (
-          <>
-            {view === 'grid' ? (
-              <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-                {items.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => setActive(item)}
-                      className="group block w-full overflow-hidden rounded-lg border border-hairline text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-                    >
-                      <span className="block aspect-square bg-muted/10">
-                        <Thumbnail item={item} />
-                      </span>
-                      <span className="block border-t border-hairline p-2">
-                        <span className="block truncate text-xs font-medium text-content">
-                          {item.title || item.filename}
+        <Card
+          className={cn('p-4 transition-colors sm:p-5', dragOver && 'border-brand bg-brand/[0.04]')}
+          onDragOver={(e) => {
+            if (!can.upload) return;
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            if (!can.upload) return;
+            e.preventDefault();
+            setDragOver(false);
+            void handleFiles(e.dataTransfer.files);
+          }}
+        >
+          {loading && items.length === 0 ? (
+            <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              {Array.from({ length: 10 }).map((_, i) => (
+                <li key={i}>
+                  <Skeleton className="aspect-square" />
+                </li>
+              ))}
+            </ul>
+          ) : items.length === 0 ? (
+            <EmptyState
+              icon={<ImageIcon className="h-5 w-5" />}
+              title={query ? `No files match “${query}”` : 'No files yet'}
+              description={
+                can.upload
+                  ? `Drag files here, or use the upload button. JPG, PNG, WEBP, GIF, SVG or PDF, up to ${MAX_UPLOAD_LABEL} each.`
+                  : 'Ask an administrator to upload files.'
+              }
+              action={
+                can.upload ? (
+                  <Button onClick={() => inputRef.current?.click()}>Upload files</Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <>
+              {view === 'grid' ? (
+                <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+                  {items.map((item) => (
+                    <li key={item.id} className="relative">
+                      {can.edit ? (
+                        <label className="absolute left-2 top-2 z-sticky flex cursor-pointer items-center rounded bg-surface/90 p-1 shadow-sm">
+                          <input
+                            type="checkbox"
+                            checked={selection.includes(item.id)}
+                            onChange={() =>
+                              setSelection((current) =>
+                                current.includes(item.id)
+                                  ? current.filter((id) => id !== item.id)
+                                  : [...current, item.id],
+                              )
+                            }
+                            aria-label={`Select ${item.title || item.filename}`}
+                            className="h-4 w-4 rounded border-hairline text-brand focus:ring-brand/30"
+                          />
+                        </label>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => setActive(item)}
+                        className="group block w-full overflow-hidden rounded-lg border border-hairline text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                      >
+                        <span className="block aspect-square bg-muted/10">
+                          <Thumbnail item={item} />
                         </span>
-                        <span className="block text-[0.6875rem] text-muted">
-                          {formatBytes(item.size)}
-                          {item.width ? ` · ${item.width}×${item.height}` : ''}
+                        <span className="block border-t border-hairline p-2">
+                          <span className="block truncate text-xs font-medium text-content">
+                            {item.title || item.filename}
+                          </span>
+                          <span className="block text-[0.6875rem] text-muted">
+                            {formatBytes(item.size)}
+                            {item.width ? ` · ${item.width}×${item.height}` : ''}
+                          </span>
                         </span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <ul className="divide-y divide-hairline">
-                {items.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => setActive(item)}
-                      className="flex w-full items-center gap-3 py-2.5 text-left transition-colors hover:bg-muted/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-                    >
-                      <span className="block h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-muted/10">
-                        <Thumbnail item={item} />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-content">
-                          {item.title || item.filename}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <ul className="divide-y divide-hairline">
+                  {items.map((item) => (
+                    <li key={item.id} className="flex items-center gap-2">
+                      {can.edit ? (
+                        <input
+                          type="checkbox"
+                          checked={selection.includes(item.id)}
+                          onChange={() =>
+                            setSelection((current) =>
+                              current.includes(item.id)
+                                ? current.filter((id) => id !== item.id)
+                                : [...current, item.id],
+                            )
+                          }
+                          aria-label={`Select ${item.title || item.filename}`}
+                          className="h-4 w-4 shrink-0 rounded border-hairline text-brand focus:ring-brand/30"
+                        />
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => setActive(item)}
+                        className="flex w-full items-center gap-3 py-2.5 text-left transition-colors hover:bg-muted/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                      >
+                        <span className="block h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-muted/10">
+                          <Thumbnail item={item} />
                         </span>
-                        <span className="block truncate text-xs text-muted">
-                          {/* Missing alt text is worth seeing at a glance —
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-content">
+                            {item.title || item.filename}
+                          </span>
+                          <span className="block truncate text-xs text-muted">
+                            {/* Missing alt text is worth seeing at a glance —
                               it is the difference between an accessible page
                               and an inaccessible one. */}
-                          {item.kind === 'IMAGE' && !item.altText ? (
-                            <span className="text-amber-700">No alt text</span>
-                          ) : (
-                            item.altText || item.mimeType
-                          )}
+                            {item.kind === 'IMAGE' && !item.altText ? (
+                              <span className="text-amber-700">No alt text</span>
+                            ) : (
+                              item.altText || item.mimeType
+                            )}
+                          </span>
                         </span>
-                      </span>
-                      <span className="hidden shrink-0 text-xs text-muted sm:block">
-                        {item.width ? `${item.width}×${item.height}` : item.mimeType.split('/')[1]}
-                      </span>
-                      <span className="shrink-0 text-xs text-muted">{formatBytes(item.size)}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+                        <span className="hidden shrink-0 text-xs text-muted sm:block">
+                          {item.width
+                            ? `${item.width}×${item.height}`
+                            : item.mimeType.split('/')[1]}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted">
+                          {formatBytes(item.size)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
-            {cursor ? (
-              <div className="mt-6 flex justify-center">
-                <Button variant="outline" onClick={loadMore} disabled={loading}>
-                  {loading ? 'Loading…' : 'Load more'}
-                </Button>
-              </div>
-            ) : null}
-          </>
-        )}
-      </Card>
+              {cursor ? (
+                <div className="mt-6 flex justify-center">
+                  <Button variant="outline" onClick={loadMore} disabled={loading}>
+                    {loading ? 'Loading…' : 'Load more'}
+                  </Button>
+                </div>
+              ) : null}
+            </>
+          )}
+        </Card>
+      </div>
 
       <MediaDetail
         media={active}
@@ -340,9 +458,64 @@ export function MediaLibrary({
         onDeleted={(id) => {
           setItems((current) => current.filter((i) => i.id !== id));
           setActive(null);
+          refreshFolders();
         }}
       />
-    </>
+
+      <Dialog
+        open={moveOpen}
+        onClose={() => setMoveOpen(false)}
+        title={`Move ${selection.length} file(s)`}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setMoveOpen(false)} disabled={loading}>
+              Cancel
+            </Button>
+            <Button
+              disabled={loading}
+              onClick={async () => {
+                const result = await moveMediaToFolder({
+                  mediaIds: selection,
+                  folderId: moveTarget || null,
+                });
+                if (!result.ok) {
+                  toast(result.error ?? 'Could not move those files.', 'error');
+                  return;
+                }
+                toast(result.message ?? 'Moved.');
+                setMoveOpen(false);
+                setSelection([]);
+                refreshFolders();
+                // Re-read the current folder so moved-away items disappear.
+                listMedia({ query, kind, folderId })
+                  .then((next) => {
+                    setItems(next.items);
+                    setCursor(next.nextCursor);
+                  })
+                  .catch(() => undefined);
+              }}
+            >
+              Move files
+            </Button>
+          </>
+        }
+      >
+        <Field label="Destination folder" htmlFor="media-move-target">
+          <Select
+            id="media-move-target"
+            value={moveTarget}
+            onChange={(event) => setMoveTarget(event.target.value)}
+          >
+            <option value="">Uncategorised</option>
+            {orderedFolders.map(({ node, depth }) => (
+              <option key={node.id} value={node.id}>
+                {`${'— '.repeat(depth)}${node.name}`}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </Dialog>
+    </div>
   );
 }
 

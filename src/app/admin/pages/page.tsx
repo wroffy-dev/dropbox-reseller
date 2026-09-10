@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Plus } from 'lucide-react';
+import { Plus, FolderTree } from 'lucide-react';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
@@ -8,7 +8,9 @@ import type { FilterDefinition, FilterPreset } from '@/lib/admin/filters';
 import { AdminPagination } from '@/components/admin/admin-pagination';
 import { PagesTable, type PageRow } from '@/components/admin/pages/pages-table';
 import { Card } from '@/components/ui/card';
-import { ButtonLink } from '@/components/ui/button';
+import { ButtonLink, buttonClasses } from '@/components/ui/button';
+import Link from 'next/link';
+import { listPageCategoryOptions } from '@/lib/services/page-categories';
 import type { Prisma } from '@prisma/client';
 
 export const metadata: Metadata = { title: 'Pages' };
@@ -19,7 +21,7 @@ const PER_PAGE = 20;
 export default async function PagesAdmin({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; page?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; category?: string; page?: string }>;
 }) {
   const user = await requirePermission('pages.view');
   const params = await searchParams;
@@ -33,8 +35,12 @@ export default async function PagesAdmin({
     ];
   }
   if (params.status) where.status = params.status as Prisma.PageWhereInput['status'];
+  // 'none' is the sentinel for pages that have no category, so the filter can
+  // express "uncategorised" as well as a specific category.
+  if (params.category === 'none') where.categoryId = null;
+  else if (params.category) where.categoryId = params.category;
 
-  const [rows, total] = await Promise.all([
+  const [rows, total, categoryOptions] = await Promise.all([
     prisma.page.findMany({
       where,
       orderBy: [{ isHomepage: 'desc' }, { updatedAt: 'desc' }],
@@ -47,10 +53,12 @@ export default async function PagesAdmin({
         status: true,
         isHomepage: true,
         updatedAt: true,
+        category: { select: { id: true, name: true } },
         _count: { select: { sections: true } },
       },
     }),
     prisma.page.count({ where }),
+    listPageCategoryOptions(),
   ]);
 
   const can = {
@@ -67,6 +75,7 @@ export default async function PagesAdmin({
     status: row.status,
     isHomepage: row.isHomepage,
     updatedAt: row.updatedAt.toISOString(),
+    categoryName: row.category?.name ?? null,
     sectionCount: row._count.sections,
   }));
 
@@ -80,6 +89,20 @@ export default async function PagesAdmin({
         { label: 'Draft', value: 'DRAFT' },
         { label: 'Scheduled', value: 'SCHEDULED' },
         { label: 'Archived', value: 'ARCHIVED' },
+      ],
+    },
+    {
+      name: 'category',
+      label: 'Category',
+      allLabel: 'Any category',
+      options: [
+        { label: 'Uncategorised', value: 'none' },
+        ...categoryOptions.map((option) => ({
+          // The em-dashes mirror the tree depth so the dropdown reads as a
+          // hierarchy rather than a flat list.
+          label: `${'— '.repeat(option.depth)}${option.name}`,
+          value: option.id,
+        })),
       ],
     },
   ];
@@ -97,12 +120,20 @@ export default async function PagesAdmin({
         description="Every page on the website. Create, arrange sections and publish without touching code."
         crumbs={[{ label: 'Pages' }]}
         actions={
-          can.create ? (
-            <ButtonLink href="/admin/pages/new">
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              New page
-            </ButtonLink>
-          ) : null
+          <>
+            {can.edit ? (
+              <Link href="/admin/pages/categories" className={buttonClasses('outline', 'md')}>
+                <FolderTree className="h-4 w-4" aria-hidden="true" />
+                Categories
+              </Link>
+            ) : null}
+            {can.create ? (
+              <ButtonLink href="/admin/pages/new">
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                New page
+              </ButtonLink>
+            ) : null}
+          </>
         }
       />
 

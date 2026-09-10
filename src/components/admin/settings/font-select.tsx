@@ -7,6 +7,7 @@ import {
   FONT_CATEGORY_LABELS,
   findGoogleFont,
   fontStack,
+  googleFontsHref,
   type GoogleFont,
 } from '@/lib/cms/google-fonts';
 import { Input, Select, Label } from '@/components/ui/field';
@@ -19,6 +20,42 @@ import { cn } from '@/lib/utils/cn';
  * no network request. Only the family the admin actually picks is ever
  * requested by the public site — see BrandStyle.
  */
+/**
+ * How many families the picker will fetch at once so each option can be shown
+ * in its own typeface. Search narrows the list well below this in practice; the
+ * cap is what stops an unfiltered browse from requesting the whole catalogue.
+ */
+const PREVIEW_LIMIT = 18;
+
+/**
+ * Loads just enough of Google Fonts to preview the options currently on screen.
+ *
+ * This runs only in the admin, only while the picker is open, and only at
+ * weight 400 — the public site still requests nothing but the family the admin
+ * finally chose, at the weights it actually uses. Each stylesheet is added once
+ * and left in place, so scrolling back to a font already seen costs nothing.
+ */
+function useFontPreviews(families: string[], enabled: boolean): void {
+  const loaded = React.useRef(new Set<string>());
+
+  React.useEffect(() => {
+    if (!enabled) return;
+
+    const wanted = families.slice(0, PREVIEW_LIMIT).filter((family) => !loaded.current.has(family));
+    if (wanted.length === 0) return;
+
+    const href = googleFontsHref(wanted.map((family) => ({ family, weights: [400] })));
+    if (!href) return;
+
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    link.dataset.fontPreview = 'true';
+    document.head.appendChild(link);
+    for (const family of wanted) loaded.current.add(family);
+  }, [families, enabled]);
+}
+
 export function FontSelect({
   label,
   value,
@@ -56,6 +93,13 @@ export function FontSelect({
     return Array.from(grouped.entries());
   }, [query]);
 
+  // Families in the order they appear, so the cap loads what is nearest the top.
+  const visibleFamilies = React.useMemo(
+    () => matches.flatMap(([, fonts]) => fonts.map((font) => font.family)),
+    [matches],
+  );
+  useFontPreviews(visibleFamilies, open);
+
   const known = findGoogleFont(value);
   const isInherit = allowInherit && !value.trim();
 
@@ -69,7 +113,11 @@ export function FontSelect({
             className="min-w-0 flex-1 truncate text-base text-content"
             style={isInherit ? undefined : { fontFamily: fontStack(value) }}
           >
-            {isInherit ? <span className="text-sm text-muted">{inheritLabel}</span> : value || 'Choose a font'}
+            {isInherit ? (
+              <span className="text-sm text-muted">{inheritLabel}</span>
+            ) : (
+              value || 'Choose a font'
+            )}
           </span>
 
           {!isInherit && !known && value ? (
@@ -158,9 +206,24 @@ export function FontSelect({
                                 : 'border-transparent hover:border-hairline hover:bg-muted/5',
                             )}
                           >
-                            <span className="min-w-0 truncate text-sm text-content">{font.family}</span>
+                            <span className="min-w-0">
+                              <span
+                                className="block truncate text-base text-content"
+                                // Falls back to the category's stack until the
+                                // preview stylesheet arrives, so the row never
+                                // reflows from blank to text.
+                                style={{ fontFamily: fontStack(font.family) }}
+                              >
+                                {font.family}
+                              </span>
+                              <span className="block truncate text-[0.6875rem] text-muted">
+                                {FONT_CATEGORY_LABELS[font.category]}
+                              </span>
+                            </span>
                             <span className="flex shrink-0 items-center gap-2">
-                              <span className="text-xs text-muted">{font.weights.length} weights</span>
+                              <span className="text-xs text-muted">
+                                {font.weights.length} weights
+                              </span>
                               {value === font.family ? (
                                 <Check className="h-3.5 w-3.5 text-brand" aria-hidden="true" />
                               ) : null}

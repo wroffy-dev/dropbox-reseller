@@ -15,51 +15,12 @@ import { Spinner } from '@/components/ui/icons';
 import { slugify } from '@/lib/utils/slug';
 import { readingTimeMinutes } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
+import { EMPTY_POST, type PostFormValues } from '@/lib/cms/post-model';
 
-export type PostFormValues = {
-  id?: string;
-  title: string;
-  slug: string;
-  status: string;
-  publishedAt: string;
-  excerpt: string;
-  content: string;
-  isFeatured: boolean;
-  featuredImageId: string | null;
-  categoryId: string;
-  authorId: string;
-  tags: string[];
-  relatedIds: string[];
-  seoTitle: string;
-  seoDescription: string;
-  canonicalUrl: string;
-  noIndex: boolean;
-  ogTitle: string;
-  ogDescription: string;
-  ogImageId: string | null;
-};
-
-export const EMPTY_POST: PostFormValues = {
-  title: '',
-  slug: '',
-  status: 'DRAFT',
-  publishedAt: '',
-  excerpt: '',
-  content: '',
-  isFeatured: false,
-  featuredImageId: null,
-  categoryId: '',
-  authorId: '',
-  tags: [],
-  relatedIds: [],
-  seoTitle: '',
-  seoDescription: '',
-  canonicalUrl: '',
-  noIndex: false,
-  ogTitle: '',
-  ogDescription: '',
-  ogImageId: null,
-};
+// Re-exported so existing imports from this module keep working; the values
+// themselves now come from a server-safe module.
+export { EMPTY_POST };
+export type { PostFormValues };
 
 const TABS = [
   { id: 'content', label: 'Content' },
@@ -112,8 +73,19 @@ export function PostForm({
 
     const data = new FormData();
     const simple: Array<keyof PostFormValues> = [
-      'title', 'slug', 'status', 'publishedAt', 'excerpt', 'content', 'categoryId',
-      'authorId', 'seoTitle', 'seoDescription', 'canonicalUrl', 'ogTitle', 'ogDescription',
+      'title',
+      'slug',
+      'status',
+      'publishedAt',
+      'excerpt',
+      'content',
+      'categoryId',
+      'authorId',
+      'seoTitle',
+      'seoDescription',
+      'canonicalUrl',
+      'ogTitle',
+      'ogDescription',
     ];
     for (const key of simple) data.set(key, String(values[key] ?? ''));
     data.set('isFeatured', String(values.isFeatured));
@@ -157,7 +129,9 @@ export function PostForm({
                 aria-pressed={tab === t.id}
                 className={cn(
                   'rounded-lg px-3 py-1.5 text-sm transition-colors',
-                  tab === t.id ? 'bg-brand/10 font-medium text-brand' : 'text-muted hover:text-content',
+                  tab === t.id
+                    ? 'bg-brand/10 font-medium text-brand'
+                    : 'text-muted hover:text-content',
                 )}
               >
                 {t.label}
@@ -262,7 +236,12 @@ export function PostForm({
                                 {tag}
                                 <button
                                   type="button"
-                                  onClick={() => set('tags', values.tags.filter((t) => t !== tag))}
+                                  onClick={() =>
+                                    set(
+                                      'tags',
+                                      values.tags.filter((t) => t !== tag),
+                                    )
+                                  }
                                   aria-label={`Remove tag ${tag}`}
                                   className="rounded-full p-0.5 text-muted hover:bg-muted/20 hover:text-content"
                                 >
@@ -307,7 +286,10 @@ export function PostForm({
                               <button
                                 type="button"
                                 onClick={() =>
-                                  set('relatedIds', values.relatedIds.filter((v) => v !== id))
+                                  set(
+                                    'relatedIds',
+                                    values.relatedIds.filter((v) => v !== id),
+                                  )
                                 }
                                 aria-label="Remove related post"
                                 className="rounded p-1 text-muted hover:bg-red-50 hover:text-red-600"
@@ -422,7 +404,11 @@ export function PostForm({
           <CardBody className="space-y-4">
             <fieldset disabled={!canEdit || pending} className="space-y-4">
               <Field label="Status" htmlFor="post-status">
-                <Select id="post-status" value={values.status} onChange={(e) => set('status', e.target.value)}>
+                <Select
+                  id="post-status"
+                  value={values.status}
+                  onChange={(e) => set('status', e.target.value)}
+                >
                   <option value="DRAFT">Draft</option>
                   {canPublish ? <option value="PUBLISHED">Published</option> : null}
                   {canPublish ? <option value="SCHEDULED">Scheduled</option> : null}

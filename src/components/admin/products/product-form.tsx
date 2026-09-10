@@ -7,6 +7,7 @@ import { createProduct, updateProduct } from '@/lib/actions/products';
 import { Field, Input, Textarea, Select, Switch } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody } from '@/components/ui/card';
+import { AdminTabs, TabPanel } from '@/components/admin/admin-tabs';
 import { MediaPicker } from '@/components/admin/media-picker';
 import { GalleryPicker } from '@/components/admin/gallery-picker';
 import { RichTextEditor } from '@/components/cms/rich-text-editor';
@@ -138,11 +139,33 @@ export function ProductForm({
 
     const data = new FormData();
     const simple: Array<keyof ProductFormValues> = [
-      'name', 'slug', 'sku', 'status', 'publishedAt', 'sortOrder', 'shortDescription',
-      'description', 'storage', 'minUsers', 'maxUsers', 'billingPeriod', 'currency',
-      'monthlyPrice', 'annualPrice', 'compareAtPrice', 'discountPercent', 'priceSuffix',
-      'priceNote', 'ctaLabel', 'ctaUrl', 'categoryId', 'brandId', 'featuredOrder',
-      'seoTitle', 'seoDescription', 'canonicalUrl',
+      'name',
+      'slug',
+      'sku',
+      'status',
+      'publishedAt',
+      'sortOrder',
+      'shortDescription',
+      'description',
+      'storage',
+      'minUsers',
+      'maxUsers',
+      'billingPeriod',
+      'currency',
+      'monthlyPrice',
+      'annualPrice',
+      'compareAtPrice',
+      'discountPercent',
+      'priceSuffix',
+      'priceNote',
+      'ctaLabel',
+      'ctaUrl',
+      'categoryId',
+      'brandId',
+      'featuredOrder',
+      'seoTitle',
+      'seoDescription',
+      'canonicalUrl',
     ];
     for (const key of simple) data.set(key, String(values[key] ?? ''));
     data.set('isFeatured', String(values.isFeatured));
@@ -155,7 +178,8 @@ export function ProductForm({
     data.set('specs', JSON.stringify(values.specs.filter((s) => s.label)));
     data.set('galleryIds', JSON.stringify(values.galleryIds));
 
-    const result = mode === 'create' ? await createProduct(data) : await updateProduct(initial.id!, data);
+    const result =
+      mode === 'create' ? await createProduct(data) : await updateProduct(initial.id!, data);
     setPending(false);
 
     if (!result.ok) {
@@ -183,25 +207,15 @@ export function ProductForm({
   return (
     <form onSubmit={onSubmit}>
       <Card>
-        <div className="scroll-x flex items-center gap-1 border-b border-hairline px-3 py-2">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              aria-pressed={tab === t.id}
-              className={cn(
-                'shrink-0 rounded-lg px-3 py-1.5 text-sm transition-colors',
-                tab === t.id ? 'bg-brand/10 font-medium text-brand' : 'text-muted hover:text-content',
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <AdminTabs
+          tabs={[...TABS]}
+          active={tab}
+          onChange={(next) => setTab(next as TabId)}
+          className="px-3"
+        />
 
         <CardBody className="space-y-4">
-          {tab === 'details' ? (
+          <TabPanel id="details" active={tab} className="space-y-4">
             <>
               <Field label="Product name" htmlFor="name" required error={errors.name}>
                 <Input
@@ -247,12 +261,19 @@ export function ProductForm({
               </Field>
 
               <Field label="Full description" hint="Shown on the product page.">
-                <RichTextEditor value={values.description} onChange={(v) => set('description', v)} />
+                <RichTextEditor
+                  value={values.description}
+                  onChange={(v) => set('description', v)}
+                />
               </Field>
 
               <div className="grid gap-4 sm:grid-cols-3">
                 <Field label="Storage" htmlFor="storage" hint="e.g. 5 TB">
-                  <Input id="storage" value={values.storage} onChange={(e) => set('storage', e.target.value)} />
+                  <Input
+                    id="storage"
+                    value={values.storage}
+                    onChange={(e) => set('storage', e.target.value)}
+                  />
                 </Field>
                 <Field label="Minimum users" htmlFor="minUsers" error={errors.minUsers}>
                   <Input
@@ -290,7 +311,11 @@ export function ProductForm({
                   </Select>
                 </Field>
                 <Field label="Brand" htmlFor="brandId">
-                  <Select id="brandId" value={values.brandId} onChange={(e) => set('brandId', e.target.value)}>
+                  <Select
+                    id="brandId"
+                    value={values.brandId}
+                    onChange={(e) => set('brandId', e.target.value)}
+                  >
                     <option value="">No brand</option>
                     {brands.map((brand) => (
                       <option key={brand.id} value={brand.id}>
@@ -328,8 +353,15 @@ export function ProductForm({
                 </Field>
               </div>
 
-              <Field label="Product image" hint="Shown on cards and at the top of the product page.">
-                <MediaPicker value={values.imageId} onChange={(id) => set('imageId', id)} label="Product image" />
+              <Field
+                label="Product image"
+                hint="Shown on cards and at the top of the product page."
+              >
+                <MediaPicker
+                  value={values.imageId}
+                  onChange={(id) => set('imageId', id)}
+                  label="Product image"
+                />
               </Field>
 
               <Field label="Gallery" hint="Additional images. Drag the arrows to reorder.">
@@ -341,7 +373,11 @@ export function ProductForm({
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Status" htmlFor="status">
-                  <Select id="status" value={values.status} onChange={(e) => set('status', e.target.value)}>
+                  <Select
+                    id="status"
+                    value={values.status}
+                    onChange={(e) => set('status', e.target.value)}
+                  >
                     <option value="DRAFT">Draft</option>
                     <option value="PUBLISHED">Published</option>
                     <option value="SCHEDULED">Scheduled</option>
@@ -371,9 +407,9 @@ export function ProductForm({
                 />
               </div>
             </>
-          ) : null}
+          </TabPanel>
 
-          {tab === 'pricing' ? (
+          <TabPanel id="pricing" active={tab} className="space-y-4">
             <>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Currency" htmlFor="currency">
@@ -431,8 +467,8 @@ export function ProductForm({
 
               {annualSaving !== null && annualSaving > 0 ? (
                 <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                  Annual billing saves {formatMoney(String(annualSaving), values.currency)} per year versus
-                  paying monthly.
+                  Annual billing saves {formatMoney(String(annualSaving), values.currency)} per year
+                  versus paying monthly.
                 </p>
               ) : null}
 
@@ -484,9 +520,9 @@ export function ProductForm({
                 </Field>
               </div>
             </>
-          ) : null}
+          </TabPanel>
 
-          {tab === 'content' ? (
+          <TabPanel id="content" active={tab} className="space-y-4">
             <>
               <StringListEditor
                 label="Features"
@@ -508,13 +544,13 @@ export function ProductForm({
                 onChange={(next) => set('specs', next)}
               />
             </>
-          ) : null}
+          </TabPanel>
 
-          {tab === 'cta' ? (
+          <TabPanel id="cta" active={tab} className="space-y-4">
             <>
               <p className="rounded-lg bg-sky-50 px-3 py-2.5 text-sm text-sky-900">
-                There is no checkout. The product button captures a lead — pick the form it should open. Every
-                lead records the product, page, button label and campaign attribution.
+                There is no checkout. The product button captures a lead — pick the form it should
+                open. Every lead records the product, page, button label and campaign attribution.
               </p>
               <Field label="Button label" htmlFor="ctaLabel">
                 <Input
@@ -548,11 +584,15 @@ export function ProductForm({
                 />
               </Field>
             </>
-          ) : null}
+          </TabPanel>
 
-          {tab === 'seo' ? (
+          <TabPanel id="seo" active={tab} className="space-y-4">
             <>
-              <Field label="SEO title" htmlFor="seoTitle" hint={`${values.seoTitle.length}/60 characters used.`}>
+              <Field
+                label="SEO title"
+                htmlFor="seoTitle"
+                hint={`${values.seoTitle.length}/60 characters used.`}
+              >
                 <Input
                   id="seoTitle"
                   value={values.seoTitle}
@@ -595,7 +635,7 @@ export function ProductForm({
                 />
               </div>
             </>
-          ) : null}
+          </TabPanel>
         </CardBody>
 
         <div className="flex items-center justify-end gap-2 border-t border-hairline bg-muted/[0.03] px-4 py-3 sm:px-5">
@@ -624,7 +664,9 @@ export function ProductForm({
 }
 
 function tabForField(field: string): TabId {
-  if (['monthlyPrice', 'annualPrice', 'compareAtPrice', 'discountPercent', 'currency'].includes(field)) {
+  if (
+    ['monthlyPrice', 'annualPrice', 'compareAtPrice', 'discountPercent', 'currency'].includes(field)
+  ) {
     return 'pricing';
   }
   if (['features', 'benefits', 'specs'].includes(field)) return 'content';

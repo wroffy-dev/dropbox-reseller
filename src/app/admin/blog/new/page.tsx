@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
-import { PostForm, EMPTY_POST } from '@/components/admin/blog/post-form';
+import { PostForm } from '@/components/admin/blog/post-form';
+import { EMPTY_POST } from '@/lib/cms/post-model';
 
 export const metadata: Metadata = { title: 'New post' };
 export const dynamic = 'force-dynamic';
@@ -11,7 +12,10 @@ export default async function NewPost() {
   const user = await requirePermission('blog.create');
 
   const [categories, authors, posts] = await Promise.all([
-    prisma.blogCategory.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true } }),
+    prisma.blogCategory.findMany({
+      orderBy: { sortOrder: 'asc' },
+      select: { id: true, name: true },
+    }),
     prisma.user.findMany({
       where: { deletedAt: null, status: 'ACTIVE' },
       orderBy: { name: 'asc' },

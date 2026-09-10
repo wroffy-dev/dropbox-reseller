@@ -1,7 +1,16 @@
 'use client';
 
 import * as React from 'react';
-import { Upload, Search, Trash, Copy, Check, Image as ImageIcon } from 'lucide-react';
+import {
+  Upload,
+  Search,
+  Trash,
+  Copy,
+  Check,
+  Image as ImageIcon,
+  LayoutGrid,
+  List as ListIcon,
+} from 'lucide-react';
 import {
   listMedia,
   uploadMedia,
@@ -43,6 +52,28 @@ export function MediaLibrary({
   );
   const inputRef = React.useRef<HTMLInputElement>(null);
   const firstRender = React.useRef(true);
+
+  // Grid reads better for photos, list for documents and for scanning alt
+  // text. The choice is a per-admin convenience, so it lives in localStorage
+  // rather than the URL.
+  const [view, setView] = React.useState<'grid' | 'list'>('grid');
+
+  React.useEffect(() => {
+    try {
+      if (window.localStorage.getItem('admin:media:view') === 'list') setView('list');
+    } catch {
+      // Private mode — the library still works, it just will not remember.
+    }
+  }, []);
+
+  const chooseView = (next: 'grid' | 'list') => {
+    setView(next);
+    try {
+      window.localStorage.setItem('admin:media:view', next);
+    } catch {
+      // Nothing to do; the choice simply lasts for this visit.
+    }
+  };
 
   // Refetch when the search or type filter changes, debounced.
   React.useEffect(() => {
@@ -126,8 +157,39 @@ export function MediaLibrary({
             <option value="VIDEO">Video</option>
           </Select>
         </div>
+        <div
+          role="group"
+          aria-label="Layout"
+          className="flex shrink-0 items-center gap-0.5 rounded-lg border border-hairline p-0.5 sm:ml-auto"
+        >
+          {(
+            [
+              { id: 'grid', label: 'Grid view', Icon: LayoutGrid },
+              { id: 'list', label: 'List view', Icon: ListIcon },
+            ] as const
+          ).map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => chooseView(id)}
+              aria-pressed={view === id}
+              aria-label={label}
+              title={label}
+              className={cn(
+                'rounded-md p-1.5 transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+                view === id
+                  ? 'bg-brand/10 text-brand'
+                  : 'text-muted hover:bg-muted/10 hover:text-content',
+              )}
+            >
+              <Icon className="h-4 w-4" aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+
         {can.upload ? (
-          <Button className="sm:ml-auto" onClick={() => inputRef.current?.click()} disabled={uploading}>
+          <Button onClick={() => inputRef.current?.click()} disabled={uploading}>
             {uploading ? (
               <>
                 <Spinner className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -187,47 +249,74 @@ export function MediaLibrary({
                 : 'Ask an administrator to upload files.'
             }
             action={
-              can.upload ? <Button onClick={() => inputRef.current?.click()}>Upload files</Button> : undefined
+              can.upload ? (
+                <Button onClick={() => inputRef.current?.click()}>Upload files</Button>
+              ) : undefined
             }
           />
         ) : (
           <>
-            <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              {items.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => setActive(item)}
-                    className="group block w-full overflow-hidden rounded-lg border border-hairline text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-                  >
-                    <span className="block aspect-square bg-muted/10">
-                      {item.kind === 'IMAGE' ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={item.url}
-                          alt={item.altText ?? ''}
-                          loading="lazy"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <span className="flex h-full w-full items-center justify-center text-sm font-medium text-muted">
-                          {item.mimeType.split('/')[1]?.slice(0, 6).toUpperCase()}
+            {view === 'grid' ? (
+              <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+                {items.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => setActive(item)}
+                      className="group block w-full overflow-hidden rounded-lg border border-hairline text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                    >
+                      <span className="block aspect-square bg-muted/10">
+                        <Thumbnail item={item} />
+                      </span>
+                      <span className="block border-t border-hairline p-2">
+                        <span className="block truncate text-xs font-medium text-content">
+                          {item.title || item.filename}
                         </span>
-                      )}
-                    </span>
-                    <span className="block border-t border-hairline p-2">
-                      <span className="block truncate text-xs font-medium text-content">
-                        {item.title || item.filename}
+                        <span className="block text-[0.6875rem] text-muted">
+                          {formatBytes(item.size)}
+                          {item.width ? ` · ${item.width}×${item.height}` : ''}
+                        </span>
                       </span>
-                      <span className="block text-[0.6875rem] text-muted">
-                        {formatBytes(item.size)}
-                        {item.width ? ` · ${item.width}×${item.height}` : ''}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <ul className="divide-y divide-hairline">
+                {items.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => setActive(item)}
+                      className="flex w-full items-center gap-3 py-2.5 text-left transition-colors hover:bg-muted/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                    >
+                      <span className="block h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-muted/10">
+                        <Thumbnail item={item} />
                       </span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-content">
+                          {item.title || item.filename}
+                        </span>
+                        <span className="block truncate text-xs text-muted">
+                          {/* Missing alt text is worth seeing at a glance —
+                              it is the difference between an accessible page
+                              and an inaccessible one. */}
+                          {item.kind === 'IMAGE' && !item.altText ? (
+                            <span className="text-amber-700">No alt text</span>
+                          ) : (
+                            item.altText || item.mimeType
+                          )}
+                        </span>
+                      </span>
+                      <span className="hidden shrink-0 text-xs text-muted sm:block">
+                        {item.width ? `${item.width}×${item.height}` : item.mimeType.split('/')[1]}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted">{formatBytes(item.size)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
 
             {cursor ? (
               <div className="mt-6 flex justify-center">
@@ -274,7 +363,12 @@ function MediaDetail({
   const [pending, setPending] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
-  const [values, setValues] = React.useState({ altText: '', title: '', caption: '', description: '' });
+  const [values, setValues] = React.useState({
+    altText: '',
+    title: '',
+    caption: '',
+    description: '',
+  });
 
   React.useEffect(() => {
     if (media) {
@@ -462,5 +556,25 @@ function MediaDetail({
         pending={pending}
       />
     </>
+  );
+}
+
+/** One thumbnail rendering shared by both views. */
+function Thumbnail({ item }: { item: MediaDto }) {
+  if (item.kind === 'IMAGE') {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={item.url}
+        alt={item.altText ?? ''}
+        loading="lazy"
+        className="h-full w-full object-cover"
+      />
+    );
+  }
+  return (
+    <span className="flex h-full w-full items-center justify-center text-xs font-medium text-muted">
+      {item.mimeType.split('/')[1]?.slice(0, 6).toUpperCase()}
+    </span>
   );
 }

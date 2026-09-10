@@ -10,10 +10,11 @@ import {
   toggleTrackingScript,
 } from '@/lib/actions/marketing';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
+import { cn } from '@/lib/utils/cn';
 import { Field, Input, Select, Textarea, Switch } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { Dialog, ConfirmDialog } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
+import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Alert, EmptyState } from '@/components/ui/states';
 import { useToast } from '@/components/ui/toast';
 import { Spinner } from '@/components/ui/icons';
@@ -115,6 +116,13 @@ const VENDORS: Array<{
   },
 ];
 
+/** How each provider card reads at a glance. */
+const VENDOR_STATE: Record<'live' | 'off' | 'unset', { label: string; tone: BadgeTone }> = {
+  live: { label: 'Live', tone: 'success' },
+  off: { label: 'Switched off', tone: 'warning' },
+  unset: { label: 'Not set up', tone: 'neutral' },
+};
+
 const BLANK_SCRIPT = {
   id: '',
   name: '',
@@ -144,6 +152,15 @@ export function TrackingForm({
 
   const set = <K extends keyof TrackingValues>(key: K, value: TrackingValues[K]) =>
     setValues((current) => ({ ...current, [key]: value }));
+
+  // "Live" means both halves are done: an ID is filled in and the tag is on.
+  const liveCount = React.useMemo(
+    () =>
+      VENDORS.filter(
+        (vendor) => String(values[vendor.idKey] ?? '').trim() && Boolean(values[vendor.enabledKey]),
+      ).length,
+    [values],
+  );
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -182,44 +199,72 @@ export function TrackingForm({
         <Card>
           <CardHeader
             title="Analytics and advertising tags"
-            description="Enter the ID and switch the tag on. Nothing loads until it is enabled."
+            description="Enter the ID and switch the tag on. Nothing loads on the website until a tag is both filled in and switched on."
+            actions={
+              <span className="text-sm text-muted">
+                {liveCount} of {VENDORS.length} live
+              </span>
+            }
           />
-          <CardBody className="space-y-4">
-            <fieldset disabled={!canEdit || pending} className="space-y-4">
-              {VENDORS.map((vendor) => (
-                <div key={vendor.idKey} className="rounded-lg border border-hairline p-4">
-                  <Switch
-                    checked={Boolean(values[vendor.enabledKey])}
-                    onChange={(next) => set(vendor.enabledKey, next as never)}
-                    label={vendor.label}
-                    hint={vendor.hint}
-                  />
-                  <div className="mt-3">
-                    <label htmlFor={vendor.idKey} className="sr-only">
-                      {vendor.label} ID
-                    </label>
-                    <Input
-                      id={vendor.idKey}
-                      value={String(values[vendor.idKey] ?? '')}
-                      placeholder={vendor.placeholder}
-                      onChange={(e) => set(vendor.idKey, e.target.value as never)}
-                      className="font-mono text-sm"
-                    />
-                  </div>
-                  {vendor.idKey === 'googleAdsId' && values.googleAdsEnabled ? (
-                    <div className="mt-3">
-                      <Field label="Conversion label" htmlFor="googleAdsConversionLabel">
-                        <Input
-                          id="googleAdsConversionLabel"
-                          value={values.googleAdsConversionLabel}
-                          onChange={(e) => set('googleAdsConversionLabel', e.target.value)}
-                          className="font-mono text-sm"
-                        />
-                      </Field>
+          <CardBody>
+            <fieldset disabled={!canEdit || pending} className="grid gap-3 sm:grid-cols-2">
+              {VENDORS.map((vendor) => {
+                const id = String(values[vendor.idKey] ?? '').trim();
+                const enabled = Boolean(values[vendor.enabledKey]);
+                const state = !id ? 'unset' : enabled ? 'live' : 'off';
+                return (
+                  <div
+                    key={vendor.idKey}
+                    className={cn(
+                      'rounded-lg border p-4 transition-colors',
+                      state === 'live' ? 'border-brand/40 bg-brand/[0.03]' : 'border-hairline',
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-content">{vendor.label}</p>
+                        <p className="mt-0.5 text-xs text-muted">{vendor.hint}</p>
+                      </div>
+                      <Badge tone={VENDOR_STATE[state].tone}>{VENDOR_STATE[state].label}</Badge>
                     </div>
-                  ) : null}
-                </div>
-              ))}
+
+                    <div className="mt-3">
+                      <label htmlFor={vendor.idKey} className="sr-only">
+                        {vendor.label} ID
+                      </label>
+                      <Input
+                        id={vendor.idKey}
+                        value={String(values[vendor.idKey] ?? '')}
+                        placeholder={vendor.placeholder}
+                        onChange={(e) => set(vendor.idKey, e.target.value as never)}
+                        className="font-mono text-sm"
+                      />
+                    </div>
+
+                    {vendor.idKey === 'googleAdsId' && enabled ? (
+                      <div className="mt-3">
+                        <Field label="Conversion label" htmlFor="googleAdsConversionLabel">
+                          <Input
+                            id="googleAdsConversionLabel"
+                            value={values.googleAdsConversionLabel}
+                            onChange={(e) => set('googleAdsConversionLabel', e.target.value)}
+                            className="font-mono text-sm"
+                          />
+                        </Field>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-3 border-t border-hairline pt-3">
+                      <Switch
+                        checked={enabled}
+                        onChange={(next) => set(vendor.enabledKey, next as never)}
+                        label="Load on the website"
+                        hint={!id ? 'Add the ID above first.' : undefined}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </fieldset>
           </CardBody>
         </Card>
@@ -283,8 +328,9 @@ export function TrackingForm({
         />
         <CardBody>
           <Alert tone="warning" className="mb-4" title="These run on every page">
-            A custom script has full access to your visitors&apos; browsers. Only paste code from a source you
-            trust, and check it first. Every change here is recorded in the audit log with the full body.
+            A custom script has full access to your visitors&apos; browsers. Only paste code from a
+            source you trust, and check it first. Every change here is recorded in the audit log
+            with the full body.
           </Alert>
 
           {scripts.length === 0 ? (
@@ -301,7 +347,9 @@ export function TrackingForm({
                   className="flex flex-wrap items-center gap-2 rounded-lg border border-hairline px-3 py-2.5"
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-content">{script.name}</span>
+                    <span className="block truncate text-sm font-medium text-content">
+                      {script.name}
+                    </span>
                     <span className="block text-xs text-muted">
                       {script.placement.replace('_', ' ').toLowerCase()} ·{' '}
                       {script.environment.toLowerCase()}
@@ -399,7 +447,12 @@ export function TrackingForm({
                 <Select
                   id="script-placement"
                   value={editingScript.placement}
-                  onChange={(e) => setEditingScript({ ...editingScript, placement: e.target.value })}
+                  onChange={(e) =>
+                    setEditingScript({
+                      ...editingScript,
+                      placement: e.target.value,
+                    })
+                  }
                 >
                   <option value="HEAD">Head</option>
                   <option value="BODY_START">Start of body</option>
@@ -414,7 +467,12 @@ export function TrackingForm({
                 <Select
                   id="script-environment"
                   value={editingScript.environment}
-                  onChange={(e) => setEditingScript({ ...editingScript, environment: e.target.value })}
+                  onChange={(e) =>
+                    setEditingScript({
+                      ...editingScript,
+                      environment: e.target.value,
+                    })
+                  }
                 >
                   <option value="ALL">All environments</option>
                   <option value="PRODUCTION">Production only</option>

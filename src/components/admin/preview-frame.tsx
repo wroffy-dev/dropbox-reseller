@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Monitor, Tablet, Smartphone, RotateCw, ExternalLink } from 'lucide-react';
+import { Monitor, Tablet, Smartphone, RotateCw, ExternalLink, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
 /**
@@ -24,7 +24,19 @@ type DeviceId = (typeof DEVICES)[number]['id'];
  * tablet/mobile widths trigger the real CSS media queries instead of merely
  * looking narrower.
  */
-export function PreviewFrame({ src, title }: { src: string; title: string }) {
+export function PreviewFrame({
+  src,
+  title,
+  publicPath,
+  compact = false,
+}: {
+  src: string;
+  title: string;
+  /** Live URL, shown as "Open website" when the page is published. */
+  publicPath?: string;
+  /** Denser chrome for the page builder's centre column. */
+  compact?: boolean;
+}) {
   const [device, setDevice] = React.useState<DeviceId>('desktop');
   const [nonce, setNonce] = React.useState(0);
 
@@ -45,7 +57,9 @@ export function PreviewFrame({ src, title }: { src: string; title: string }) {
                 title={option.width ? `${option.label} — ${option.width}px` : option.label}
                 className={cn(
                   'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
-                  device === option.id ? 'bg-surface text-content shadow-sm' : 'text-muted hover:text-content',
+                  device === option.id
+                    ? 'bg-surface text-content shadow-sm'
+                    : 'text-muted hover:text-content',
                 )}
               >
                 <Icon className="h-3.5 w-3.5" aria-hidden="true" />
@@ -75,18 +89,35 @@ export function PreviewFrame({ src, title }: { src: string; title: string }) {
             className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:text-content"
           >
             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-            Open in a tab
+            {compact ? 'Full preview' : 'Open in a tab'}
           </a>
+          {publicPath ? (
+            <a
+              href={publicPath}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:text-content"
+            >
+              <Globe className="h-3.5 w-3.5" aria-hidden="true" />
+              Website
+            </a>
+          ) : null}
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 justify-center overflow-auto bg-muted/[0.08] p-4">
+      <div
+        className={cn(
+          'flex min-h-0 flex-1 justify-center overflow-auto bg-muted/[0.08]',
+          compact ? 'p-2' : 'p-4',
+        )}
+      >
         <iframe
           key={`${device}-${nonce}`}
           src={src}
           title={title}
           className={cn(
-            'h-full min-h-[70vh] w-full border-0 bg-white',
+            'h-full w-full border-0 bg-white',
+            compact ? 'min-h-[26rem]' : 'min-h-[70vh]',
             active.width && 'rounded-xl border border-hairline shadow-xl',
           )}
           style={active.width ? { maxWidth: active.width } : undefined}

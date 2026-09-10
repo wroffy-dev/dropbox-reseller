@@ -3,7 +3,8 @@ import { Plus } from 'lucide-react';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
-import { TableToolbar } from '@/components/admin/table-toolbar';
+import { FilterBar } from '@/components/admin/filter-bar';
+import type { FilterDefinition, FilterPreset } from '@/lib/admin/filters';
 import { AdminPagination } from '@/components/admin/admin-pagination';
 import { PagesTable, type PageRow } from '@/components/admin/pages/pages-table';
 import { Card } from '@/components/ui/card';
@@ -69,6 +70,26 @@ export default async function PagesAdmin({
     sectionCount: row._count.sections,
   }));
 
+  const definitions: FilterDefinition[] = [
+    {
+      name: 'status',
+      label: 'Status',
+      allLabel: 'Any status',
+      options: [
+        { label: 'Published', value: 'PUBLISHED' },
+        { label: 'Draft', value: 'DRAFT' },
+        { label: 'Scheduled', value: 'SCHEDULED' },
+        { label: 'Archived', value: 'ARCHIVED' },
+      ],
+    },
+  ];
+
+  const presets: FilterPreset[] = [
+    { id: 'all', label: 'All pages', params: {} },
+    { id: 'published', label: 'Published', params: { status: 'PUBLISHED' } },
+    { id: 'drafts', label: 'Drafts', params: { status: 'DRAFT' } },
+  ];
+
   return (
     <>
       <AdminPageHeader
@@ -85,20 +106,10 @@ export default async function PagesAdmin({
         }
       />
 
-      <TableToolbar
+      <FilterBar
         searchPlaceholder="Search pages by title or URL"
-        filters={[
-          {
-            name: 'status',
-            label: 'Status',
-            options: [
-              { label: 'Published', value: 'PUBLISHED' },
-              { label: 'Draft', value: 'DRAFT' },
-              { label: 'Scheduled', value: 'SCHEDULED' },
-              { label: 'Archived', value: 'ARCHIVED' },
-            ],
-          },
-        ]}
+        definitions={definitions}
+        presets={presets}
       />
 
       <Card>

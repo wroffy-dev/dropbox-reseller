@@ -17,12 +17,12 @@ import {
 } from '@dnd-kit/core';
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Building2 } from 'lucide-react';
+import { GripVertical, Building2, CalendarClock } from 'lucide-react';
 import type { LeadStatus } from '@prisma/client';
 import { moveLeadInPipeline } from '@/lib/actions/leads';
 import { PIPELINE_STAGES, LEAD_STATUS_LABELS } from '@/lib/crm/constants';
 import { useToast } from '@/components/ui/toast';
-import { formatRelative } from '@/lib/utils/format';
+import { formatRelative, formatDate, initials } from '@/lib/utils/format';
 import { formatMoney } from '@/lib/utils/money';
 import { cn } from '@/lib/utils/cn';
 
@@ -36,6 +36,7 @@ export type PipelineCard = {
   value: string | null;
   status: LeadStatus;
   createdAt: string;
+  followUpAt: string | null;
 };
 
 const STAGE_TONE: Record<string, string> = {
@@ -62,7 +63,9 @@ export function PipelineBoard({ cards, canEdit }: { cards: PipelineCard[]; canEd
   );
 
   const activeCard = activeId
-    ? Object.values(columns).flat().find((card) => card.id === activeId)
+    ? Object.values(columns)
+        .flat()
+        .find((card) => card.id === activeId)
     : null;
 
   function findColumn(cardId: string): string | null {
@@ -127,12 +130,7 @@ export function PipelineBoard({ cards, canEdit }: { cards: PipelineCard[]; canEd
       <div className="scroll-x -mx-4 px-4 pb-4 sm:-mx-6 sm:px-6">
         <div className="flex min-w-max gap-4">
           {PIPELINE_STAGES.map((stage) => (
-            <Column
-              key={stage}
-              stage={stage}
-              cards={columns[stage] ?? []}
-              canEdit={canEdit}
-            />
+            <Column key={stage} stage={stage} cards={columns[stage] ?? []} canEdit={canEdit} />
           ))}
         </div>
       </div>
@@ -175,12 +173,18 @@ function Column({
         isOver ? 'border-brand bg-brand/[0.05]' : 'border-hairline',
       )}
     >
-      <header className="flex items-baseline justify-between gap-2 px-3 py-3">
-        <h2 className="text-sm font-semibold text-content">{LEAD_STATUS_LABELS[stage as LeadStatus]}</h2>
-        <span className="text-xs text-muted">
-          {cards.length}
-          {total > 0 ? ` · ${formatMoney(String(total))}` : ''}
-        </span>
+      <header className="px-3 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="truncate text-sm font-semibold text-content">
+            {LEAD_STATUS_LABELS[stage as LeadStatus]}
+          </h2>
+          <span className="shrink-0 rounded-full bg-muted/15 px-2 py-0.5 text-xs font-semibold text-muted">
+            {cards.length}
+          </span>
+        </div>
+        <p className="mt-0.5 text-xs text-muted">
+          {total > 0 ? formatMoney(String(total)) : 'No value set'}
+        </p>
       </header>
 
       <SortableContext items={cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
@@ -230,10 +234,14 @@ function Card({
   dragHandleProps?: Record<string, unknown>;
   isOverlay?: boolean;
 }) {
+  // Same overdue rule as the leads table, so a lead reads identically in both views.
+  const overdue = Boolean(card.followUpAt && new Date(card.followUpAt) <= new Date());
+
   return (
     <article
       className={cn(
-        'rounded-lg border border-hairline bg-surface p-3 shadow-sm',
+        'rounded-lg border bg-surface p-3 shadow-sm transition-shadow hover:shadow-md',
+        overdue ? 'border-amber-300' : 'border-hairline',
         isOverlay && 'rotate-1 shadow-xl',
       )}
     >
@@ -271,10 +279,35 @@ function Card({
         </p>
       ) : null}
 
-      <div className="mt-2.5 flex items-center justify-between gap-2 text-[0.6875rem] text-muted">
-        <span className="truncate">{card.assignedToName ?? 'Unassigned'}</span>
-        <span className="shrink-0">
-          {card.value ? formatMoney(card.value) : formatRelative(card.createdAt)}
+      {overdue ? (
+        <p className="mt-2 flex items-center gap-1 text-[0.6875rem] font-medium text-amber-700">
+          <CalendarClock className="h-3 w-3 shrink-0" aria-hidden="true" />
+          Follow-up due {formatDate(card.followUpAt as string)}
+        </p>
+      ) : null}
+
+      <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-hairline pt-2 text-[0.6875rem] text-muted">
+        <span
+          className="flex min-w-0 items-center gap-1.5"
+          title={card.assignedToName ?? 'Unassigned'}
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[0.5625rem] font-semibold',
+              card.assignedToName ? 'bg-brand/10 text-brand' : 'bg-muted/15 text-muted',
+            )}
+          >
+            {card.assignedToName ? initials(card.assignedToName) : '—'}
+          </span>
+          <span className="truncate">{card.assignedToName ?? 'Unassigned'}</span>
+        </span>
+        <span className="shrink-0 whitespace-nowrap">
+          {card.value ? (
+            <span className="font-medium text-content">{formatMoney(card.value)}</span>
+          ) : (
+            formatRelative(card.createdAt)
+          )}
         </span>
       </div>
     </article>

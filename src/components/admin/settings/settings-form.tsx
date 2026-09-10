@@ -29,19 +29,33 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]['id'];
 
+/**
+ * Website settings.
+ *
+ * `only` narrows the tab strip so the same form — and the same
+ * `saveWebsiteSettings` action — can back both Settings and Website Design
+ * without a second implementation. Hidden tabs still post their stored values,
+ * so saving from one screen never wipes what the other screen owns.
+ */
 export function WebsiteSettingsForm({
   initial,
   canEdit,
+  only,
 }: {
   initial: WebsiteSettingsValues;
   canEdit: boolean;
+  only?: readonly TabId[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [values, setValues] = React.useState(initial);
   const [errors, setErrors] = React.useState<Record<string, string[]>>({});
   const [pending, setPending] = React.useState(false);
-  const [tab, setTab] = React.useState<TabId>('general');
+  const visibleTabs = React.useMemo(
+    () => (only ? TABS.filter((entry) => only.includes(entry.id)) : TABS),
+    [only],
+  );
+  const [tab, setTab] = React.useState<TabId>(visibleTabs[0]?.id ?? 'general');
 
   const str = (key: string) => String(values[key] ?? '');
   const bool = (key: string) => Boolean(values[key]);
@@ -63,7 +77,11 @@ export function WebsiteSettingsForm({
       setErrors(result.fieldErrors ?? {});
       toast(result.error, 'error');
       const firstError = Object.keys(result.fieldErrors ?? {})[0];
-      if (firstError) setTab(tabForField(firstError));
+      if (firstError) {
+        const target = tabForField(firstError);
+        // Only switch to a tab this screen actually shows.
+        if (visibleTabs.some((entry) => entry.id === target)) setTab(target);
+      }
       return;
     }
     toast(result.message ?? 'Saved.');
@@ -80,7 +98,7 @@ export function WebsiteSettingsForm({
 
       <Card>
         <div className="scroll-x flex items-center gap-1 border-b border-hairline px-3 py-2">
-          {TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <button
               key={t.id}
               type="button"
@@ -88,7 +106,9 @@ export function WebsiteSettingsForm({
               aria-pressed={tab === t.id}
               className={cn(
                 'shrink-0 rounded-lg px-3 py-1.5 text-sm transition-colors',
-                tab === t.id ? 'bg-brand/10 font-medium text-brand' : 'text-muted hover:text-content',
+                tab === t.id
+                  ? 'bg-brand/10 font-medium text-brand'
+                  : 'text-muted hover:text-content',
               )}
             >
               {t.label}
@@ -102,42 +122,97 @@ export function WebsiteSettingsForm({
               <>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Website name" htmlFor="siteName" required error={errors.siteName}>
-                    <Input id="siteName" value={str('siteName')} onChange={(e) => set('siteName', e.target.value)} />
+                    <Input
+                      id="siteName"
+                      value={str('siteName')}
+                      onChange={(e) => set('siteName', e.target.value)}
+                    />
                   </Field>
-                  <Field label="Website URL" htmlFor="siteUrl" required error={errors.siteUrl} hint="Used for canonical URLs and the sitemap.">
-                    <Input id="siteUrl" value={str('siteUrl')} onChange={(e) => set('siteUrl', e.target.value)} />
+                  <Field
+                    label="Website URL"
+                    htmlFor="siteUrl"
+                    required
+                    error={errors.siteUrl}
+                    hint="Used for canonical URLs and the sitemap."
+                  >
+                    <Input
+                      id="siteUrl"
+                      value={str('siteUrl')}
+                      onChange={(e) => set('siteUrl', e.target.value)}
+                    />
                   </Field>
                 </div>
 
-                <Field label="Website title" htmlFor="siteTitle" hint="A short tagline used alongside the name.">
-                  <Input id="siteTitle" value={str('siteTitle')} onChange={(e) => set('siteTitle', e.target.value)} />
+                <Field
+                  label="Website title"
+                  htmlFor="siteTitle"
+                  hint="A short tagline used alongside the name."
+                >
+                  <Input
+                    id="siteTitle"
+                    value={str('siteTitle')}
+                    onChange={(e) => set('siteTitle', e.target.value)}
+                  />
                 </Field>
 
                 <Field label="Description" htmlFor="siteDescription">
-                  <Textarea id="siteDescription" rows={3} value={str('siteDescription')} onChange={(e) => set('siteDescription', e.target.value)} />
+                  <Textarea
+                    id="siteDescription"
+                    rows={3}
+                    value={str('siteDescription')}
+                    onChange={(e) => set('siteDescription', e.target.value)}
+                  />
                 </Field>
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Contact email" htmlFor="contactEmail" hint="Receives lead notifications when no sales address is set.">
-                    <Input id="contactEmail" type="email" value={str('contactEmail')} onChange={(e) => set('contactEmail', e.target.value)} />
+                  <Field
+                    label="Contact email"
+                    htmlFor="contactEmail"
+                    hint="Receives lead notifications when no sales address is set."
+                  >
+                    <Input
+                      id="contactEmail"
+                      type="email"
+                      value={str('contactEmail')}
+                      onChange={(e) => set('contactEmail', e.target.value)}
+                    />
                   </Field>
                   <Field label="Contact phone" htmlFor="contactPhone">
-                    <Input id="contactPhone" value={str('contactPhone')} onChange={(e) => set('contactPhone', e.target.value)} />
+                    <Input
+                      id="contactPhone"
+                      value={str('contactPhone')}
+                      onChange={(e) => set('contactPhone', e.target.value)}
+                    />
                   </Field>
                   <Field label="WhatsApp number" htmlFor="whatsappNumber">
-                    <Input id="whatsappNumber" value={str('whatsappNumber')} onChange={(e) => set('whatsappNumber', e.target.value)} />
+                    <Input
+                      id="whatsappNumber"
+                      value={str('whatsappNumber')}
+                      onChange={(e) => set('whatsappNumber', e.target.value)}
+                    />
                   </Field>
                   <Field label="Default currency" htmlFor="defaultCurrency">
-                    <Select id="defaultCurrency" value={str('defaultCurrency')} onChange={(e) => set('defaultCurrency', e.target.value)}>
+                    <Select
+                      id="defaultCurrency"
+                      value={str('defaultCurrency')}
+                      onChange={(e) => set('defaultCurrency', e.target.value)}
+                    >
                       {SUPPORTED_CURRENCIES.map((code) => (
-                        <option key={code} value={code}>{code}</option>
+                        <option key={code} value={code}>
+                          {code}
+                        </option>
                       ))}
                     </Select>
                   </Field>
                 </div>
 
                 <Field label="Address" htmlFor="address">
-                  <Textarea id="address" rows={2} value={str('address')} onChange={(e) => set('address', e.target.value)} />
+                  <Textarea
+                    id="address"
+                    rows={2}
+                    value={str('address')}
+                    onChange={(e) => set('address', e.target.value)}
+                  />
                 </Field>
 
                 <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
@@ -151,7 +226,12 @@ export function WebsiteSettingsForm({
                       ['youtubeUrl', 'YouTube'],
                     ].map(([key, label]) => (
                       <Field key={key} label={label!} htmlFor={key}>
-                        <Input id={key} value={str(key!)} placeholder="https://" onChange={(e) => set(key!, e.target.value)} />
+                        <Input
+                          id={key}
+                          value={str(key!)}
+                          placeholder="https://"
+                          onChange={(e) => set(key!, e.target.value)}
+                        />
                       </Field>
                     ))}
                   </div>
@@ -170,10 +250,30 @@ export function WebsiteSettingsForm({
 
             {tab === 'branding' ? (
               <>
-                <MediaUrlPicker label="Logo" value={str('logoUrl')} onChange={(v) => set('logoUrl', v)} hint="Shown in the header, the admin sidebar and the sign-in page." />
-                <MediaUrlPicker label="Logo for dark backgrounds" value={str('logoDarkUrl')} onChange={(v) => set('logoDarkUrl', v)} hint="Used in the footer. Falls back to the main logo." />
-                <MediaUrlPicker label="Favicon" value={str('faviconUrl')} onChange={(v) => set('faviconUrl', v)} hint="A square PNG or ICO, at least 32×32." />
-                <MediaUrlPicker label="Default social share image" value={str('ogImageUrl')} onChange={(v) => set('ogImageUrl', v)} hint="Recommended 1200×630." />
+                <MediaUrlPicker
+                  label="Logo"
+                  value={str('logoUrl')}
+                  onChange={(v) => set('logoUrl', v)}
+                  hint="Shown in the header, the admin sidebar and the sign-in page."
+                />
+                <MediaUrlPicker
+                  label="Logo for dark backgrounds"
+                  value={str('logoDarkUrl')}
+                  onChange={(v) => set('logoDarkUrl', v)}
+                  hint="Used in the footer. Falls back to the main logo."
+                />
+                <MediaUrlPicker
+                  label="Favicon"
+                  value={str('faviconUrl')}
+                  onChange={(v) => set('faviconUrl', v)}
+                  hint="A square PNG or ICO, at least 32×32."
+                />
+                <MediaUrlPicker
+                  label="Default social share image"
+                  value={str('ogImageUrl')}
+                  onChange={(v) => set('ogImageUrl', v)}
+                  hint="Recommended 1200×630."
+                />
               </>
             ) : null}
 
@@ -182,23 +282,75 @@ export function WebsiteSettingsForm({
                 <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
                   <legend className="px-1 text-sm font-medium text-content">Colours</legend>
                   <p className="text-xs text-muted">
-                    These become CSS variables used across the whole site — buttons, links, headings and
-                    borders all follow them. Any section can override them in its own Design panel.
+                    These become CSS variables used across the whole site — buttons, links, headings
+                    and borders all follow them. Any section can override them in its own Design
+                    panel.
                   </p>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <ColorField label="Primary" name="colorPrimary" value={str('colorPrimary')} error={errors.colorPrimary} onChange={(v) => set('colorPrimary', v)} />
-                    <ColorField label="Secondary" name="colorSecondary" value={str('colorSecondary')} error={errors.colorSecondary} onChange={(v) => set('colorSecondary', v)} />
-                    <ColorField label="Accent" name="colorAccent1" value={str('colorAccent1')} error={errors.colorAccent1} onChange={(v) => set('colorAccent1', v)} />
-                    <ColorField label="Accent 2" name="colorAccent2" value={str('colorAccent2')} error={errors.colorAccent2} onChange={(v) => set('colorAccent2', v)} />
-                    <ColorField label="Background" name="colorBackground" value={str('colorBackground')} error={errors.colorBackground} onChange={(v) => set('colorBackground', v)} />
-                    <ColorField label="Text" name="colorText" value={str('colorText')} error={errors.colorText} onChange={(v) => set('colorText', v)} />
-                    <ColorField label="Muted text" name="colorMuted" value={str('colorMuted')} error={errors.colorMuted} onChange={(v) => set('colorMuted', v)} />
-                    <ColorField label="Borders" name="colorBorder" value={str('colorBorder')} error={errors.colorBorder} onChange={(v) => set('colorBorder', v)} />
+                    <ColorField
+                      label="Primary"
+                      name="colorPrimary"
+                      value={str('colorPrimary')}
+                      error={errors.colorPrimary}
+                      onChange={(v) => set('colorPrimary', v)}
+                    />
+                    <ColorField
+                      label="Secondary"
+                      name="colorSecondary"
+                      value={str('colorSecondary')}
+                      error={errors.colorSecondary}
+                      onChange={(v) => set('colorSecondary', v)}
+                    />
+                    <ColorField
+                      label="Accent"
+                      name="colorAccent1"
+                      value={str('colorAccent1')}
+                      error={errors.colorAccent1}
+                      onChange={(v) => set('colorAccent1', v)}
+                    />
+                    <ColorField
+                      label="Accent 2"
+                      name="colorAccent2"
+                      value={str('colorAccent2')}
+                      error={errors.colorAccent2}
+                      onChange={(v) => set('colorAccent2', v)}
+                    />
+                    <ColorField
+                      label="Background"
+                      name="colorBackground"
+                      value={str('colorBackground')}
+                      error={errors.colorBackground}
+                      onChange={(v) => set('colorBackground', v)}
+                    />
+                    <ColorField
+                      label="Text"
+                      name="colorText"
+                      value={str('colorText')}
+                      error={errors.colorText}
+                      onChange={(v) => set('colorText', v)}
+                    />
+                    <ColorField
+                      label="Muted text"
+                      name="colorMuted"
+                      value={str('colorMuted')}
+                      error={errors.colorMuted}
+                      onChange={(v) => set('colorMuted', v)}
+                    />
+                    <ColorField
+                      label="Borders"
+                      name="colorBorder"
+                      value={str('colorBorder')}
+                      error={errors.colorBorder}
+                      onChange={(v) => set('colorBorder', v)}
+                    />
                   </div>
 
                   <div
                     className="rounded-lg border p-4"
-                    style={{ background: str('colorBackground'), borderColor: str('colorBorder') }}
+                    style={{
+                      background: str('colorBackground'),
+                      borderColor: str('colorBorder'),
+                    }}
                   >
                     <p className="text-sm font-semibold" style={{ color: str('colorText') }}>
                       Preview
@@ -224,8 +376,8 @@ export function WebsiteSettingsForm({
             {tab === 'typography' ? (
               <>
                 <p className="text-sm text-muted">
-                  Pick any Google Font. Only the families and weights chosen here are downloaded by the
-                  website — nothing else from the catalogue is bundled or requested.
+                  Pick any Google Font. Only the families and weights chosen here are downloaded by
+                  the website — nothing else from the catalogue is bundled or requested.
                 </p>
 
                 <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
@@ -301,46 +453,130 @@ export function WebsiteSettingsForm({
                 <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
                   <legend className="px-1 text-sm font-medium text-content">Sizing</legend>
                   <div className="grid gap-4 sm:grid-cols-3">
-                    <Field label="Base size" htmlFor="baseFontSize" error={errors.baseFontSize} hint="Scales the whole site.">
-                      <Input id="baseFontSize" value={str('baseFontSize')} placeholder="16px" onChange={(e) => set('baseFontSize', e.target.value)} />
+                    <Field
+                      label="Base size"
+                      htmlFor="baseFontSize"
+                      error={errors.baseFontSize}
+                      hint="Scales the whole site."
+                    >
+                      <Input
+                        id="baseFontSize"
+                        value={str('baseFontSize')}
+                        placeholder="16px"
+                        onChange={(e) => set('baseFontSize', e.target.value)}
+                      />
                     </Field>
-                    <Field label="Base size — tablet" htmlFor="baseFontSizeTablet" error={errors.baseFontSizeTablet} hint="Blank inherits desktop.">
-                      <Input id="baseFontSizeTablet" value={str('baseFontSizeTablet')} placeholder="inherit" onChange={(e) => set('baseFontSizeTablet', e.target.value)} />
+                    <Field
+                      label="Base size — tablet"
+                      htmlFor="baseFontSizeTablet"
+                      error={errors.baseFontSizeTablet}
+                      hint="Blank inherits desktop."
+                    >
+                      <Input
+                        id="baseFontSizeTablet"
+                        value={str('baseFontSizeTablet')}
+                        placeholder="inherit"
+                        onChange={(e) => set('baseFontSizeTablet', e.target.value)}
+                      />
                     </Field>
-                    <Field label="Base size — mobile" htmlFor="baseFontSizeMobile" error={errors.baseFontSizeMobile} hint="Blank inherits tablet.">
-                      <Input id="baseFontSizeMobile" value={str('baseFontSizeMobile')} placeholder="inherit" onChange={(e) => set('baseFontSizeMobile', e.target.value)} />
+                    <Field
+                      label="Base size — mobile"
+                      htmlFor="baseFontSizeMobile"
+                      error={errors.baseFontSizeMobile}
+                      hint="Blank inherits tablet."
+                    >
+                      <Input
+                        id="baseFontSizeMobile"
+                        value={str('baseFontSizeMobile')}
+                        placeholder="inherit"
+                        onChange={(e) => set('baseFontSizeMobile', e.target.value)}
+                      />
                     </Field>
 
                     <Field label="Navigation size" htmlFor="navFontSize" error={errors.navFontSize}>
-                      <Input id="navFontSize" value={str('navFontSize')} placeholder="0.9375rem" onChange={(e) => set('navFontSize', e.target.value)} />
+                      <Input
+                        id="navFontSize"
+                        value={str('navFontSize')}
+                        placeholder="0.9375rem"
+                        onChange={(e) => set('navFontSize', e.target.value)}
+                      />
                     </Field>
-                    <Field label="Button size" htmlFor="buttonFontSize" error={errors.buttonFontSize}>
-                      <Input id="buttonFontSize" value={str('buttonFontSize')} placeholder="0.875rem" onChange={(e) => set('buttonFontSize', e.target.value)} />
+                    <Field
+                      label="Button size"
+                      htmlFor="buttonFontSize"
+                      error={errors.buttonFontSize}
+                    >
+                      <Input
+                        id="buttonFontSize"
+                        value={str('buttonFontSize')}
+                        placeholder="0.875rem"
+                        onChange={(e) => set('buttonFontSize', e.target.value)}
+                      />
                     </Field>
                   </div>
                 </fieldset>
 
                 <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
-                  <legend className="px-1 text-sm font-medium text-content">Line height & letter spacing</legend>
+                  <legend className="px-1 text-sm font-medium text-content">
+                    Line height & letter spacing
+                  </legend>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Heading line height" htmlFor="headingLineHeight" error={errors.headingLineHeight}>
-                      <Input id="headingLineHeight" value={str('headingLineHeight')} placeholder="1.15" onChange={(e) => set('headingLineHeight', e.target.value)} />
+                    <Field
+                      label="Heading line height"
+                      htmlFor="headingLineHeight"
+                      error={errors.headingLineHeight}
+                    >
+                      <Input
+                        id="headingLineHeight"
+                        value={str('headingLineHeight')}
+                        placeholder="1.15"
+                        onChange={(e) => set('headingLineHeight', e.target.value)}
+                      />
                     </Field>
-                    <Field label="Body line height" htmlFor="bodyLineHeight" error={errors.bodyLineHeight}>
-                      <Input id="bodyLineHeight" value={str('bodyLineHeight')} placeholder="1.6" onChange={(e) => set('bodyLineHeight', e.target.value)} />
+                    <Field
+                      label="Body line height"
+                      htmlFor="bodyLineHeight"
+                      error={errors.bodyLineHeight}
+                    >
+                      <Input
+                        id="bodyLineHeight"
+                        value={str('bodyLineHeight')}
+                        placeholder="1.6"
+                        onChange={(e) => set('bodyLineHeight', e.target.value)}
+                      />
                     </Field>
-                    <Field label="Heading letter spacing" htmlFor="headingLetterSpacing" error={errors.headingLetterSpacing}>
-                      <Input id="headingLetterSpacing" value={str('headingLetterSpacing')} placeholder="-0.02em" onChange={(e) => set('headingLetterSpacing', e.target.value)} />
+                    <Field
+                      label="Heading letter spacing"
+                      htmlFor="headingLetterSpacing"
+                      error={errors.headingLetterSpacing}
+                    >
+                      <Input
+                        id="headingLetterSpacing"
+                        value={str('headingLetterSpacing')}
+                        placeholder="-0.02em"
+                        onChange={(e) => set('headingLetterSpacing', e.target.value)}
+                      />
                     </Field>
-                    <Field label="Body letter spacing" htmlFor="bodyLetterSpacing" error={errors.bodyLetterSpacing}>
-                      <Input id="bodyLetterSpacing" value={str('bodyLetterSpacing')} placeholder="0em" onChange={(e) => set('bodyLetterSpacing', e.target.value)} />
+                    <Field
+                      label="Body letter spacing"
+                      htmlFor="bodyLetterSpacing"
+                      error={errors.bodyLetterSpacing}
+                    >
+                      <Input
+                        id="bodyLetterSpacing"
+                        value={str('bodyLetterSpacing')}
+                        placeholder="0em"
+                        onChange={(e) => set('bodyLetterSpacing', e.target.value)}
+                      />
                     </Field>
                   </div>
                 </fieldset>
 
                 <div
                   className="rounded-lg border border-hairline p-5"
-                  style={{ fontFamily: `'${str('bodyFont')}', system-ui, sans-serif` }}
+                  style={{
+                    fontFamily: `'${str('bodyFont')}', system-ui, sans-serif`,
+                  }}
                 >
                   <p
                     className="text-2xl"
@@ -361,7 +597,8 @@ export function WebsiteSettingsForm({
                       letterSpacing: str('bodyLetterSpacing') || '0em',
                     }}
                   >
-                    Body copy preview. Save to load the chosen fonts and see them exactly as visitors will.
+                    Body copy preview. Save to load the chosen fonts and see them exactly as
+                    visitors will.
                   </p>
                 </div>
               </>
@@ -376,23 +613,71 @@ export function WebsiteSettingsForm({
                 <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
                   <legend className="px-1 text-sm font-medium text-content">Layout</legend>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Container width" htmlFor="containerWidth" error={errors.containerWidth} hint="The default boxed width for sections.">
-                      <Input id="containerWidth" value={str('containerWidth')} placeholder="72rem" onChange={(e) => set('containerWidth', e.target.value)} />
+                    <Field
+                      label="Container width"
+                      htmlFor="containerWidth"
+                      error={errors.containerWidth}
+                      hint="The default boxed width for sections."
+                    >
+                      <Input
+                        id="containerWidth"
+                        value={str('containerWidth')}
+                        placeholder="72rem"
+                        onChange={(e) => set('containerWidth', e.target.value)}
+                      />
                     </Field>
-                    <Field label="Side padding" htmlFor="containerPadding" error={errors.containerPadding}>
-                      <Input id="containerPadding" value={str('containerPadding')} placeholder="1.5rem" onChange={(e) => set('containerPadding', e.target.value)} />
+                    <Field
+                      label="Side padding"
+                      htmlFor="containerPadding"
+                      error={errors.containerPadding}
+                    >
+                      <Input
+                        id="containerPadding"
+                        value={str('containerPadding')}
+                        placeholder="1.5rem"
+                        onChange={(e) => set('containerPadding', e.target.value)}
+                      />
                     </Field>
-                    <Field label="Section spacing" htmlFor="sectionSpacing" error={errors.sectionSpacing} hint="Default padding above and below a section.">
-                      <Input id="sectionSpacing" value={str('sectionSpacing')} placeholder="5rem" onChange={(e) => set('sectionSpacing', e.target.value)} />
+                    <Field
+                      label="Section spacing"
+                      htmlFor="sectionSpacing"
+                      error={errors.sectionSpacing}
+                      hint="Default padding above and below a section."
+                    >
+                      <Input
+                        id="sectionSpacing"
+                        value={str('sectionSpacing')}
+                        placeholder="5rem"
+                        onChange={(e) => set('sectionSpacing', e.target.value)}
+                      />
                     </Field>
-                    <Field label="Section spacing — mobile" htmlFor="sectionSpacingMobile" error={errors.sectionSpacingMobile}>
-                      <Input id="sectionSpacingMobile" value={str('sectionSpacingMobile')} placeholder="3rem" onChange={(e) => set('sectionSpacingMobile', e.target.value)} />
+                    <Field
+                      label="Section spacing — mobile"
+                      htmlFor="sectionSpacingMobile"
+                      error={errors.sectionSpacingMobile}
+                    >
+                      <Input
+                        id="sectionSpacingMobile"
+                        value={str('sectionSpacingMobile')}
+                        placeholder="3rem"
+                        onChange={(e) => set('sectionSpacingMobile', e.target.value)}
+                      />
                     </Field>
                     <Field label="Border radius" htmlFor="borderRadius" error={errors.borderRadius}>
-                      <Input id="borderRadius" value={str('borderRadius')} placeholder="0.75rem" onChange={(e) => set('borderRadius', e.target.value)} />
+                      <Input
+                        id="borderRadius"
+                        value={str('borderRadius')}
+                        placeholder="0.75rem"
+                        onChange={(e) => set('borderRadius', e.target.value)}
+                      />
                     </Field>
                     <Field label="Card radius" htmlFor="cardRadius" error={errors.cardRadius}>
-                      <Input id="cardRadius" value={str('cardRadius')} placeholder="1rem" onChange={(e) => set('cardRadius', e.target.value)} />
+                      <Input
+                        id="cardRadius"
+                        value={str('cardRadius')}
+                        placeholder="1rem"
+                        onChange={(e) => set('cardRadius', e.target.value)}
+                      />
                     </Field>
                   </div>
                 </fieldset>
@@ -401,34 +686,69 @@ export function WebsiteSettingsForm({
                   <legend className="px-1 text-sm font-medium text-content">Buttons</legend>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="Primary button style" htmlFor="buttonPrimaryStyle">
-                      <Select id="buttonPrimaryStyle" value={str('buttonPrimaryStyle')} onChange={(e) => set('buttonPrimaryStyle', e.target.value)}>
+                      <Select
+                        id="buttonPrimaryStyle"
+                        value={str('buttonPrimaryStyle')}
+                        onChange={(e) => set('buttonPrimaryStyle', e.target.value)}
+                      >
                         <option value="solid">Solid</option>
                         <option value="outline">Outline</option>
                         <option value="soft">Soft tint</option>
                       </Select>
                     </Field>
                     <Field label="Secondary button style" htmlFor="buttonSecondaryStyle">
-                      <Select id="buttonSecondaryStyle" value={str('buttonSecondaryStyle')} onChange={(e) => set('buttonSecondaryStyle', e.target.value)}>
+                      <Select
+                        id="buttonSecondaryStyle"
+                        value={str('buttonSecondaryStyle')}
+                        onChange={(e) => set('buttonSecondaryStyle', e.target.value)}
+                      >
                         <option value="solid">Solid</option>
                         <option value="outline">Outline</option>
                         <option value="soft">Soft tint</option>
                       </Select>
                     </Field>
                     <Field label="Button radius" htmlFor="buttonRadius" error={errors.buttonRadius}>
-                      <Input id="buttonRadius" value={str('buttonRadius')} placeholder="0.5rem" onChange={(e) => set('buttonRadius', e.target.value)} />
+                      <Input
+                        id="buttonRadius"
+                        value={str('buttonRadius')}
+                        placeholder="0.5rem"
+                        onChange={(e) => set('buttonRadius', e.target.value)}
+                      />
                     </Field>
                     <Field label="Text transform" htmlFor="buttonTextTransform">
-                      <Select id="buttonTextTransform" value={str('buttonTextTransform')} onChange={(e) => set('buttonTextTransform', e.target.value)}>
+                      <Select
+                        id="buttonTextTransform"
+                        value={str('buttonTextTransform')}
+                        onChange={(e) => set('buttonTextTransform', e.target.value)}
+                      >
                         <option value="none">Normal</option>
                         <option value="uppercase">UPPERCASE</option>
                         <option value="capitalize">Capitalise</option>
                       </Select>
                     </Field>
-                    <Field label="Horizontal padding" htmlFor="buttonPaddingX" error={errors.buttonPaddingX}>
-                      <Input id="buttonPaddingX" value={str('buttonPaddingX')} placeholder="1.25rem" onChange={(e) => set('buttonPaddingX', e.target.value)} />
+                    <Field
+                      label="Horizontal padding"
+                      htmlFor="buttonPaddingX"
+                      error={errors.buttonPaddingX}
+                    >
+                      <Input
+                        id="buttonPaddingX"
+                        value={str('buttonPaddingX')}
+                        placeholder="1.25rem"
+                        onChange={(e) => set('buttonPaddingX', e.target.value)}
+                      />
                     </Field>
-                    <Field label="Vertical padding" htmlFor="buttonPaddingY" error={errors.buttonPaddingY}>
-                      <Input id="buttonPaddingY" value={str('buttonPaddingY')} placeholder="0.625rem" onChange={(e) => set('buttonPaddingY', e.target.value)} />
+                    <Field
+                      label="Vertical padding"
+                      htmlFor="buttonPaddingY"
+                      error={errors.buttonPaddingY}
+                    >
+                      <Input
+                        id="buttonPaddingY"
+                        value={str('buttonPaddingY')}
+                        placeholder="0.625rem"
+                        onChange={(e) => set('buttonPaddingY', e.target.value)}
+                      />
                     </Field>
                   </div>
                 </fieldset>
@@ -438,17 +758,28 @@ export function WebsiteSettingsForm({
             {tab === 'header' ? (
               <>
                 <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
-                  <legend className="px-1 text-sm font-medium text-content">Announcement bar</legend>
+                  <legend className="px-1 text-sm font-medium text-content">
+                    Announcement bar
+                  </legend>
                   <Switch
                     checked={bool('announcementEnabled')}
                     onChange={(next) => set('announcementEnabled', next)}
                     label="Show the announcement bar"
                   />
                   <Field label="Announcement text" htmlFor="announcementText">
-                    <Input id="announcementText" value={str('announcementText')} onChange={(e) => set('announcementText', e.target.value)} />
+                    <Input
+                      id="announcementText"
+                      value={str('announcementText')}
+                      onChange={(e) => set('announcementText', e.target.value)}
+                    />
                   </Field>
                   <Field label="Announcement link" htmlFor="announcementUrl">
-                    <Input id="announcementUrl" value={str('announcementUrl')} placeholder="/contact" onChange={(e) => set('announcementUrl', e.target.value)} />
+                    <Input
+                      id="announcementUrl"
+                      value={str('announcementUrl')}
+                      placeholder="/contact"
+                      onChange={(e) => set('announcementUrl', e.target.value)}
+                    />
                   </Field>
                 </fieldset>
 
@@ -456,16 +787,33 @@ export function WebsiteSettingsForm({
                   <legend className="px-1 text-sm font-medium text-content">Header buttons</legend>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="Primary button label" htmlFor="headerCtaLabel">
-                      <Input id="headerCtaLabel" value={str('headerCtaLabel')} onChange={(e) => set('headerCtaLabel', e.target.value)} />
+                      <Input
+                        id="headerCtaLabel"
+                        value={str('headerCtaLabel')}
+                        onChange={(e) => set('headerCtaLabel', e.target.value)}
+                      />
                     </Field>
                     <Field label="Primary button link" htmlFor="headerCtaUrl">
-                      <Input id="headerCtaUrl" value={str('headerCtaUrl')} placeholder="/contact" onChange={(e) => set('headerCtaUrl', e.target.value)} />
+                      <Input
+                        id="headerCtaUrl"
+                        value={str('headerCtaUrl')}
+                        placeholder="/contact"
+                        onChange={(e) => set('headerCtaUrl', e.target.value)}
+                      />
                     </Field>
                     <Field label="Secondary button label" htmlFor="headerSecondaryCtaLabel">
-                      <Input id="headerSecondaryCtaLabel" value={str('headerSecondaryCtaLabel')} onChange={(e) => set('headerSecondaryCtaLabel', e.target.value)} />
+                      <Input
+                        id="headerSecondaryCtaLabel"
+                        value={str('headerSecondaryCtaLabel')}
+                        onChange={(e) => set('headerSecondaryCtaLabel', e.target.value)}
+                      />
                     </Field>
                     <Field label="Secondary button link" htmlFor="headerSecondaryCtaUrl">
-                      <Input id="headerSecondaryCtaUrl" value={str('headerSecondaryCtaUrl')} onChange={(e) => set('headerSecondaryCtaUrl', e.target.value)} />
+                      <Input
+                        id="headerSecondaryCtaUrl"
+                        value={str('headerSecondaryCtaUrl')}
+                        onChange={(e) => set('headerSecondaryCtaUrl', e.target.value)}
+                      />
                     </Field>
                   </div>
                 </fieldset>
@@ -474,14 +822,32 @@ export function WebsiteSettingsForm({
 
             {tab === 'footer' ? (
               <>
-                <Field label="Footer description" htmlFor="footerDescription" hint="Shown under the logo in the first footer column.">
-                  <Textarea id="footerDescription" rows={3} value={str('footerDescription')} onChange={(e) => set('footerDescription', e.target.value)} />
+                <Field
+                  label="Footer description"
+                  htmlFor="footerDescription"
+                  hint="Shown under the logo in the first footer column."
+                >
+                  <Textarea
+                    id="footerDescription"
+                    rows={3}
+                    value={str('footerDescription')}
+                    onChange={(e) => set('footerDescription', e.target.value)}
+                  />
                 </Field>
-                <Field label="Copyright line" htmlFor="copyrightText" hint="Leave blank for “© {year} {site name}”.">
-                  <Input id="copyrightText" value={str('copyrightText')} onChange={(e) => set('copyrightText', e.target.value)} />
+                <Field
+                  label="Copyright line"
+                  htmlFor="copyrightText"
+                  hint="Leave blank for “© {year} {site name}”."
+                >
+                  <Input
+                    id="copyrightText"
+                    value={str('copyrightText')}
+                    onChange={(e) => set('copyrightText', e.target.value)}
+                  />
                 </Field>
                 <p className="text-sm text-muted">
-                  Footer columns come from Navigation — every menu with a footer location becomes a column.
+                  Footer columns come from Navigation — every menu with a footer location becomes a
+                  column.
                 </p>
               </>
             ) : null}
@@ -518,10 +884,16 @@ function tabForField(field: string): TabId {
   ) {
     return 'typography';
   }
-  if (field.startsWith('container') || field.startsWith('section') || field.endsWith('Radius') || field.startsWith('button')) {
+  if (
+    field.startsWith('container') ||
+    field.startsWith('section') ||
+    field.endsWith('Radius') ||
+    field.startsWith('button')
+  ) {
     return 'design';
   }
-  if (field.startsWith('logo') || field.startsWith('favicon') || field.startsWith('ogImage')) return 'branding';
+  if (field.startsWith('logo') || field.startsWith('favicon') || field.startsWith('ogImage'))
+    return 'branding';
   if (field.startsWith('announcement') || field.startsWith('header')) return 'header';
   if (field.startsWith('footer') || field.startsWith('copyright')) return 'footer';
   return 'general';

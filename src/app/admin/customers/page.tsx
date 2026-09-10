@@ -3,7 +3,8 @@ import { Plus } from 'lucide-react';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
-import { TableToolbar } from '@/components/admin/table-toolbar';
+import { FilterBar } from '@/components/admin/filter-bar';
+import { daysAgo, type FilterDefinition, type FilterPreset } from '@/lib/admin/filters';
 import { AdminPagination } from '@/components/admin/admin-pagination';
 import { CustomersTable, type CustomerRow } from '@/components/admin/customers/customers-table';
 import { Card } from '@/components/ui/card';
@@ -19,7 +20,14 @@ const PER_PAGE = 25;
 export default async function CustomersAdmin({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; assignedTo?: string; page?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    status?: string;
+    assignedTo?: string;
+    from?: string;
+    to?: string;
+    page?: string;
+  }>;
 }) {
   const user = await requirePermission('customers.view');
   const params = await searchParams;
@@ -37,6 +45,12 @@ export default async function CustomersAdmin({
   if (params.status) where.status = params.status as Prisma.CustomerWhereInput['status'];
   if (params.assignedTo === 'unassigned') where.assignedToId = null;
   else if (params.assignedTo) where.assignedToId = params.assignedTo;
+  if (params.from || params.to) {
+    where.createdAt = {
+      ...(params.from ? { gte: new Date(`${params.from}T00:00:00`) } : {}),
+      ...(params.to ? { lte: new Date(`${params.to}T23:59:59.999`) } : {}),
+    };
+  }
 
   const [rows, total, staff] = await Promise.all([
     prisma.customer.findMany({
@@ -79,6 +93,39 @@ export default async function CustomersAdmin({
     createdAt: row.createdAt.toISOString(),
   }));
 
+  const definitions: FilterDefinition[] = [
+    {
+      name: 'status',
+      label: 'Status',
+      allLabel: 'Any status',
+      options: Object.entries(CUSTOMER_STATUS_LABELS).map(([value, label]) => ({
+        label,
+        value,
+      })),
+    },
+    {
+      name: 'assignedTo',
+      label: 'Owner',
+      allLabel: 'Anyone',
+      options: [
+        { label: 'Unassigned', value: 'unassigned' },
+        ...staff.map((member) => ({ label: member.name, value: member.id })),
+      ],
+    },
+    { name: 'date', label: 'Added', kind: 'date' },
+  ];
+
+  const presets: FilterPreset[] = [
+    { id: 'all', label: 'All customers', params: {} },
+    { id: 'active', label: 'Active', params: { status: 'ACTIVE' } },
+    {
+      id: 'unassigned',
+      label: 'Unassigned',
+      params: { assignedTo: 'unassigned' },
+    },
+    { id: 'recent', label: 'Added in 30 days', params: { from: daysAgo(30) } },
+  ];
+
   return (
     <>
       <AdminPageHeader
@@ -95,23 +142,10 @@ export default async function CustomersAdmin({
         }
       />
 
-      <TableToolbar
+      <FilterBar
         searchPlaceholder="Search by name, company or email"
-        filters={[
-          {
-            name: 'status',
-            label: 'Status',
-            options: Object.entries(CUSTOMER_STATUS_LABELS).map(([value, label]) => ({ label, value })),
-          },
-          {
-            name: 'assignedTo',
-            label: 'Owner',
-            options: [
-              { label: 'Unassigned', value: 'unassigned' },
-              ...staff.map((s) => ({ label: s.name, value: s.id })),
-            ],
-          },
-        ]}
+        definitions={definitions}
+        presets={presets}
       />
 
       <Card>
@@ -122,7 +156,9 @@ export default async function CustomersAdmin({
             create: userCan(user, 'customers.create'),
             delete: userCan(user, 'customers.delete'),
           }}
-          filtered={Boolean(params.q || params.status || params.assignedTo)}
+          filtered={Boolean(
+            params.q || params.status || params.assignedTo || params.from || params.to,
+          )}
         />
         {tableRows.length > 0 ? (
           <AdminPagination

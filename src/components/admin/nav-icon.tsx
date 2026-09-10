@@ -21,6 +21,10 @@ import {
   Users,
   ScrollText,
   Circle,
+  Globe,
+  Palette,
+  Tag,
+  Star,
 } from 'lucide-react';
 
 const ICONS: Record<string, ComponentType<SVGProps<SVGSVGElement>>> = {
@@ -44,6 +48,10 @@ const ICONS: Record<string, ComponentType<SVGProps<SVGSVGElement>>> = {
   mail: Mail,
   users: Users,
   history: ScrollText,
+  globe: Globe,
+  palette: Palette,
+  tag: Tag,
+  star: Star,
 };
 
 export function NavIcon({ name, className }: { name: string; className?: string }) {

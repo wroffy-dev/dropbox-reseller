@@ -1,12 +1,14 @@
 'use client';
 
 import * as React from 'react';
-import { ScrollText, ChevronDown } from 'lucide-react';
+import Link from 'next/link';
+import { ScrollText, ChevronDown, ExternalLink } from 'lucide-react';
 import { Table, TableWrap, Th, Td, Tr } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/states';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { formatDate } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
+import { entityHref } from '@/lib/admin/audit-links';
 
 export type AuditRow = {
   id: string;
@@ -81,7 +83,22 @@ export function AuditTable({ rows, filtered }: { rows: AuditRow[]; filtered: boo
                       <span className="text-xs text-muted">{row.entity}</span>
                     </span>
                   </Td>
-                  <Td className="text-sm text-content">{row.summary ?? '—'}</Td>
+                  <Td className="text-sm text-content">
+                    {(() => {
+                      const href = entityHref(row.entity, row.entityId);
+                      const label = row.summary ?? '—';
+                      if (!href) return label;
+                      return (
+                        <Link
+                          href={href}
+                          className="inline-flex items-center gap-1 rounded text-brand underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1"
+                        >
+                          {label}
+                          <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
+                        </Link>
+                      );
+                    })()}
+                  </Td>
                   <Td align="right">
                     {hasDetail ? (
                       <button

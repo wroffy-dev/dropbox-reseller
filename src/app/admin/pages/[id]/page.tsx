@@ -6,10 +6,11 @@ import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { PageForm, type PageFormValues } from '@/components/admin/pages/page-form';
-import { SectionBuilder, type BuilderSection } from '@/components/cms/section-builder';
+import { PageWorkspace } from '@/components/cms/page-workspace';
+import { PageEditorTabs } from '@/components/admin/pages/page-editor-tabs';
+import type { BuilderSection } from '@/components/cms/section-builder';
 import { PageRowActions } from '@/components/admin/pages/page-list-actions';
-import { Card, CardHeader } from '@/components/ui/card';
-import { ContentStatusBadge } from '@/components/admin/lead-status-badge';
+import { ContentStatusBadge } from '@/components/admin/status-badge';
 import { buttonClasses } from '@/components/ui/button';
 import type { FieldValues } from '@/components/cms/field-renderer';
 
@@ -21,7 +22,10 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const page = await prisma.page.findUnique({ where: { id }, select: { title: true } });
+  const page = await prisma.page.findUnique({
+    where: { id },
+    select: { title: true },
+  });
   return { title: page ? `Edit ${page.title}` : 'Page' };
 }
 
@@ -76,17 +80,23 @@ export default async function EditPage({ params }: { params: Promise<{ id: strin
   }));
 
   const publicPath = `/${page.slug}`.replace(/\/+$/, '') || '/';
+  const visibleCount = sections.filter((section) => section.isVisible).length;
 
   return (
     <>
       <AdminPageHeader
         title={page.title}
-        description={`Editing /${page.slug}`}
-        crumbs={[{ label: 'Pages', href: '/admin/pages' }, { label: page.title }]}
+        description={page.isHomepage ? 'Your homepage' : `/${page.slug}`}
+        backHref="/admin/pages"
+        backLabel="All pages"
+        status={<ContentStatusBadge status={page.status} />}
         actions={
           <>
-            <ContentStatusBadge status={page.status} />
-            <Link href={`/admin/preview/${page.id}`} target="_blank" className={buttonClasses('outline', 'sm')}>
+            <Link
+              href={`/admin/preview/${page.id}`}
+              target="_blank"
+              className={buttonClasses('outline', 'md')}
+            >
               <Eye className="h-4 w-4" aria-hidden="true" />
               Preview
             </Link>
@@ -95,7 +105,7 @@ export default async function EditPage({ params }: { params: Promise<{ id: strin
                 href={publicPath}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={buttonClasses('ghost', 'sm')}
+                className={buttonClasses('ghost', 'md')}
               >
                 <ExternalLink className="h-4 w-4" aria-hidden="true" />
                 View live
@@ -117,23 +127,24 @@ export default async function EditPage({ params }: { params: Promise<{ id: strin
         }
       />
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_24rem]">
-        <div className="min-w-0 xl:order-1">
-          <Card>
-            <CardHeader
-              title="Sections"
-              description="Drag to reorder. Click a section to edit its content and design."
-            />
-            <div className="p-4 sm:p-5">
-              <SectionBuilder pageId={page.id} initialSections={sections} canEdit={canEdit} />
-            </div>
-          </Card>
-        </div>
-
-        <div className="min-w-0 xl:order-2">
-          <PageForm initial={initial} canPublish={userCan(user, 'pages.publish')} mode="edit" />
-        </div>
-      </div>
+      <PageEditorTabs
+        sectionCount={sections.length}
+        visibleCount={visibleCount}
+        builder={
+          <PageWorkspace
+            pageId={page.id}
+            previewSrc={`/preview/${page.id}`}
+            publicPath={page.status === 'PUBLISHED' ? publicPath : ''}
+            initialSections={sections}
+            canEdit={canEdit}
+          />
+        }
+        settings={
+          <div className="mx-auto max-w-3xl">
+            <PageForm initial={initial} canPublish={userCan(user, 'pages.publish')} mode="edit" />
+          </div>
+        }
+      />
     </>
   );
 }

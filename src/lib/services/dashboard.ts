@@ -35,30 +35,39 @@ export async function getDashboardMetrics(days = 30): Promise<DashboardMetrics> 
   const notDeleted = { deletedAt: null };
   const since = startOfDay(new Date(Date.now() - (days - 1) * 86_400_000));
 
-  const [total, today, month, grouped, productGroups, sourceGroups, recentLeads] = await Promise.all([
-    prisma.lead.count({ where: notDeleted }),
-    prisma.lead.count({ where: { ...notDeleted, createdAt: { gte: startOfDay() } } }),
-    prisma.lead.count({ where: { ...notDeleted, createdAt: { gte: startOfMonth() } } }),
-    prisma.lead.groupBy({ by: ['status'], where: notDeleted, _count: { _all: true } }),
-    prisma.lead.groupBy({
-      by: ['productId'],
-      where: { ...notDeleted, productId: { not: null } },
-      _count: { _all: true },
-      orderBy: { _count: { productId: 'desc' } },
-      take: 5,
-    }),
-    prisma.lead.groupBy({
-      by: ['utmSource'],
-      where: notDeleted,
-      _count: { _all: true },
-      orderBy: { _count: { utmSource: 'desc' } },
-      take: 6,
-    }),
-    prisma.lead.findMany({
-      where: { ...notDeleted, createdAt: { gte: since } },
-      select: { createdAt: true },
-    }),
-  ]);
+  const [total, today, month, grouped, productGroups, sourceGroups, recentLeads] =
+    await Promise.all([
+      prisma.lead.count({ where: notDeleted }),
+      prisma.lead.count({
+        where: { ...notDeleted, createdAt: { gte: startOfDay() } },
+      }),
+      prisma.lead.count({
+        where: { ...notDeleted, createdAt: { gte: startOfMonth() } },
+      }),
+      prisma.lead.groupBy({
+        by: ['status'],
+        where: notDeleted,
+        _count: { _all: true },
+      }),
+      prisma.lead.groupBy({
+        by: ['productId'],
+        where: { ...notDeleted, productId: { not: null } },
+        _count: { _all: true },
+        orderBy: { _count: { productId: 'desc' } },
+        take: 5,
+      }),
+      prisma.lead.groupBy({
+        by: ['utmSource'],
+        where: notDeleted,
+        _count: { _all: true },
+        orderBy: { _count: { utmSource: 'desc' } },
+        take: 6,
+      }),
+      prisma.lead.findMany({
+        where: { ...notDeleted, createdAt: { gte: since } },
+        select: { createdAt: true },
+      }),
+    ]);
 
   const byStatus = {
     NEW: 0,
@@ -72,9 +81,14 @@ export async function getDashboardMetrics(days = 30): Promise<DashboardMetrics> 
   } as Record<LeadStatus, number>;
   for (const row of grouped) byStatus[row.status] = row._count._all;
 
-  const productIds = productGroups.map((g) => g.productId).filter((id): id is string => Boolean(id));
+  const productIds = productGroups
+    .map((g) => g.productId)
+    .filter((id): id is string => Boolean(id));
   const products = productIds.length
-    ? await prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true } })
+    ? await prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: { id: true, name: true },
+      })
     : [];
   const productNames = new Map(products.map((p) => [p.id, p.name]));
 
@@ -91,7 +105,11 @@ export async function getDashboardMetrics(days = 30): Promise<DashboardMetrics> 
 
   const decided = byStatus.WON + byStatus.LOST;
   const openPipeline =
-    byStatus.NEW + byStatus.CONTACTED + byStatus.QUALIFIED + byStatus.PROPOSAL + byStatus.NEGOTIATION;
+    byStatus.NEW +
+    byStatus.CONTACTED +
+    byStatus.QUALIFIED +
+    byStatus.PROPOSAL +
+    byStatus.NEGOTIATION;
 
   return {
     totalLeads: total,
@@ -111,6 +129,171 @@ export async function getDashboardMetrics(days = 30): Promise<DashboardMetrics> 
       source: g.utmSource || 'Direct / none',
       count: g._count._all,
     })),
-    trend: Array.from(counts.entries()).map(([date, count]) => ({ date, count })),
+    trend: Array.from(counts.entries()).map(([date, count]) => ({
+      date,
+      count,
+    })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Control-centre data
+// ---------------------------------------------------------------------------
+
+export type ActionItem = {
+  id: string;
+  label: string;
+  count: number;
+  href: string;
+  /** `attention` is used only where the count genuinely needs someone to act. */
+  tone: 'attention' | 'neutral';
+};
+
+/**
+ * The operational queue for the dashboard's "Needs attention" panel.
+ *
+ * Every entry is a real count from a real table with a link that applies the
+ * matching filter — no invented health scores.
+ */
+export async function getActionItems(): Promise<ActionItem[]> {
+  const notDeleted = { deletedAt: null };
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+
+  const [unassigned, followUpsDue, draftPages, draftProducts, newLeads, unreadSubmissions] =
+    await Promise.all([
+      prisma.lead.count({
+        where: {
+          ...notDeleted,
+          assignedToId: null,
+          status: { notIn: ['WON', 'LOST', 'SPAM'] },
+        },
+      }),
+      prisma.lead.count({
+        where: {
+          ...notDeleted,
+          followUpAt: { lte: endOfToday },
+          status: { notIn: ['WON', 'LOST', 'SPAM'] },
+        },
+      }),
+      prisma.page.count({ where: { ...notDeleted, status: 'DRAFT' } }),
+      prisma.product.count({ where: { ...notDeleted, status: 'DRAFT' } }),
+      prisma.lead.count({ where: { ...notDeleted, status: 'NEW' } }),
+      prisma.formSubmission.count({
+        where: { createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) } },
+      }),
+    ]);
+
+  return [
+    {
+      id: 'unassigned',
+      label: 'Unassigned leads',
+      count: unassigned,
+      href: '/admin/leads?assignedTo=unassigned',
+      tone: unassigned > 0 ? 'attention' : 'neutral',
+    },
+    {
+      id: 'follow-ups',
+      label: 'Follow-ups due',
+      count: followUpsDue,
+      href: '/admin/leads?followUp=due',
+      tone: followUpsDue > 0 ? 'attention' : 'neutral',
+    },
+    {
+      id: 'new-leads',
+      label: 'New leads to review',
+      count: newLeads,
+      href: '/admin/leads?status=NEW',
+      tone: newLeads > 0 ? 'attention' : 'neutral',
+    },
+    {
+      id: 'submissions',
+      label: 'Submissions this week',
+      count: unreadSubmissions,
+      href: '/admin/forms/submissions',
+      tone: 'neutral',
+    },
+    {
+      id: 'draft-pages',
+      label: 'Draft pages',
+      count: draftPages,
+      href: '/admin/pages?status=DRAFT',
+      tone: 'neutral',
+    },
+    {
+      id: 'draft-products',
+      label: 'Draft products',
+      count: draftProducts,
+      href: '/admin/products?status=DRAFT',
+      tone: 'neutral',
+    },
+  ];
+}
+
+export type SetupCheck = {
+  id: string;
+  label: string;
+  description: string;
+  configured: boolean;
+  href: string;
+};
+
+/**
+ * Configuration checks for the dashboard's setup panel.
+ *
+ * Deliberately limited to things that genuinely stop the site working properly
+ * when missing. Optional settings are not reported as problems.
+ */
+export async function getSetupChecks(): Promise<SetupCheck[]> {
+  const [site, seo, tracking, email, forms] = await Promise.all([
+    prisma.websiteSettings.findUnique({ where: { id: 'singleton' } }),
+    prisma.seoSettings.findUnique({ where: { id: 'singleton' } }),
+    prisma.trackingSettings.findUnique({ where: { id: 'singleton' } }),
+    prisma.emailSettings.findUnique({ where: { id: 'singleton' } }),
+    prisma.form.count({ where: { deletedAt: null, isActive: true } }),
+  ]);
+
+  return [
+    {
+      id: 'branding',
+      label: 'Website branding',
+      description: 'Site name, logo and contact details',
+      configured: Boolean(site?.siteName && site.logoUrl && site.contactEmail),
+      href: '/admin/settings',
+    },
+    {
+      id: 'seo',
+      label: 'SEO defaults',
+      description: 'Default title and description for search results',
+      configured: Boolean(seo?.defaultTitle && seo.defaultDescription),
+      href: '/admin/seo',
+    },
+    {
+      id: 'tracking',
+      label: 'Tracking',
+      description: 'Analytics so you can see where leads come from',
+      // Configured means a tag is present AND switched on — an ID that is saved
+      // but disabled is not tracking anything.
+      configured: Boolean(
+        (tracking?.ga4Enabled && tracking.ga4Id) ||
+        (tracking?.gtmEnabled && tracking.gtmId) ||
+        (tracking?.metaPixelEnabled && tracking.metaPixelId),
+      ),
+      href: '/admin/marketing',
+    },
+    {
+      id: 'email',
+      label: 'Email delivery',
+      description: 'Needed to send lead notifications',
+      configured: Boolean(email?.isEnabled && email.host && email.fromEmail),
+      href: '/admin/settings/email',
+    },
+    {
+      id: 'forms',
+      label: 'Lead capture form',
+      description: 'At least one active form on the website',
+      configured: forms > 0,
+      href: '/admin/forms',
+    },
+  ];
 }

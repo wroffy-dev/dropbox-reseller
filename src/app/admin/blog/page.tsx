@@ -4,7 +4,8 @@ import { Plus, Tag } from 'lucide-react';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
-import { TableToolbar } from '@/components/admin/table-toolbar';
+import { FilterBar } from '@/components/admin/filter-bar';
+import type { FilterDefinition, FilterPreset } from '@/lib/admin/filters';
 import { AdminPagination } from '@/components/admin/admin-pagination';
 import { PostsTable, type PostRow } from '@/components/admin/blog/posts-table';
 import { Card } from '@/components/ui/card';
@@ -19,7 +20,12 @@ const PER_PAGE = 20;
 export default async function BlogAdmin({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; category?: string; page?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    status?: string;
+    category?: string;
+    page?: string;
+  }>;
 }) {
   const user = await requirePermission('blog.view');
   const params = await searchParams;
@@ -56,7 +62,10 @@ export default async function BlogAdmin({
       },
     }),
     prisma.blogPost.count({ where }),
-    prisma.blogCategory.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true } }),
+    prisma.blogCategory.findMany({
+      orderBy: { sortOrder: 'asc' },
+      select: { id: true, name: true },
+    }),
   ]);
 
   const can = {
@@ -78,6 +87,36 @@ export default async function BlogAdmin({
     publishedAt: row.publishedAt?.toISOString() ?? null,
     updatedAt: row.updatedAt.toISOString(),
   }));
+
+  const definitions: FilterDefinition[] = [
+    {
+      name: 'status',
+      label: 'Status',
+      allLabel: 'Any status',
+      options: [
+        { label: 'Published', value: 'PUBLISHED' },
+        { label: 'Draft', value: 'DRAFT' },
+        { label: 'Scheduled', value: 'SCHEDULED' },
+        { label: 'Archived', value: 'ARCHIVED' },
+      ],
+    },
+    {
+      name: 'category',
+      label: 'Category',
+      allLabel: 'Any category',
+      options: categories.map((category) => ({
+        label: category.name,
+        value: category.id,
+      })),
+    },
+  ];
+
+  const presets: FilterPreset[] = [
+    { id: 'all', label: 'All posts', params: {} },
+    { id: 'published', label: 'Published', params: { status: 'PUBLISHED' } },
+    { id: 'drafts', label: 'Drafts', params: { status: 'DRAFT' } },
+    { id: 'scheduled', label: 'Scheduled', params: { status: 'SCHEDULED' } },
+  ];
 
   return (
     <>
@@ -103,25 +142,10 @@ export default async function BlogAdmin({
         }
       />
 
-      <TableToolbar
+      <FilterBar
         searchPlaceholder="Search posts by title or excerpt"
-        filters={[
-          {
-            name: 'status',
-            label: 'Status',
-            options: [
-              { label: 'Published', value: 'PUBLISHED' },
-              { label: 'Draft', value: 'DRAFT' },
-              { label: 'Scheduled', value: 'SCHEDULED' },
-              { label: 'Archived', value: 'ARCHIVED' },
-            ],
-          },
-          {
-            name: 'category',
-            label: 'Category',
-            options: categories.map((c) => ({ label: c.name, value: c.id })),
-          },
-        ]}
+        definitions={definitions}
+        presets={presets}
       />
 
       <Card>

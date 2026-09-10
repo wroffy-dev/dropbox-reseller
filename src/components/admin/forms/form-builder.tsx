@@ -35,6 +35,8 @@ import {
   type FormBuilderValues,
 } from '@/lib/cms/form-model';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
+import { AdminTabs, TabPanel } from '@/components/admin/admin-tabs';
+import { FieldPalette } from './field-palette';
 import { Field, Input, Select, Textarea, Switch } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -70,10 +72,13 @@ export function FormBuilder({
   const [pending, setPending] = React.useState(false);
   const [openField, setOpenField] = React.useState<string | null>(null);
   const [slugTouched, setSlugTouched] = React.useState(mode === 'edit');
+  const [settingsTab, setSettingsTab] = React.useState('general');
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 
   const set = <K extends keyof FormBuilderValues>(key: K, value: FormBuilderValues[K]) =>
@@ -89,7 +94,10 @@ export function FormBuilder({
     const field = newField(type);
     // Derive a machine name from the label so the admin rarely has to think about it.
     field.name = uniqueFieldName(slugify(field.label).replace(/-/g, '_'), values.fields);
-    setValues((current) => ({ ...current, fields: [...current.fields, field] }));
+    setValues((current) => ({
+      ...current,
+      fields: [...current.fields, field],
+    }));
     setOpenField(field.key);
   }
 
@@ -169,12 +177,25 @@ export function FormBuilder({
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-6 xl:grid-cols-[1fr_22rem]">
-      <div className="min-w-0 xl:order-1">
+    <form onSubmit={onSubmit} className="grid gap-4 xl:grid-cols-[13rem_1fr_23rem]">
+      {/* Left: what you can add. */}
+      {canEdit ? (
+        <div className="min-w-0 xl:order-1">
+          <Card>
+            <CardHeader title="Add a field" />
+            <CardBody>
+              <FieldPalette onAdd={addField} disabled={pending} />
+            </CardBody>
+          </Card>
+        </div>
+      ) : null}
+
+      {/* Centre: the form itself. */}
+      <div className="min-w-0 xl:order-2">
         <Card>
           <CardHeader
-            title="Fields"
-            description="Drag to reorder. Name, email, phone, company and paragraph fields map onto the lead record automatically."
+            title="Form fields"
+            description="Drag to reorder. Name, email, phone, company and paragraph fields fill the lead record automatically."
           />
           <CardBody>
             {errors.fields ? (
@@ -184,11 +205,18 @@ export function FormBuilder({
             ) : null}
 
             {values.fields.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-hairline px-4 py-8 text-center text-sm text-muted">
-                No fields yet. Add an email field to start capturing leads.
-              </p>
+              <div className="rounded-lg border border-dashed border-hairline px-4 py-10 text-center">
+                <p className="text-sm font-medium text-content">This form has no fields yet</p>
+                <p className="mt-1 text-sm text-muted">
+                  Add an email field so you can reply to whoever fills it in.
+                </p>
+              </div>
             ) : (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={onDragEnd}
+              >
                 <SortableContext
                   items={values.fields.map((f) => f.key)}
                   strategy={verticalListSortingStrategy}
@@ -216,20 +244,17 @@ export function FormBuilder({
               </DndContext>
             )}
 
+            {/* On narrow screens the palette collapses into the field list. */}
             {canEdit ? (
-              <div className="mt-4 flex flex-wrap items-center gap-2">
+              <div className="mt-4 xl:hidden">
                 <label htmlFor="add-field-type" className="sr-only">
                   Field type to add
                 </label>
                 <Select
                   id="add-field-type"
-                  defaultValue=""
-                  className="w-auto"
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      addField(e.target.value);
-                      e.target.value = '';
-                    }
+                  value=""
+                  onChange={(event) => {
+                    if (event.target.value) addField(event.target.value);
                   }}
                 >
                   <option value="">Add a field…</option>
@@ -245,153 +270,172 @@ export function FormBuilder({
         </Card>
       </div>
 
-      <div className="min-w-0 space-y-6 xl:order-2">
+      {/* Right: settings, grouped so the panel is never one long scroll. */}
+      <div className="min-w-0 space-y-4 xl:order-3">
         <Card>
-          <CardHeader title="Form settings" />
+          <AdminTabs
+            tabs={[
+              { id: 'general', label: 'General' },
+              { id: 'after', label: 'After submit' },
+              { id: 'notify', label: 'Notifications' },
+            ]}
+            active={settingsTab}
+            onChange={setSettingsTab}
+            className="px-2"
+          />
           <CardBody className="space-y-4">
-            <Field label="Form name" htmlFor="form-name" required error={errors.name}>
-              <Input
-                id="form-name"
-                value={values.name}
-                required
-                onChange={(e) => {
-                  set('name', e.target.value);
-                  if (!slugTouched) set('slug', slugify(e.target.value));
-                }}
-              />
-            </Field>
+            <TabPanel id="general" active={settingsTab} className="space-y-4">
+              <Field label="Form name" htmlFor="form-name" required error={errors.name}>
+                <Input
+                  id="form-name"
+                  value={values.name}
+                  required
+                  onChange={(e) => {
+                    set('name', e.target.value);
+                    if (!slugTouched) set('slug', slugify(e.target.value));
+                  }}
+                />
+              </Field>
 
-            <Field
-              label="Slug"
-              htmlFor="form-slug"
-              error={errors.slug}
-              hint="Used to reference this form from CMS blocks and product buttons."
-            >
-              <Input
-                id="form-slug"
-                value={values.slug}
-                onChange={(e) => {
-                  setSlugTouched(true);
-                  set('slug', e.target.value);
-                }}
-                onBlur={(e) => set('slug', slugify(e.target.value))}
-              />
-            </Field>
-
-            <Field label="Internal description" htmlFor="form-description">
-              <Textarea
-                id="form-description"
-                rows={2}
-                value={values.description}
-                onChange={(e) => set('description', e.target.value)}
-              />
-            </Field>
-
-            <Field label="Submit button label" htmlFor="form-submit">
-              <Input
-                id="form-submit"
-                value={values.submitLabel}
-                onChange={(e) => set('submitLabel', e.target.value)}
-              />
-            </Field>
-
-            <Field
-              label="Success message"
-              htmlFor="form-success"
-              hint="Shown in place of the form after a successful submission."
-            >
-              <Textarea
-                id="form-success"
-                rows={2}
-                value={values.successMessage}
-                onChange={(e) => set('successMessage', e.target.value)}
-              />
-            </Field>
-
-            <Field
-              label="Redirect after submit"
-              htmlFor="form-redirect"
-              hint="Optional. Overrides the success message."
-            >
-              <Input
-                id="form-redirect"
-                value={values.redirectUrl}
-                placeholder="/thank-you"
-                onChange={(e) => set('redirectUrl', e.target.value)}
-              />
-            </Field>
-
-            <Field label="Consent text" htmlFor="form-consent" hint="Shown above the submit button.">
-              <Textarea
-                id="form-consent"
-                rows={2}
-                value={values.consentText}
-                onChange={(e) => set('consentText', e.target.value)}
-              />
-            </Field>
-
-            <div className="rounded-lg border border-hairline p-4">
-              <Switch
-                checked={values.isActive}
-                onChange={(next) => set('isActive', next)}
-                label="Form is active"
-                hint="Inactive forms stop accepting submissions everywhere."
-              />
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader title="Lead handling" />
-          <CardBody className="space-y-4">
-            <div className="rounded-lg border border-hairline p-4">
-              <Switch
-                checked={values.createsLead}
-                onChange={(next) => set('createsLead', next)}
-                label="Create a CRM lead"
-                hint="Turn off for newsletter-style forms that only record a submission."
-              />
-            </div>
-
-            <Field label="Lead source" htmlFor="form-source" hint="Recorded on every lead from this form.">
-              <Input
-                id="form-source"
-                value={values.leadSource}
-                onChange={(e) => set('leadSource', e.target.value)}
-              />
-            </Field>
-
-            <Field
-              label="Default product"
-              htmlFor="form-product"
-              hint="Used when the visitor did not arrive from a specific product."
-            >
-              <Select
-                id="form-product"
-                value={values.defaultProductId}
-                onChange={(e) => set('defaultProductId', e.target.value)}
+              <Field
+                label="Slug"
+                htmlFor="form-slug"
+                error={errors.slug}
+                hint="Used to reference this form from CMS blocks and product buttons."
               >
-                <option value="">None</option>
-                {products.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+                <Input
+                  id="form-slug"
+                  value={values.slug}
+                  onChange={(e) => {
+                    setSlugTouched(true);
+                    set('slug', e.target.value);
+                  }}
+                  onBlur={(e) => set('slug', slugify(e.target.value))}
+                />
+              </Field>
 
-            <Field
-              label="Notify these addresses"
-              htmlFor="form-notify"
-              hint="Comma separated. Added to the sales addresses in Email settings."
-            >
-              <Input
-                id="form-notify"
-                value={values.notifyEmails}
-                placeholder="sales@example.com, ops@example.com"
-                onChange={(e) => set('notifyEmails', e.target.value)}
-              />
-            </Field>
+              <Field label="Internal description" htmlFor="form-description">
+                <Textarea
+                  id="form-description"
+                  rows={2}
+                  value={values.description}
+                  onChange={(e) => set('description', e.target.value)}
+                />
+              </Field>
+
+              <Field label="Submit button label" htmlFor="form-submit">
+                <Input
+                  id="form-submit"
+                  value={values.submitLabel}
+                  onChange={(e) => set('submitLabel', e.target.value)}
+                />
+              </Field>
+
+              <Field
+                label="Consent text"
+                htmlFor="form-consent"
+                hint="Shown above the submit button."
+              >
+                <Textarea
+                  id="form-consent"
+                  rows={2}
+                  value={values.consentText}
+                  onChange={(e) => set('consentText', e.target.value)}
+                />
+              </Field>
+
+              <div className="rounded-lg border border-hairline p-4">
+                <Switch
+                  checked={values.isActive}
+                  onChange={(next) => set('isActive', next)}
+                  label="Form is active"
+                  hint="Inactive forms stop accepting submissions everywhere they appear."
+                />
+              </div>
+            </TabPanel>
+
+            <TabPanel id="after" active={settingsTab} className="space-y-4">
+              <Field
+                label="Success message"
+                htmlFor="form-success"
+                hint="Shown in place of the form after a successful submission."
+              >
+                <Textarea
+                  id="form-success"
+                  rows={3}
+                  value={values.successMessage}
+                  onChange={(e) => set('successMessage', e.target.value)}
+                />
+              </Field>
+
+              <Field
+                label="Redirect after submit"
+                htmlFor="form-redirect"
+                hint="Optional. Sends the visitor to this page instead of showing the success message."
+              >
+                <Input
+                  id="form-redirect"
+                  value={values.redirectUrl}
+                  placeholder="/thank-you"
+                  onChange={(e) => set('redirectUrl', e.target.value)}
+                />
+              </Field>
+            </TabPanel>
+
+            <TabPanel id="notify" active={settingsTab} className="space-y-4">
+              <div className="rounded-lg border border-hairline p-4">
+                <Switch
+                  checked={values.createsLead}
+                  onChange={(next) => set('createsLead', next)}
+                  label="Create a CRM lead"
+                  hint="Turn off for newsletter-style forms that only record a submission."
+                />
+              </div>
+
+              <Field
+                label="Lead source"
+                htmlFor="form-source"
+                hint="Recorded on every lead from this form."
+              >
+                <Input
+                  id="form-source"
+                  value={values.leadSource}
+                  onChange={(e) => set('leadSource', e.target.value)}
+                />
+              </Field>
+
+              <Field
+                label="Default product"
+                htmlFor="form-product"
+                hint="Used when the visitor did not arrive from a specific product."
+              >
+                <Select
+                  id="form-product"
+                  value={values.defaultProductId}
+                  onChange={(e) => set('defaultProductId', e.target.value)}
+                >
+                  <option value="">None</option>
+                  {products.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field
+                label="Notify these addresses"
+                htmlFor="form-notify"
+                hint="Comma separated. Added to the sales addresses in Email settings."
+              >
+                <Input
+                  id="form-notify"
+                  value={values.notifyEmails}
+                  placeholder="sales@example.com, ops@example.com"
+                  onChange={(e) => set('notifyEmails', e.target.value)}
+                />
+              </Field>
+            </TabPanel>
           </CardBody>
 
           {canEdit ? (
@@ -507,7 +551,10 @@ function SortableFieldRow({
         ) : null}
 
         <ChevronDown
-          className={cn('h-4 w-4 shrink-0 text-muted transition-transform', expanded && 'rotate-180')}
+          className={cn(
+            'h-4 w-4 shrink-0 text-muted transition-transform',
+            expanded && 'rotate-180',
+          )}
           aria-hidden="true"
         />
       </div>
@@ -532,7 +579,9 @@ function SortableFieldRow({
                 value={field.name}
                 onChange={(e) => onChange({ name: e.target.value })}
                 onBlur={(e) =>
-                  onChange({ name: e.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, '_') })
+                  onChange({
+                    name: e.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, '_'),
+                  })
                 }
               />
             </Field>
@@ -544,12 +593,11 @@ function SortableFieldRow({
                   const type = e.target.value;
                   onChange({
                     type,
-                    options:
-                      CHOICE_FIELD_TYPES.has(type)
-                        ? field.options.length
-                          ? field.options
-                          : [{ label: 'Option one', value: 'option-one' }]
-                        : [],
+                    options: CHOICE_FIELD_TYPES.has(type)
+                      ? field.options.length
+                        ? field.options
+                        : [{ label: 'Option one', value: 'option-one' }]
+                      : [],
                   });
                 }}
               >
@@ -613,7 +661,9 @@ function SortableFieldRow({
           ) : null}
 
           <details className="rounded-lg border border-hairline p-3">
-            <summary className="cursor-pointer text-sm font-medium text-content">Validation</summary>
+            <summary className="cursor-pointer text-sm font-medium text-content">
+              Validation
+            </summary>
             <div className="mt-3 grid gap-4 sm:grid-cols-3">
               <Field label="Minimum length" htmlFor={`${field.key}-min`}>
                 <Input
@@ -683,7 +733,10 @@ function OptionsEditor({
                 onChange(
                   options.map((o, i) =>
                     i === index
-                      ? { label: e.target.value, value: o.value || slugify(e.target.value) }
+                      ? {
+                          label: e.target.value,
+                          value: o.value || slugify(e.target.value),
+                        }
                       : o,
                   ),
                 )

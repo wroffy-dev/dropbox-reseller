@@ -4,7 +4,8 @@ import { Plus, Tag, ArrowUpDown, Building2 } from 'lucide-react';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
-import { TableToolbar } from '@/components/admin/table-toolbar';
+import { FilterBar } from '@/components/admin/filter-bar';
+import type { FilterDefinition, FilterPreset } from '@/lib/admin/filters';
 import { AdminPagination } from '@/components/admin/admin-pagination';
 import { ProductsTable, type ProductRow } from '@/components/admin/products/products-table';
 import { Card } from '@/components/ui/card';
@@ -20,7 +21,14 @@ const PER_PAGE = 20;
 export default async function ProductsAdmin({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; category?: string; featured?: string; page?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    status?: string;
+    category?: string;
+    brand?: string;
+    featured?: string;
+    page?: string;
+  }>;
 }) {
   const user = await requirePermission('products.view');
   const params = await searchParams;
@@ -36,9 +44,11 @@ export default async function ProductsAdmin({
   }
   if (params.status) where.status = params.status as Prisma.ProductWhereInput['status'];
   if (params.category) where.categoryId = params.category;
+  if (params.brand) where.brandId = params.brand;
   if (params.featured === 'yes') where.isFeatured = true;
+  if (params.featured === 'no') where.isFeatured = false;
 
-  const [rows, total, categories] = await Promise.all([
+  const [rows, total, categories, brands] = await Promise.all([
     prisma.product.findMany({
       where,
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
@@ -60,7 +70,14 @@ export default async function ProductsAdmin({
       },
     }),
     prisma.product.count({ where }),
-    prisma.productCategory.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true } }),
+    prisma.productCategory.findMany({
+      orderBy: { sortOrder: 'asc' },
+      select: { id: true, name: true },
+    }),
+    prisma.brand.findMany({
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    }),
   ]);
 
   const can = {
@@ -83,6 +100,52 @@ export default async function ProductsAdmin({
     annualPrice: decimalToString(row.annualPrice),
     leadCount: row._count.leads,
   }));
+
+  const definitions: FilterDefinition[] = [
+    {
+      name: 'status',
+      label: 'Status',
+      allLabel: 'Any status',
+      options: [
+        { label: 'Published', value: 'PUBLISHED' },
+        { label: 'Draft', value: 'DRAFT' },
+        { label: 'Scheduled', value: 'SCHEDULED' },
+        { label: 'Archived', value: 'ARCHIVED' },
+      ],
+    },
+    {
+      name: 'category',
+      label: 'Category',
+      allLabel: 'Any category',
+      options: categories.map((category) => ({
+        label: category.name,
+        value: category.id,
+      })),
+    },
+    {
+      name: 'brand',
+      label: 'Brand',
+      allLabel: 'Any brand',
+      advanced: true,
+      options: brands.map((brand) => ({ label: brand.name, value: brand.id })),
+    },
+    {
+      name: 'featured',
+      label: 'Featured',
+      allLabel: 'Featured or not',
+      options: [
+        { label: 'Featured only', value: 'yes' },
+        { label: 'Not featured', value: 'no' },
+      ],
+    },
+  ];
+
+  const presets: FilterPreset[] = [
+    { id: 'all', label: 'All products', params: {} },
+    { id: 'published', label: 'Published', params: { status: 'PUBLISHED' } },
+    { id: 'drafts', label: 'Drafts', params: { status: 'DRAFT' } },
+    { id: 'featured', label: 'Featured', params: { featured: 'yes' } },
+  ];
 
   return (
     <>
@@ -118,33 +181,19 @@ export default async function ProductsAdmin({
         }
       />
 
-      <TableToolbar
+      <FilterBar
         searchPlaceholder="Search products by name or SKU"
-        filters={[
-          {
-            name: 'status',
-            label: 'Status',
-            options: [
-              { label: 'Published', value: 'PUBLISHED' },
-              { label: 'Draft', value: 'DRAFT' },
-              { label: 'Scheduled', value: 'SCHEDULED' },
-              { label: 'Archived', value: 'ARCHIVED' },
-            ],
-          },
-          {
-            name: 'category',
-            label: 'Category',
-            options: categories.map((c) => ({ label: c.name, value: c.id })),
-          },
-          { name: 'featured', label: 'Featured', options: [{ label: 'Featured only', value: 'yes' }] },
-        ]}
+        definitions={definitions}
+        presets={presets}
       />
 
       <Card>
         <ProductsTable
           rows={tableRows}
           can={can}
-          filtered={Boolean(params.q || params.status || params.category || params.featured)}
+          filtered={Boolean(
+            params.q || params.status || params.category || params.brand || params.featured,
+          )}
         />
         {tableRows.length > 0 ? (
           <AdminPagination

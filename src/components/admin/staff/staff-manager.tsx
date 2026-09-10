@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { Plus, Pencil, Trash, Users, ShieldCheck } from 'lucide-react';
 import { deleteStaff, saveRole, deleteRole } from '@/lib/actions/staff';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
@@ -13,6 +13,7 @@ import { Button, ButtonLink } from '@/components/ui/button';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/states';
 import { useToast } from '@/components/ui/toast';
+import { AdminTabs, TabPanel } from '@/components/admin/admin-tabs';
 import { Spinner } from '@/components/ui/icons';
 import { formatRelative, initials } from '@/lib/utils/format';
 
@@ -65,7 +66,22 @@ export function StaffManager({
   isSuperAdmin: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const search = useSearchParams();
   const { toast } = useToast();
+  // The sidebar links straight to /admin/staff?tab=roles, so the tab lives in
+  // the URL rather than in component state — the link, back button and a
+  // bookmark all land on the same view.
+  const tab = search.get('tab') === 'roles' ? 'roles' : 'staff';
+  const selectTab = (next: string) => {
+    const params = new URLSearchParams(search.toString());
+    if (next === 'staff') params.delete('tab');
+    else params.set('tab', next);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  };
   const [pending, setPending] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState<StaffRow | null>(null);
   const [editingRole, setEditingRole] = React.useState<RoleRow | null>(null);
@@ -86,190 +102,207 @@ export function StaffManager({
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader
-          title="Staff"
-          description="Everyone who can sign in to the admin."
-          actions={
-            <ButtonLink href="/admin/staff/new" size="sm">
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              Add staff
-            </ButtonLink>
-          }
-        />
+      <AdminTabs
+        tabs={[
+          { id: 'staff', label: 'Staff', badge: staff.length },
+          { id: 'roles', label: 'Roles & permissions', badge: roles.length },
+        ]}
+        active={tab}
+        onChange={selectTab}
+      />
 
-        {staff.length === 0 ? (
-          <EmptyState icon={<Users className="h-5 w-5" />} title="No staff accounts" />
-        ) : (
-          <TableWrap>
-            <Table className="min-w-[44rem]">
-              <caption className="sr-only">Staff accounts</caption>
-              <thead>
-                <tr>
-                  <Th>Name</Th>
-                  <Th>Role</Th>
-                  <Th align="center">Leads</Th>
-                  <Th>Status</Th>
-                  <Th>Last signed in</Th>
-                  <Th align="right">Actions</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {staff.map((member) => (
-                  <Tr key={member.id}>
-                    <Td>
-                      <span className="flex items-center gap-2.5">
-                        <span
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand"
-                          aria-hidden="true"
-                        >
-                          {initials(member.name)}
+      <TabPanel id="staff" active={tab}>
+        <Card>
+          <CardHeader
+            title="Staff"
+            description="Everyone who can sign in to the admin."
+            actions={
+              <ButtonLink href="/admin/staff/new" size="sm">
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Add staff
+              </ButtonLink>
+            }
+          />
+
+          {staff.length === 0 ? (
+            <EmptyState icon={<Users className="h-5 w-5" />} title="No staff accounts" />
+          ) : (
+            <TableWrap>
+              <Table className="min-w-[44rem]">
+                <caption className="sr-only">Staff accounts</caption>
+                <thead>
+                  <tr>
+                    <Th>Name</Th>
+                    <Th>Role</Th>
+                    <Th align="center">Leads</Th>
+                    <Th>Status</Th>
+                    <Th>Last signed in</Th>
+                    <Th align="right">Actions</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {staff.map((member) => (
+                    <Tr key={member.id}>
+                      <Td>
+                        <span className="flex items-center gap-2.5">
+                          <span
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand"
+                            aria-hidden="true"
+                          >
+                            {initials(member.name)}
+                          </span>
+                          <span className="min-w-0">
+                            <Link
+                              href={`/admin/staff/${member.id}`}
+                              className="block truncate font-medium text-content hover:text-brand"
+                            >
+                              {member.name}
+                              {member.id === currentUserId ? (
+                                <span className="ml-1.5 text-xs font-normal text-muted">(you)</span>
+                              ) : null}
+                            </Link>
+                            <span className="block truncate text-xs text-muted">
+                              {member.email}
+                            </span>
+                          </span>
                         </span>
-                        <span className="min-w-0">
+                      </Td>
+                      <Td>
+                        <Badge tone={member.roleSlug === 'super-admin' ? 'purple' : 'neutral'}>
+                          {member.roleName}
+                        </Badge>
+                      </Td>
+                      <Td align="center">
+                        {member.assignedLeadCount > 0 ? (
+                          <Link
+                            href={`/admin/leads?assignedTo=${member.id}`}
+                            className="text-sm font-medium text-brand hover:underline"
+                          >
+                            {member.assignedLeadCount}
+                          </Link>
+                        ) : (
+                          <span className="text-sm text-muted">0</span>
+                        )}
+                      </Td>
+                      <Td>
+                        <Badge tone={STATUS_TONE[member.status] ?? 'neutral'}>
+                          {member.status.charAt(0) + member.status.slice(1).toLowerCase()}
+                        </Badge>
+                      </Td>
+                      <Td className="whitespace-nowrap text-sm text-muted">
+                        {member.lastLoginAt ? formatRelative(member.lastLoginAt) : 'Never'}
+                      </Td>
+                      <Td align="right">
+                        <div className="flex items-center justify-end gap-1">
                           <Link
                             href={`/admin/staff/${member.id}`}
-                            className="block truncate font-medium text-content hover:text-brand"
+                            className="rounded p-1.5 text-muted hover:bg-muted/10 hover:text-content"
+                            aria-label={`Edit ${member.name}`}
                           >
-                            {member.name}
-                            {member.id === currentUserId ? (
-                              <span className="ml-1.5 text-xs font-normal text-muted">(you)</span>
-                            ) : null}
+                            <Pencil className="h-4 w-4" />
                           </Link>
-                          <span className="block truncate text-xs text-muted">{member.email}</span>
-                        </span>
-                      </span>
-                    </Td>
-                    <Td>
-                      <Badge tone={member.roleSlug === 'super-admin' ? 'purple' : 'neutral'}>
-                        {member.roleName}
-                      </Badge>
-                    </Td>
-                    <Td align="center">
-                      {member.assignedLeadCount > 0 ? (
-                        <Link
-                          href={`/admin/leads?assignedTo=${member.id}`}
-                          className="text-sm font-medium text-brand hover:underline"
-                        >
-                          {member.assignedLeadCount}
-                        </Link>
-                      ) : (
-                        <span className="text-sm text-muted">0</span>
-                      )}
-                    </Td>
-                    <Td>
-                      <Badge tone={STATUS_TONE[member.status] ?? 'neutral'}>
-                        {member.status.charAt(0) + member.status.slice(1).toLowerCase()}
-                      </Badge>
-                    </Td>
-                    <Td className="whitespace-nowrap text-sm text-muted">
-                      {member.lastLoginAt ? formatRelative(member.lastLoginAt) : 'Never'}
-                    </Td>
-                    <Td align="right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Link
-                          href={`/admin/staff/${member.id}`}
-                          className="rounded p-1.5 text-muted hover:bg-muted/10 hover:text-content"
-                          aria-label={`Edit ${member.name}`}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Link>
-                        {member.id !== currentUserId ? (
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDelete(member)}
-                            aria-label={`Delete ${member.name}`}
-                            className="rounded p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
-                          >
-                            <Trash className="h-4 w-4" />
-                          </button>
-                        ) : null}
-                      </div>
-                    </Td>
-                  </Tr>
-                ))}
-              </tbody>
-            </Table>
-          </TableWrap>
-        )}
-      </Card>
+                          {member.id !== currentUserId ? (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDelete(member)}
+                              aria-label={`Delete ${member.name}`}
+                              className="rounded p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
+                            >
+                              <Trash className="h-4 w-4" />
+                            </button>
+                          ) : null}
+                        </div>
+                      </Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </TableWrap>
+          )}
+        </Card>
+      </TabPanel>
 
-      <Card>
-        <CardHeader
-          title="Roles and permissions"
-          description={
-            isSuperAdmin
-              ? 'Every action in the admin is checked against these on the server.'
-              : 'Only a super admin can change roles.'
-          }
-          actions={
-            isSuperAdmin ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  setEditingRole({
-                    id: '',
-                    name: '',
-                    slug: '',
-                    description: '',
-                    isSystem: false,
-                    userCount: 0,
-                    permissions: [],
-                  })
-                }
-              >
-                <Plus className="h-4 w-4" aria-hidden="true" />
-                New role
-              </Button>
-            ) : null
-          }
-        />
-        <CardBody>
-          <ul className="space-y-2">
-            {roles.map((role) => (
-              <li
-                key={role.id}
-                className="flex flex-wrap items-center gap-2 rounded-lg border border-hairline px-3 py-2.5"
-              >
-                <ShieldCheck className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-content">{role.name}</span>
-                  <span className="block truncate text-xs text-muted">
-                    {role.slug === 'super-admin'
-                      ? 'Every permission'
-                      : `${role.permissions.length} permission(s)`}
-                    {role.description ? ` · ${role.description}` : ''}
+      <TabPanel id="roles" active={tab}>
+        <Card>
+          <CardHeader
+            title="Roles and permissions"
+            description={
+              isSuperAdmin
+                ? 'Every action in the admin is checked against these on the server.'
+                : 'Only a super admin can change roles.'
+            }
+            actions={
+              isSuperAdmin ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setEditingRole({
+                      id: '',
+                      name: '',
+                      slug: '',
+                      description: '',
+                      isSystem: false,
+                      userCount: 0,
+                      permissions: [],
+                    })
+                  }
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  New role
+                </Button>
+              ) : null
+            }
+          />
+          <CardBody>
+            <ul className="space-y-2">
+              {roles.map((role) => (
+                <li
+                  key={role.id}
+                  className="flex flex-wrap items-center gap-2 rounded-lg border border-hairline px-3 py-2.5"
+                >
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-content">
+                      {role.name}
+                    </span>
+                    <span className="block truncate text-xs text-muted">
+                      {role.slug === 'super-admin'
+                        ? 'Every permission'
+                        : `${role.permissions.length} permission(s)`}
+                      {role.description ? ` · ${role.description}` : ''}
+                    </span>
                   </span>
-                </span>
-                <Badge tone="neutral">{role.userCount} staff</Badge>
-                {role.isSystem ? <Badge tone="info">Built in</Badge> : null}
-                {isSuperAdmin && role.slug !== 'super-admin' ? (
-                  <span className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setEditingRole(role)}
-                      aria-label={`Edit ${role.name}`}
-                      className="rounded p-1.5 text-muted hover:bg-muted/10 hover:text-content"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    {!role.isSystem ? (
+                  <Badge tone="neutral">{role.userCount} staff</Badge>
+                  {role.isSystem ? <Badge tone="info">Built in</Badge> : null}
+                  {isSuperAdmin && role.slug !== 'super-admin' ? (
+                    <span className="flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => setConfirmRoleDelete(role)}
-                        aria-label={`Delete ${role.name}`}
-                        className="rounded p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
+                        onClick={() => setEditingRole(role)}
+                        aria-label={`Edit ${role.name}`}
+                        className="rounded p-1.5 text-muted hover:bg-muted/10 hover:text-content"
                       >
-                        <Trash className="h-4 w-4" />
+                        <Pencil className="h-4 w-4" />
                       </button>
-                    ) : null}
-                  </span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </CardBody>
-      </Card>
+                      {!role.isSystem ? (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmRoleDelete(role)}
+                          aria-label={`Delete ${role.name}`}
+                          className="rounded p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
+                        >
+                          <Trash className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </CardBody>
+        </Card>
+      </TabPanel>
 
       <RoleDialog
         role={editingRole}
@@ -325,7 +358,11 @@ function RoleDialog({
 }) {
   const { toast } = useToast();
   const [pending, setPending] = React.useState(false);
-  const [values, setValues] = React.useState({ name: '', description: '', permissions: [] as string[] });
+  const [values, setValues] = React.useState({
+    name: '',
+    description: '',
+    permissions: [] as string[],
+  });
 
   React.useEffect(() => {
     if (role) {

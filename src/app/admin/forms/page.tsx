@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Plus } from 'lucide-react';
+import { Plus, Inbox } from 'lucide-react';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
@@ -24,6 +24,9 @@ export default async function FormsAdmin() {
       createsLead: true,
       updatedAt: true,
       _count: { select: { fields: true, submissions: true, leads: true } },
+      // Products whose CTA button opens this form, so the list shows where a
+      // form is actually used before someone deactivates it.
+      productCtas: { select: { name: true }, take: 2 },
     },
   });
 
@@ -36,6 +39,7 @@ export default async function FormsAdmin() {
     fieldCount: row._count.fields,
     submissionCount: row._count.submissions,
     leadCount: row._count.leads,
+    productName: row.productCtas.map((product) => product.name).join(', ') || null,
     updatedAt: row.updatedAt.toISOString(),
   }));
 
@@ -43,14 +47,20 @@ export default async function FormsAdmin() {
     <>
       <AdminPageHeader
         title="Forms"
-        description="Every form on the site. Submissions become leads with the product, page and campaign attached."
+        description="Build the forms that capture leads. Every submission records the product, page and campaign it came from."
         crumbs={[{ label: 'Forms' }]}
         actions={
           userCan(user, 'forms.create') ? (
-            <ButtonLink href="/admin/forms/new">
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              New form
-            </ButtonLink>
+            <>
+              <ButtonLink href="/admin/forms/submissions" variant="outline">
+                <Inbox className="h-4 w-4" aria-hidden="true" />
+                Submissions
+              </ButtonLink>
+              <ButtonLink href="/admin/forms/new">
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                New form
+              </ButtonLink>
+            </>
           ) : null
         }
       />

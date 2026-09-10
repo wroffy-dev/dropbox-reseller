@@ -2,11 +2,18 @@ import type { Metadata } from 'next';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
-import { TableToolbar } from '@/components/admin/table-toolbar';
+import { FilterBar } from '@/components/admin/filter-bar';
+import { buildAuditWhere } from '@/lib/admin/audit-query';
+import {
+  daysAgo,
+  today,
+  startOfWeek,
+  type FilterDefinition,
+  type FilterPreset,
+} from '@/lib/admin/filters';
 import { AdminPagination } from '@/components/admin/admin-pagination';
 import { AuditTable, type AuditRow } from '@/components/admin/audit-table';
 import { Card } from '@/components/ui/card';
-import type { Prisma } from '@prisma/client';
 
 export const metadata: Metadata = { title: 'Audit log' };
 export const dynamic = 'force-dynamic';
@@ -16,24 +23,23 @@ const PER_PAGE = 40;
 export default async function AuditAdmin({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; entity?: string; actor?: string; page?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    entity?: string;
+    actor?: string;
+    action?: string;
+    from?: string;
+    to?: string;
+    page?: string;
+  }>;
 }) {
   await requirePermission('audit.view');
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
 
-  const where: Prisma.AuditLogWhereInput = {};
-  if (params.q?.trim()) {
-    where.OR = [
-      { summary: { contains: params.q.trim(), mode: 'insensitive' } },
-      { actorEmail: { contains: params.q.trim(), mode: 'insensitive' } },
-      { action: { contains: params.q.trim(), mode: 'insensitive' } },
-    ];
-  }
-  if (params.entity) where.entity = params.entity;
-  if (params.actor) where.actorId = params.actor;
+  const where = buildAuditWhere(params);
 
-  const [rows, total, entities, actors] = await Promise.all([
+  const [rows, total, entities, actions, actors] = await Promise.all([
     prisma.auditLog.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -53,7 +59,16 @@ export default async function AuditAdmin({
       },
     }),
     prisma.auditLog.count({ where }),
-    prisma.auditLog.groupBy({ by: ['entity'], _count: { _all: true }, orderBy: { entity: 'asc' } }),
+    prisma.auditLog.groupBy({
+      by: ['entity'],
+      _count: { _all: true },
+      orderBy: { entity: 'asc' },
+    }),
+    prisma.auditLog.groupBy({
+      by: ['action'],
+      _count: { _all: true },
+      orderBy: { action: 'asc' },
+    }),
     prisma.user.findMany({
       where: { deletedAt: null },
       orderBy: { name: 'asc' },
@@ -74,6 +89,42 @@ export default async function AuditAdmin({
     createdAt: row.createdAt.toISOString(),
   }));
 
+  const definitions: FilterDefinition[] = [
+    {
+      name: 'actor',
+      label: 'Person',
+      allLabel: 'Anyone',
+      options: actors.map((actor) => ({ label: actor.name, value: actor.id })),
+    },
+    {
+      name: 'action',
+      label: 'Action',
+      allLabel: 'Any action',
+      options: actions.map((row) => ({
+        label: `${row.action} (${row._count._all})`,
+        value: row.action,
+      })),
+    },
+    {
+      name: 'entity',
+      label: 'Type',
+      allLabel: 'Any type',
+      options: entities.map((row) => ({
+        label: `${row.entity} (${row._count._all})`,
+        value: row.entity,
+      })),
+    },
+    { name: 'date', label: 'Date', kind: 'date' },
+  ];
+
+  const presets: FilterPreset[] = [
+    { id: 'all', label: 'Everything', params: {} },
+    { id: 'today', label: 'Today', params: { from: today() } },
+    { id: 'week', label: 'This week', params: { from: startOfWeek() } },
+    { id: 'month', label: 'Last 30 days', params: { from: daysAgo(30) } },
+    { id: 'deletions', label: 'Deletions', params: { action: 'deleted' } },
+  ];
+
   return (
     <>
       <AdminPageHeader
@@ -82,20 +133,19 @@ export default async function AuditAdmin({
         crumbs={[{ label: 'Audit log' }]}
       />
 
-      <TableToolbar
+      <FilterBar
         searchPlaceholder="Search by summary, action or email"
-        filters={[
-          {
-            name: 'entity',
-            label: 'Type',
-            options: entities.map((e) => ({ label: `${e.entity} (${e._count._all})`, value: e.entity })),
-          },
-          { name: 'actor', label: 'Person', options: actors.map((a) => ({ label: a.name, value: a.id })) },
-        ]}
+        definitions={definitions}
+        presets={presets}
       />
 
       <Card>
-        <AuditTable rows={auditRows} filtered={Boolean(params.q || params.entity || params.actor)} />
+        <AuditTable
+          rows={auditRows}
+          filtered={Boolean(
+            params.q || params.entity || params.actor || params.action || params.from || params.to,
+          )}
+        />
         {auditRows.length > 0 ? (
           <AdminPagination
             page={page}

@@ -86,6 +86,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_module
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin ./node_modules/.bin
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/effect ./node_modules/effect
 
 COPY --chown=nextjs:nodejs docker/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh

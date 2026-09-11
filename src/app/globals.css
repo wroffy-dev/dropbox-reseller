@@ -258,4 +258,247 @@
     font-weight: var(--font-nav-weight);
     font-size: var(--font-nav-size);
   }
+
+  /* -------------------------------------------------------------------------
+   * Form design engine
+   *
+   * One stylesheet for every form on the site — lead, contact, popup, hero,
+   * product enquiry, CMS block. Each rule reads a CSS custom property with a
+   * fallback equal to the form's original appearance, so a form nobody has
+   * restyled sets no variables and renders exactly as it always did.
+   *
+   * This is why arbitrary admin values work at three breakpoints without
+   * generating a byte of extra Tailwind: the renderer emits variables, and
+   * these rules consume them.
+   * ---------------------------------------------------------------------- */
+
+  .fd-form {
+    width: var(--fd-width, 100%);
+    max-width: var(--fd-max-w, none);
+    margin: var(--fd-margin, 0);
+    padding: var(--fd-padding, 0);
+    background-color: var(--fd-bg, transparent);
+    background-image: var(--fd-bg-image, none);
+    background-size: cover;
+    background-position: center;
+    border-style: var(--fd-border-style, none);
+    border-width: var(--fd-border-width, 0);
+    border-color: var(--fd-border-color, transparent);
+    border-radius: var(--fd-radius, 0);
+    box-shadow: var(--fd-shadow, none);
+    font-family: var(--fd-base-font, inherit);
+    font-size: var(--fd-base-size, inherit);
+    color: var(--fd-base-color, inherit);
+    letter-spacing: var(--fd-base-spacing, normal);
+    line-height: var(--fd-base-line, inherit);
+  }
+
+  /* Only paid for when an admin actually asks for it. */
+  .fd-form[style*="--fd-blur"] {
+    backdrop-filter: blur(var(--fd-blur, 0px));
+  }
+
+  .fd-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--fd-cols, 1), minmax(0, 1fr));
+    column-gap: var(--fd-col-gap, 1rem);
+    row-gap: var(--fd-row-gap, 1rem);
+  }
+
+  /* A field spans at most the number of columns that exist, so a 3-column
+     field in a 1-column layout does not overflow the grid. */
+  .fd-field {
+    grid-column: span min(var(--fd-span, 1), var(--fd-cols, 1));
+  }
+
+  .fd-label {
+    display: block;
+    font-family: var(--fd-label-font, inherit);
+    font-size: var(--fd-label-size, 0.875rem);
+    font-weight: var(--fd-label-weight, 500);
+    line-height: var(--fd-label-line, 1.4);
+    letter-spacing: var(--fd-label-spacing, normal);
+    text-transform: var(--fd-label-transform, none);
+    color: var(--fd-label-color, rgb(var(--brand-text)));
+    margin-bottom: var(--fd-label-gap, 0.375rem);
+  }
+
+  .fd-required { color: var(--fd-required-color, #dc2626); }
+
+  /* Label beside the control rather than above it. */
+  .fd-field-left {
+    display: grid;
+    grid-template-columns: var(--fd-label-w, 10rem) minmax(0, 1fr);
+    column-gap: 0.75rem;
+    align-items: start;
+  }
+  .fd-field-left > .fd-label { margin-bottom: 0; padding-top: 0.5rem; }
+  @media (max-width: 767px) {
+    /* A two-column field row leaves no usable width on a phone. */
+    .fd-field-left { grid-template-columns: minmax(0, 1fr); }
+    .fd-field-left > .fd-label { padding-top: 0; margin-bottom: var(--fd-label-gap, 0.375rem); }
+  }
+
+  /*
+   * Floating labels.
+   *
+   * The label is a real <label>, positioned over an input whose placeholder is
+   * a single space — :placeholder-shown then tells us whether the field is
+   * empty without any JavaScript, and the accessible name is unaffected.
+   */
+  .fd-field-floating { position: relative; }
+  .fd-field-floating > .fd-label {
+    position: absolute;
+    left: 0.75rem;
+    top: 0.5rem;
+    margin: 0;
+    padding: 0 0.25rem;
+    background: var(--fd-input-bg, rgb(var(--brand-surface)));
+    font-size: 0.75rem;
+    pointer-events: none;
+    transition: top 120ms ease, font-size 120ms ease;
+  }
+  .fd-field-floating > .fd-control:placeholder-shown + .fd-label {
+    top: 0.9rem;
+    font-size: var(--fd-input-size, 0.875rem);
+  }
+  .fd-field-floating > .fd-control { padding-top: 1.1rem; }
+
+  .fd-control {
+    width: 100%;
+    min-height: var(--fd-input-min-h, var(--fd-input-h, auto));
+    height: var(--fd-input-h, auto);
+    padding: var(--fd-input-padding, 0.5rem 0.75rem);
+    font-family: var(--fd-input-font, inherit);
+    font-size: var(--fd-input-size, 0.875rem);
+    font-weight: var(--fd-input-weight, 400);
+    letter-spacing: var(--fd-input-spacing, normal);
+    color: var(--fd-input-color, rgb(var(--brand-text)));
+    background-color: var(--fd-input-bg, rgb(var(--brand-surface)));
+    border-style: var(--fd-input-border-style, solid);
+    border-width: var(--fd-input-border-width, 1px);
+    border-color: var(--fd-input-border-color, rgb(var(--brand-border)));
+    border-radius: var(--fd-input-radius, 0.5rem);
+    transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+  }
+
+  /* A textarea must grow, so it takes min-height only — never a fixed height. */
+  textarea.fd-control {
+    height: auto;
+    resize: var(--fd-textarea-resize, vertical);
+  }
+
+  .fd-control::placeholder {
+    font-family: var(--fd-ph-font, inherit);
+    font-size: var(--fd-ph-size, inherit);
+    font-weight: var(--fd-ph-weight, inherit);
+    color: var(--fd-ph-color, rgb(var(--brand-muted)));
+    opacity: var(--fd-ph-opacity, 0.6);
+  }
+
+  .fd-control:hover:not(:disabled):not([aria-invalid='true']) {
+    border-color: var(--fd-input-hover-border, var(--fd-input-border-color, rgb(var(--brand-border))));
+  }
+
+  .fd-control:focus {
+    outline: none;
+    border-color: var(--fd-input-focus-border, rgb(var(--brand-primary)));
+    background-color: var(--fd-input-focus-bg, var(--fd-input-bg, rgb(var(--brand-surface))));
+    box-shadow: 0 0 0 var(--fd-input-focus-ring-w, 2px)
+      var(--fd-input-focus-ring, rgb(var(--brand-primary) / 0.25));
+  }
+
+  .fd-control:disabled,
+  .fd-control[readonly] {
+    background-color: var(--fd-input-disabled-bg, rgb(var(--brand-muted) / 0.05));
+    color: var(--fd-input-disabled-color, rgb(var(--brand-muted)));
+    cursor: not-allowed;
+  }
+  /* A read-only field is still readable, so it keeps the normal cursor. */
+  .fd-control[readonly]:not(:disabled) { cursor: default; }
+
+  .fd-control[aria-invalid='true'] {
+    border-color: var(--fd-input-error-border, #dc2626);
+    background-color: var(--fd-input-error-bg, transparent);
+  }
+
+  .fd-help {
+    font-family: var(--fd-help-font, inherit);
+    font-size: var(--fd-help-size, 0.75rem);
+    font-weight: var(--fd-help-weight, 400);
+    color: var(--fd-help-color, rgb(var(--brand-muted)));
+    margin-top: var(--fd-help-gap, 0.25rem);
+  }
+
+  .fd-error {
+    font-family: var(--fd-err-font, inherit);
+    font-size: var(--fd-err-size, 0.75rem);
+    font-weight: var(--fd-err-weight, 500);
+    color: var(--fd-err-color, #dc2626);
+    margin-top: var(--fd-err-gap, 0.25rem);
+  }
+
+  /* Checkbox and radio groups. */
+  .fd-choices { display: flex; flex-direction: column; gap: var(--fd-choice-gap, 0.5rem); }
+  .fd-choices-horizontal { flex-direction: row; flex-wrap: wrap; gap: var(--fd-choice-gap, 1rem); }
+  .fd-choices-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: var(--fd-choice-gap, 0.5rem);
+  }
+  .fd-choice { display: flex; align-items: center; gap: 0.5rem; }
+  .fd-choice input {
+    width: var(--fd-choice-size, 1rem);
+    height: var(--fd-choice-size, 1rem);
+    accent-color: var(--fd-choice-accent, rgb(var(--brand-primary)));
+    flex: none;
+  }
+  .fd-choice-label {
+    font-family: var(--fd-label-font, inherit);
+    font-size: var(--fd-label-size, 0.875rem);
+    color: var(--fd-label-color, rgb(var(--brand-text)));
+  }
+
+  .fd-actions { margin-top: var(--fd-button-gap, 1rem); display: flex; }
+  .fd-actions-center { justify-content: center; }
+  .fd-actions-right { justify-content: flex-end; }
+
+  .fd-submit {
+    width: var(--fd-btn-w, auto);
+    height: var(--fd-btn-h, auto);
+    padding: var(--fd-btn-padding, 0.625rem 1.25rem);
+    font-family: var(--fd-btn-font, inherit);
+    font-size: var(--fd-btn-size, 0.875rem);
+    font-weight: var(--fd-btn-weight, 600);
+    letter-spacing: var(--fd-btn-spacing, normal);
+    text-transform: var(--fd-btn-transform, none);
+    color: var(--fd-btn-color, #fff);
+    background-color: var(--fd-btn-bg, rgb(var(--brand-primary)));
+    border-style: var(--fd-btn-border-style, none);
+    border-width: var(--fd-btn-border-width, 0);
+    border-color: var(--fd-btn-border-color, transparent);
+    border-radius: var(--fd-btn-radius, 0.5rem);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  }
+  .fd-submit:disabled { cursor: not-allowed; opacity: 0.65; }
+  .fd-submit-full { width: 100%; }
+
+  .fd-success {
+    background-color: var(--fd-ok-bg, #ecfdf5);
+    color: var(--fd-ok-color, #065f46);
+    border-style: var(--fd-ok-border-style, solid);
+    border-width: var(--fd-ok-border-width, 1px);
+    border-color: var(--fd-ok-border-color, #a7f3d0);
+    border-radius: var(--fd-ok-radius, 0.75rem);
+    padding: var(--fd-ok-padding, 2.5rem 1.5rem);
+  }
+  .fd-success-heading {
+    color: var(--fd-ok-heading, var(--fd-ok-color, #065f46));
+    font-family: var(--fd-base-font, inherit);
+  }
 }

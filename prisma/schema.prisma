@@ -66,6 +66,8 @@ enum FormFieldType {
   URL
   DATE
   CONSENT
+  MULTISELECT
+  TIME
 }
 
 enum BillingPeriod {
@@ -842,6 +844,12 @@ model Form {
   // existed keeps submitting exactly as it did.
   requireCaptcha Boolean @default(false)
 
+  /// Presentation for this form, everywhere it is rendered — the FormDesign
+  /// schema in src/lib/forms/form-design.ts. Null means "use the defaults",
+  /// which is exactly how every form looked before these controls existed, so
+  /// nothing shifts under a form nobody has restyled.
+  design Json?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -874,6 +882,26 @@ model FormField {
   minLength    Int?
   maxLength    Int?
   pattern      String?
+
+  /// Presentation and state. Every default reproduces the behaviour a field
+  /// had before these columns existed: labels shown, field enabled, visible
+  /// and editable.
+  showLabel  Boolean @default(true)
+  isEnabled  Boolean @default(true)
+  isHidden   Boolean @default(false)
+  isReadOnly Boolean @default(false)
+  /// Grid columns this field spans. Null falls back to `width`, so a form
+  /// saved before the column system keeps its half/full layout.
+  colSpan    Int?
+  /// Extra class names appended to the field wrapper. Sanitised on save to a
+  /// plain token list, so nothing here can close an attribute or inject CSS.
+  cssClass   String?
+
+  /// The long tail: numeric bounds, textarea rows, per-field error messages,
+  /// choice layout and conditional visibility. JSON rather than twenty more
+  /// nullable columns, because none of it is ever queried — it is read only
+  /// when the field is rendered or validated.
+  settings Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

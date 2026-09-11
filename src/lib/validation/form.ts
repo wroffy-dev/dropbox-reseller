@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { slugify } from '@/lib/utils/slug';
+import { formDesignSchema } from '@/lib/forms/form-design';
+import { fieldSettingsSchema, sanitiseCssClass } from '@/lib/forms/field-settings';
 
 const optional = (max: number) =>
   z
@@ -20,7 +22,9 @@ export const formFieldTypes = [
   'NUMBER',
   'URL',
   'DATE',
+  'TIME',
   'SELECT',
+  'MULTISELECT',
   'RADIO',
   'CHECKBOX',
   'CONSENT',
@@ -54,6 +58,18 @@ export const formFieldSchema = z.object({
   minLength: z.number().int().min(0).max(5000).nullable().optional(),
   maxLength: z.number().int().min(1).max(20000).nullable().optional(),
   pattern: optional(200),
+
+  // Presentation and state. Each default matches how a field behaved before
+  // these existed, so a payload from an older client cannot change one.
+  showLabel: z.boolean().default(true),
+  isEnabled: z.boolean().default(true),
+  isHidden: z.boolean().default(false),
+  isReadOnly: z.boolean().default(false),
+  colSpan: z.number().int().min(1).max(4).nullable().optional(),
+  // Sanitised rather than rejected: an admin pasting a class list with a stray
+  // character should get the usable part, not a failed save.
+  cssClass: z.preprocess(sanitiseCssClass, z.string().max(200)).default(''),
+  settings: fieldSettingsSchema.optional(),
 });
 
 export const formInputSchema = z.object({
@@ -75,6 +91,12 @@ export const formInputSchema = z.object({
   // Defaults to false so a payload from an older client — or an existing form
   // saved before this existed — never silently switches the CAPTCHA on.
   requireCaptcha: z.boolean().default(false),
+  /**
+   * Presentation. Optional, so a payload that omits it — an older client, or a
+   * script that only means to rename a form — leaves the stored design alone
+   * rather than resetting it to defaults.
+   */
+  design: formDesignSchema.optional(),
   fields: z.array(formFieldSchema).max(40).default([]),
 });
 

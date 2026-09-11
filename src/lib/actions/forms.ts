@@ -10,7 +10,7 @@ import { uniqueSlug, slugify } from '@/lib/utils/slug';
 import { sanitizeText } from '@/lib/utils/sanitize';
 import { toCsv } from '@/lib/utils/csv';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 export async function saveForm(
   formId: string | null,
@@ -68,6 +68,10 @@ export async function saveForm(
       notifyEmails: input.notifyEmails,
       consentText: input.consentText ? sanitizeText(input.consentText) : null,
       requireCaptcha: input.requireCaptcha,
+      // Omitted by a payload that does not mean to restyle the form, in which
+      // case `undefined` leaves the stored design untouched rather than wiping
+      // it back to defaults.
+      design: input.design ? (input.design as Prisma.InputJsonValue) : undefined,
     };
 
     const form = await prisma.$transaction(async (tx) => {
@@ -98,6 +102,15 @@ export async function saveForm(
           minLength: field.minLength ?? null,
           maxLength: field.maxLength ?? null,
           pattern: field.pattern,
+          showLabel: field.showLabel,
+          isEnabled: field.isEnabled,
+          isHidden: field.isHidden,
+          isReadOnly: field.isReadOnly,
+          colSpan: field.colSpan ?? null,
+          cssClass: field.cssClass || null,
+          settings: field.settings
+            ? (field.settings as Prisma.InputJsonValue)
+            : Prisma.DbNull,
         };
 
         if (field.id) {

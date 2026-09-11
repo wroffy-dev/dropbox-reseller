@@ -30,6 +30,9 @@ import {
   FIELD_TYPE_LABELS,
   MAPPED_FIELD_TYPES,
   CHOICE_FIELD_TYPES,
+  NO_PLACEHOLDER_TYPES,
+  NUMERIC_FIELD_TYPES,
+  STRUCTURAL_FIELD_TYPES,
   EMPTY_FORM,
   type BuilderField,
   type FormBuilderValues,
@@ -37,6 +40,11 @@ import {
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { AdminTabs, TabPanel } from '@/components/admin/admin-tabs';
 import { FieldPalette } from './field-palette';
+import { FormDesignPanel } from './form-design-panel';
+import {
+  CONDITION_OPERATOR_LABELS,
+  VALUELESS_OPERATORS,
+} from '@/lib/forms/field-settings';
 import { Field, Input, Select, Textarea, Switch } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -276,6 +284,7 @@ export function FormBuilder({
           <AdminTabs
             tabs={[
               { id: 'general', label: 'General' },
+              { id: 'design', label: 'Design' },
               { id: 'after', label: 'After submit' },
               { id: 'notify', label: 'Notifications' },
             ]}
@@ -449,6 +458,20 @@ export function FormBuilder({
                   onChange={(e) => set('notifyEmails', e.target.value)}
                 />
               </Field>
+            </TabPanel>
+
+            {/*
+             * Design applies to this form everywhere it appears — in a popup, a
+             * hero, a product enquiry dialog or a page block. There is one
+             * renderer and one design record, so there is nothing to configure
+             * per location.
+             */}
+            <TabPanel id="design" active={settingsTab}>
+              <FormDesignPanel
+                design={values.design}
+                onChange={(design) => set('design', design)}
+                disabled={!canEdit}
+              />
             </TabPanel>
           </CardBody>
 
@@ -632,13 +655,36 @@ function SortableFieldRow({
                 <option value="half">Half width</option>
               </Select>
             </Field>
-            <Field label="Placeholder" htmlFor={`${field.key}-placeholder`}>
-              <Input
-                id={`${field.key}-placeholder`}
-                value={field.placeholder}
-                onChange={(e) => onChange({ placeholder: e.target.value })}
-              />
+            <Field
+              label="Column span"
+              htmlFor={`${field.key}-span`}
+              hint="Overrides Width. Never wider than the form's column count."
+            >
+              <Select
+                id={`${field.key}-span`}
+                value={field.colSpan}
+                onChange={(e) => onChange({ colSpan: e.target.value })}
+              >
+                <option value="">Use the width setting</option>
+                <option value="1">1 column</option>
+                <option value="2">2 columns</option>
+                <option value="3">3 columns</option>
+                <option value="4">Full row</option>
+              </Select>
             </Field>
+            {NO_PLACEHOLDER_TYPES.has(field.type) ? null : (
+              <Field
+                label="Placeholder"
+                htmlFor={`${field.key}-placeholder`}
+                hint="Shown inside the empty field."
+              >
+                <Input
+                  id={`${field.key}-placeholder`}
+                  value={field.placeholder}
+                  onChange={(e) => onChange({ placeholder: e.target.value })}
+                />
+              </Field>
+            )}
             <Field label="Help text" htmlFor={`${field.key}-help`}>
               <Input
                 id={`${field.key}-help`}
@@ -679,6 +725,59 @@ function SortableFieldRow({
               Validation
             </summary>
             <div className="mt-3 grid gap-4 sm:grid-cols-3">
+              {NUMERIC_FIELD_TYPES.has(field.type) ? (
+                <>
+                  <Field label="Minimum value" htmlFor={`${field.key}-numin`}>
+                    <Input
+                      id={`${field.key}-numin`}
+                      type="number"
+                      value={field.settings.min ?? ''}
+                      onChange={(e) =>
+                        onChange({
+                          settings: {
+                            ...field.settings,
+                            min: e.target.value === '' ? null : Number(e.target.value),
+                          },
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field label="Maximum value" htmlFor={`${field.key}-numax`}>
+                    <Input
+                      id={`${field.key}-numax`}
+                      type="number"
+                      value={field.settings.max ?? ''}
+                      onChange={(e) =>
+                        onChange({
+                          settings: {
+                            ...field.settings,
+                            max: e.target.value === '' ? null : Number(e.target.value),
+                          },
+                        })
+                      }
+                    />
+                  </Field>
+                </>
+              ) : null}
+              {field.type === 'TEXTAREA' ? (
+                <Field label="Rows" htmlFor={`${field.key}-rows`} hint="Visible height.">
+                  <Input
+                    id={`${field.key}-rows`}
+                    type="number"
+                    min={2}
+                    max={20}
+                    value={field.settings.rows ?? ''}
+                    onChange={(e) =>
+                      onChange({
+                        settings: {
+                          ...field.settings,
+                          rows: e.target.value === '' ? null : Number(e.target.value),
+                        },
+                      })
+                    }
+                  />
+                </Field>
+              ) : null}
               <Field label="Minimum length" htmlFor={`${field.key}-min`}>
                 <Input
                   id={`${field.key}-min`}
@@ -708,16 +807,43 @@ function SortableFieldRow({
                   onChange={(e) => onChange({ pattern: e.target.value })}
                 />
               </Field>
+              <Field
+                label="Required message"
+                htmlFor={`${field.key}-msg-req`}
+                hint="Overrides the form default."
+              >
+                <Input
+                  id={`${field.key}-msg-req`}
+                  value={field.settings.requiredMessage}
+                  maxLength={160}
+                  onChange={(e) =>
+                    onChange({
+                      settings: { ...field.settings, requiredMessage: e.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Invalid message" htmlFor={`${field.key}-msg-inv`}>
+                <Input
+                  id={`${field.key}-msg-inv`}
+                  value={field.settings.invalidMessage}
+                  maxLength={160}
+                  onChange={(e) =>
+                    onChange({
+                      settings: { ...field.settings, invalidMessage: e.target.value },
+                    })
+                  }
+                />
+              </Field>
             </div>
+            <p className="mt-3 text-xs text-muted">
+              Every rule here is re-checked on the server, so a visitor cannot skip one by editing
+              the page.
+            </p>
           </details>
 
-          <div className="rounded-lg border border-hairline p-3">
-            <Switch
-              checked={field.isRequired}
-              onChange={(next) => onChange({ isRequired: next })}
-              label="Required field"
-            />
-          </div>
+          <FieldStateControls field={field} onChange={onChange} />
+          <FieldAppearanceControls field={field} onChange={onChange} />
         </fieldset>
       ) : null}
     </li>
@@ -785,6 +911,329 @@ function OptionsEditor({
         <Plus className="h-4 w-4" aria-hidden="true" />
         Add option
       </Button>
+    </fieldset>
+  );
+}
+
+/**
+ * Required, enabled, visible, read-only.
+ *
+ * Four independent switches rather than one "status" dropdown, because they
+ * genuinely compose: a field can be visible but read-only, or enabled but
+ * hidden and carrying a default. The hints spell out what the server does with
+ * each, since that is not guessable from the label.
+ */
+function FieldStateControls({
+  field,
+  onChange,
+}: {
+  field: BuilderField;
+  onChange: (patch: Partial<BuilderField>) => void;
+}) {
+  const structural = STRUCTURAL_FIELD_TYPES.has(field.type);
+
+  return (
+    <div className="space-y-3 rounded-lg border border-hairline p-3">
+      <p className="text-sm font-medium text-content">Behaviour</p>
+
+      {structural ? (
+        <p className="text-xs text-muted">
+          A hidden value is never shown, so it has no label, placeholder or required state to
+          configure. Its value is sent with every submission.
+        </p>
+      ) : (
+        <Switch
+          checked={field.isRequired}
+          onChange={(next) => onChange({ isRequired: next })}
+          label="Required"
+          hint="Enforced on the server, not just in the browser."
+        />
+      )}
+
+      <Switch
+        checked={field.isEnabled}
+        onChange={(next) => onChange({ isEnabled: next })}
+        label="Enabled"
+        hint="Turning this off removes the field from the form entirely. Submissions already collected keep their values."
+      />
+
+      {structural ? null : (
+        <>
+          <Switch
+            checked={field.isHidden}
+            onChange={(next) => onChange({ isHidden: next })}
+            label="Hidden"
+            hint="Keeps the field in the form but draws nothing. Its default value is submitted, taken from here and not from the browser."
+          />
+          <Switch
+            checked={field.isReadOnly}
+            onChange={(next) => onChange({ isReadOnly: next })}
+            label="Read-only"
+            hint="Shown but not editable. The submitted value always comes from the default below."
+          />
+          <Switch
+            checked={field.settings.system}
+            onChange={(next) => onChange({ settings: { ...field.settings, system: next } })}
+            label="System field"
+            hint="For injected context such as a product ID or plan. The value is never taken from the browser, so it cannot be tampered with."
+          />
+        </>
+      )}
+
+      {field.isReadOnly || field.isHidden || field.settings.system || structural ? (
+        <Field
+          label="Value"
+          htmlFor={`${field.key}-sysdefault`}
+          hint="The value the server records for this field."
+        >
+          <Input
+            id={`${field.key}-sysdefault`}
+            value={field.defaultValue}
+            onChange={(e) => onChange({ defaultValue: e.target.value })}
+          />
+        </Field>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Label visibility, position, extra classes and conditional display.
+ *
+ * Turning a label off changes only what is drawn: the renderer moves the
+ * accessible name to `aria-label`, so the field keeps working for anyone using
+ * a screen reader. The hint says so, because an admin switching it off has no
+ * other way to know.
+ */
+function FieldAppearanceControls({
+  field,
+  onChange,
+}: {
+  field: BuilderField;
+  onChange: (patch: Partial<BuilderField>) => void;
+}) {
+  const structural = STRUCTURAL_FIELD_TYPES.has(field.type);
+  if (structural) return null;
+
+  const settings = field.settings;
+
+  function setSettings(patch: Partial<typeof settings>) {
+    onChange({ settings: { ...settings, ...patch } });
+  }
+
+  return (
+    <details className="rounded-lg border border-hairline p-3">
+      <summary className="cursor-pointer text-sm font-medium text-content">
+        Appearance &amp; conditions
+      </summary>
+
+      <div className="mt-3 space-y-4">
+        <Switch
+          checked={field.showLabel}
+          onChange={(next) => onChange({ showLabel: next })}
+          label="Show the label"
+          hint="When off, the label is still read out by screen readers — only the visible text is removed."
+        />
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Label position" htmlFor={`${field.key}-labelpos`}>
+            <Select
+              id={`${field.key}-labelpos`}
+              value={settings.labelPosition}
+              onChange={(e) =>
+                setSettings({ labelPosition: e.target.value as typeof settings.labelPosition })
+              }
+            >
+              <option value="inherit">Same as the form</option>
+              <option value="top">Above the field</option>
+              <option value="left">Beside the field</option>
+              <option value="floating">Floating</option>
+            </Select>
+          </Field>
+
+          {CHOICE_FIELD_TYPES.has(field.type) ? (
+            <Field label="Option layout" htmlFor={`${field.key}-choicelayout`}>
+              <Select
+                id={`${field.key}-choicelayout`}
+                value={settings.choiceLayout}
+                onChange={(e) =>
+                  setSettings({ choiceLayout: e.target.value as typeof settings.choiceLayout })
+                }
+              >
+                <option value="inherit">Same as the form</option>
+                <option value="vertical">Stacked</option>
+                <option value="horizontal">Side by side</option>
+                <option value="grid">Grid</option>
+              </Select>
+            </Field>
+          ) : null}
+
+          {field.type === 'SELECT' ? (
+            <Field
+              label="Empty option text"
+              htmlFor={`${field.key}-emptyopt`}
+              hint="The first, unselected entry."
+            >
+              <Input
+                id={`${field.key}-emptyopt`}
+                value={settings.emptyOptionLabel}
+                placeholder="Please choose…"
+                maxLength={120}
+                onChange={(e) => setSettings({ emptyOptionLabel: e.target.value })}
+              />
+            </Field>
+          ) : null}
+
+          <Field
+            label="CSS classes"
+            htmlFor={`${field.key}-cssclass`}
+            hint="Added to the field wrapper. Letters, numbers and dashes only."
+          >
+            <Input
+              id={`${field.key}-cssclass`}
+              value={field.cssClass}
+              placeholder="my-field"
+              maxLength={200}
+              onChange={(e) => onChange({ cssClass: e.target.value })}
+            />
+          </Field>
+        </div>
+
+        <ConditionsEditor field={field} onChange={onChange} />
+      </div>
+    </details>
+  );
+}
+
+/**
+ * Conditional visibility.
+ *
+ * A flat list of tests joined by one operator, not a nested rules engine — that
+ * covers "show Company Size when Product Interest is Dropbox Business" without
+ * building a tree nobody can debug from an admin screen. The conditions are
+ * re-evaluated on the server, so a field the visitor never saw is not required
+ * of them and a value for one is not trusted.
+ */
+function ConditionsEditor({
+  field,
+  onChange,
+}: {
+  field: BuilderField;
+  onChange: (patch: Partial<BuilderField>) => void;
+}) {
+  const { conditions, conditionMatch } = field.settings;
+
+  function setConditions(next: typeof conditions) {
+    onChange({ settings: { ...field.settings, conditions: next } });
+  }
+
+  return (
+    <fieldset className="rounded-lg border border-hairline p-3">
+      <legend className="px-1 text-sm font-medium text-content">Show this field only when…</legend>
+
+      {conditions.length === 0 ? (
+        <p className="text-xs text-muted">
+          Always shown. Add a condition to hide it until another field has a particular answer.
+        </p>
+      ) : (
+        <>
+          <Field label="Match" htmlFor={`${field.key}-match`} className="mb-3">
+            <Select
+              id={`${field.key}-match`}
+              value={conditionMatch}
+              onChange={(e) =>
+                onChange({
+                  settings: {
+                    ...field.settings,
+                    conditionMatch: e.target.value as 'all' | 'any',
+                  },
+                })
+              }
+            >
+              <option value="all">All of these are true</option>
+              <option value="any">Any of these is true</option>
+            </Select>
+          </Field>
+
+          <ul className="space-y-2">
+            {conditions.map((condition, index) => (
+              <li key={index} className="grid gap-2 sm:grid-cols-[1fr_auto_1fr_auto]">
+                <Input
+                  value={condition.field}
+                  aria-label={`Condition ${index + 1} field name`}
+                  placeholder="field_name"
+                  maxLength={60}
+                  onChange={(e) =>
+                    setConditions(
+                      conditions.map((c, i) =>
+                        i === index ? { ...c, field: e.target.value } : c,
+                      ),
+                    )
+                  }
+                />
+                <Select
+                  value={condition.operator}
+                  aria-label={`Condition ${index + 1} test`}
+                  className="sm:w-36"
+                  onChange={(e) =>
+                    setConditions(
+                      conditions.map((c, i) =>
+                        i === index
+                          ? { ...c, operator: e.target.value as typeof c.operator }
+                          : c,
+                      ),
+                    )
+                  }
+                >
+                  {Object.entries(CONDITION_OPERATOR_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+                {VALUELESS_OPERATORS.has(condition.operator) ? (
+                  <span className="self-center text-xs text-muted">No value needed</span>
+                ) : (
+                  <Input
+                    value={condition.value}
+                    aria-label={`Condition ${index + 1} value`}
+                    placeholder="Expected answer"
+                    maxLength={200}
+                    onChange={(e) =>
+                      setConditions(
+                        conditions.map((c, i) =>
+                          i === index ? { ...c, value: e.target.value } : c,
+                        ),
+                      )
+                    }
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setConditions(conditions.filter((_, i) => i !== index))}
+                  aria-label={`Remove condition ${index + 1}`}
+                  className="shrink-0 self-center rounded p-2 text-muted transition-colors hover:bg-red-50 hover:text-red-600"
+                >
+                  <Trash className="h-4 w-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {conditions.length < 5 ? (
+        <button
+          type="button"
+          onClick={() =>
+            setConditions([...conditions, { field: '', operator: 'equals', value: '' }])
+          }
+          className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:underline"
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          Add condition
+        </button>
+      ) : null}
     </fieldset>
   );
 }

@@ -3,14 +3,31 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle, Spinner } from '@/components/ui/icons';
-import type { PublicForm } from '@/lib/services/forms';
+import type { PublicForm, PublicFormField } from '@/lib/services/forms';
 import { submitForm } from '@/lib/actions/submit-form';
 import { requestCaptchaChallenge } from '@/lib/actions/captcha';
 import type { CaptchaChallenge } from '@/lib/forms/captcha';
 import { collectAttribution, trackConversion } from '@/lib/analytics/attribution';
-import { Input, Textarea, Select, Label, FieldError, Checkbox } from '@/components/ui/field';
-import { Button } from '@/components/ui/button';
+import { buildFormStyles, type FormStyles } from '@/lib/forms/form-design';
+import { conditionsSatisfied } from '@/lib/forms/field-settings';
+import { FormButtonIcon } from './form-button-icon';
 import { cn } from '@/lib/utils/cn';
+
+/**
+ * The one form renderer on the site.
+ *
+ * Lead, contact, popup, hero, CTA, product enquiry, CMS block and landing-page
+ * forms all come through here. Nothing styles a form anywhere else: the markup
+ * below is identical in every location, and the whole of a form's appearance
+ * comes from the CSS custom properties compiled out of its own design record.
+ * That is what lets a popup form and a hero form look nothing alike while
+ * sharing one code path — and why a fix here fixes every form at once.
+ *
+ * `compact` remains as a layout hint for narrow containers (a popup, a sidebar):
+ * it collapses the grid to one column unless the design explicitly asks for
+ * more, so a form dropped into a 320px popup is readable without the admin
+ * having to configure anything.
+ */
 
 /** Native input type per field type — everything else falls back to text. */
 const INPUT_TYPES: Record<string, string> = {
@@ -19,7 +36,19 @@ const INPUT_TYPES: Record<string, string> = {
   NUMBER: 'number',
   URL: 'url',
   DATE: 'date',
+  TIME: 'time',
 };
+
+/** Field types where a placeholder is meaningless, so the control omits it. */
+const NO_PLACEHOLDER = new Set([
+  'CHECKBOX',
+  'CONSENT',
+  'RADIO',
+  'DATE',
+  'TIME',
+  'HIDDEN',
+  'MULTISELECT',
+]);
 
 export function PublicFormRenderer({
   form,
@@ -29,6 +58,7 @@ export function PublicFormRenderer({
   ctaLocation,
   className,
   compact,
+  context,
 }: {
   form: PublicForm;
   productId?: string | null;
@@ -36,7 +66,15 @@ export function PublicFormRenderer({
   ctaLabel?: string;
   ctaLocation?: string;
   className?: string;
+  /** Narrow container: collapse to one column unless the design says otherwise. */
   compact?: boolean;
+  /**
+   * Display values for system fields — the product being enquired about, say.
+   * Shown so the visitor can see what they are asking about; the value the
+   * server records is resolved from the trusted product id, not from here, so
+   * nothing about a submission depends on what this prop contains.
+   */
+  context?: Record<string, string>;
 }) {
   const router = useRouter();
   const [pending, setPending] = React.useState(false);
@@ -46,6 +84,36 @@ export function PublicFormRenderer({
   const mountedAt = React.useRef<number>(Date.now());
   const headingId = React.useId();
   const captchaId = React.useId();
+
+  const design = form.design;
+  const styles = React.useMemo<FormStyles>(
+    () => buildFormStyles(design, form.slug),
+    [design, form.slug],
+  );
+
+  /**
+   * Live values, tracked only so conditional fields can react as the visitor
+   * types. Every field is otherwise uncontrolled — the value that counts is
+   * read from the FormData on submit, and the server re-derives visibility for
+   * itself rather than trusting anything decided here.
+   */
+  const [values, setValues] = React.useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    for (const field of form.fields) {
+      initial[field.name] =
+        (field.settings.system ? context?.[field.name] : undefined) ?? field.defaultValue ?? '';
+    }
+    return initial;
+  });
+
+  const knownNames = React.useMemo(
+    () => new Set(form.fields.map((field) => field.name)),
+    [form.fields],
+  );
+
+  const visibleFields = form.fields.filter(
+    (field) => !field.isHidden && conditionsSatisfied(field.settings, values, knownNames),
+  );
 
   /**
    * Math CAPTCHA. The challenge is fetched on mount rather than rendered into
@@ -76,10 +144,11 @@ export function PublicFormRenderer({
     setFieldErrors({});
 
     const data = new FormData(event.currentTarget);
-    const values: Record<string, string | string[]> = {};
+    const submitted: Record<string, string | string[]> = {};
     for (const field of form.fields) {
       const all = data.getAll(field.name).map((v) => String(v));
-      values[field.name] = field.type === 'CHECKBOX' && all.length > 1 ? all : (all[0] ?? '');
+      const multi = field.type === 'CHECKBOX' || field.type === 'MULTISELECT';
+      submitted[field.name] = multi && all.length > 1 ? all : (all[0] ?? '');
     }
 
     const result = await submitForm({
@@ -88,7 +157,7 @@ export function PublicFormRenderer({
       leadMagnetId: leadMagnetId ?? null,
       website: String(data.get('website') ?? ''),
       elapsedMs: Date.now() - mountedAt.current,
-      values,
+      values: submitted,
       attribution: collectAttribution({ ctaLabel, ctaLocation }),
       captchaToken: captcha?.token ?? null,
       captchaAnswer: form.requireCaptcha ? captchaAnswer : null,
@@ -118,212 +187,478 @@ export function PublicFormRenderer({
     setDone(result.data?.message ?? form.successMessage);
   }
 
+  /** Scoped stylesheet: responsive overrides and the state rules. */
+  const scopedCss = styles.css ? (
+    <style
+      // The compiler emits only normalised lengths, validated colours and enum
+      // values into declarations — nothing admin-entered reaches a selector.
+      dangerouslySetInnerHTML={{ __html: styles.css }}
+    />
+  ) : null;
+
   if (done) {
     return (
-      <div
-        className={cn(
-          'flex flex-col items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-6 py-10 text-center',
-          className,
-        )}
-        role="status"
-      >
-        <CheckCircle className="h-8 w-8 text-emerald-600" aria-hidden="true" />
-        <p className="max-w-sm text-sm text-emerald-900">{done}</p>
-      </div>
+      <>
+        {scopedCss}
+        <div
+          className={cn('fd-form', styles.className, className)}
+          style={styles.style as React.CSSProperties}
+        >
+          <div
+            className={cn(
+              'fd-success flex flex-col items-center gap-3 text-center',
+              design.success.behaviour === 'replace' ? 'min-h-40 justify-center' : null,
+            )}
+            role="status"
+          >
+            {design.success.showIcon ? (
+              <CheckCircle className="h-8 w-8" aria-hidden="true" />
+            ) : null}
+            {design.success.heading ? (
+              <p className="fd-success-heading text-base font-semibold">
+                {design.success.heading}
+              </p>
+            ) : null}
+            <p className="max-w-sm text-sm">{done}</p>
+          </div>
+        </div>
+      </>
     );
   }
 
+  const columns = compact
+    ? { ...styles.style, '--fd-cols': design.desktop.columns ? styles.style['--fd-cols'] : '1' }
+    : styles.style;
+
   return (
-    <form
-      onSubmit={handleSubmit}
-      className={cn('space-y-4', className)}
-      noValidate
-      aria-labelledby={headingId}
-    >
-      <h2 id={headingId} className="sr-only">
-        {form.name}
-      </h2>
+    <>
+      {scopedCss}
+      <form
+        onSubmit={handleSubmit}
+        className={cn(
+          'fd-form',
+          styles.className,
+          design.layout.align === 'center' ? 'mx-auto' : null,
+          design.layout.align === 'right' ? 'ml-auto' : null,
+          design.layout.fullWidth ? 'w-full' : null,
+          className,
+        )}
+        style={columns as React.CSSProperties}
+        noValidate
+        aria-labelledby={headingId}
+      >
+        <h2 id={headingId} className="sr-only">
+          {form.name}
+        </h2>
 
-      {formError ? (
-        <div
-          role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
-        >
-          {formError}
-        </div>
-      ) : null}
+        {formError ? (
+          <div
+            role="alert"
+            className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+          >
+            {formError}
+          </div>
+        ) : null}
 
-      <div className={cn('grid gap-4', compact ? 'sm:grid-cols-1' : 'sm:grid-cols-2')}>
-        {form.fields.map((field) => {
-          if (field.type === 'HIDDEN') {
-            return (
+        <div className="fd-grid">
+          {/*
+           * Hidden fields and fields whose conditions are unmet still render an
+           * input, so their configured default reaches the payload and the
+           * submission records what the form intended. The server re-derives
+           * which of them it will trust.
+           */}
+          {form.fields
+            .filter((field) => !visibleFields.includes(field))
+            .map((field) => (
+              <input
+                key={field.id}
+                type="hidden"
+                name={field.name}
+                value={(field.settings.system ? context?.[field.name] : undefined) ?? field.defaultValue ?? ''}
+                readOnly
+              />
+            ))}
+
+          {visibleFields.map((field) =>
+            field.type === 'HIDDEN' ? (
               <input
                 key={field.id}
                 type="hidden"
                 name={field.name}
                 defaultValue={field.defaultValue ?? ''}
               />
-            );
-          }
+            ) : (
+              <FormFieldRow
+                key={field.id}
+                field={field}
+                formSlug={form.slug}
+                styles={styles}
+                errors={fieldErrors[field.name]}
+                showRequiredMark={design.label.showRequiredMark}
+                contextValue={field.settings.system ? context?.[field.name] : undefined}
+                onChange={(value) =>
+                  setValues((current) => ({ ...current, [field.name]: value }))
+                }
+              />
+            ),
+          )}
+        </div>
 
-          const fieldId = `f-${form.slug}-${field.name}`;
-          const errors = fieldErrors[field.name];
-          const invalid = Boolean(errors?.length);
-          const describedBy = [
-            field.helpText ? `${fieldId}-help` : null,
-            invalid ? `${fieldId}-error` : null,
-          ]
-            .filter(Boolean)
-            .join(' ');
+        {form.requireCaptcha ? (
+          <div className="mt-4 rounded-lg border border-hairline bg-muted/[0.03] p-4">
+            <label htmlFor={captchaId} className="fd-label">
+              {captcha ? captcha.question : 'Loading verification question…'}
+              <span className="fd-required" aria-hidden="true">
+                {' '}
+                *
+              </span>
+            </label>
+            <p className="fd-help">A quick check to help us keep out automated spam.</p>
+            <input
+              id={captchaId}
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              required
+              disabled={!captcha}
+              value={captchaAnswer}
+              onChange={(event) => setCaptchaAnswer(event.target.value)}
+              aria-describedby={fieldErrors._captcha ? `${captchaId}-error` : undefined}
+              aria-invalid={fieldErrors._captcha ? true : undefined}
+              className="fd-control mt-2 w-32"
+            />
+            {fieldErrors._captcha ? (
+              <p id={`${captchaId}-error`} className="fd-error" role="alert">
+                {fieldErrors._captcha[0]}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
-          const shared = {
-            id: fieldId,
-            name: field.name,
-            required: field.isRequired,
-            defaultValue: field.defaultValue ?? undefined,
-            placeholder: field.placeholder ?? undefined,
-            'aria-invalid': invalid || undefined,
-            'aria-describedby': describedBy || undefined,
-          } as const;
+        {/* Honeypot — hidden from users and screen readers, filled by bots. */}
+        <div aria-hidden="true" className="absolute left-[-9999px] h-0 w-0 overflow-hidden">
+          <label htmlFor={`hp-${form.slug}`}>Leave this field empty</label>
+          <input
+            id={`hp-${form.slug}`}
+            type="text"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+          />
+        </div>
 
+        {form.consentText ? (
+          <p className="fd-help mt-3 leading-relaxed">{form.consentText}</p>
+        ) : null}
+
+        <div
+          className={cn(
+            'fd-actions',
+            design.button.align === 'center' ? 'fd-actions-center' : null,
+            design.button.align === 'right' ? 'fd-actions-right' : null,
+          )}
+        >
+          <button
+            type="submit"
+            disabled={pending}
+            className={cn(
+              'fd-submit',
+              design.button.width === 'full' ? 'fd-submit-full' : null,
+            )}
+          >
+            {pending ? (
+              <>
+                <Spinner className="h-4 w-4 animate-spin" aria-hidden="true" />
+                {design.button.loadingText || 'Sending…'}
+              </>
+            ) : (
+              <>
+                {design.button.icon && design.button.iconPosition === 'left' ? (
+                  <FormButtonIcon name={design.button.icon} className="h-4 w-4" />
+                ) : null}
+                {form.submitLabel}
+                {design.button.icon && design.button.iconPosition === 'right' ? (
+                  <FormButtonIcon name={design.button.icon} className="h-4 w-4" />
+                ) : null}
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    </>
+  );
+}
+
+/**
+ * One field.
+ *
+ * The label is rendered when the admin asks for it, and when they do not the
+ * accessible name moves to `aria-label` — turning a label off must change how a
+ * form looks, never whether a screen reader can use it.
+ */
+function FormFieldRow({
+  field,
+  formSlug,
+  styles,
+  errors,
+  showRequiredMark,
+  contextValue,
+  onChange,
+}: {
+  field: PublicFormField;
+  formSlug: string;
+  styles: FormStyles;
+  errors: string[] | undefined;
+  showRequiredMark: boolean;
+  /** Injected display value for a system field. */
+  contextValue?: string;
+  onChange: (value: string) => void;
+}) {
+  const fieldId = `f-${formSlug}-${field.name}`;
+  const invalid = Boolean(errors?.length);
+
+  const describedBy = [
+    field.helpText ? `${fieldId}-help` : null,
+    invalid ? `${fieldId}-error` : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const labelPosition =
+    field.settings.labelPosition === 'inherit' ? styles.labelPosition : field.settings.labelPosition;
+
+  const isChoiceGroup = field.type === 'RADIO' || field.type === 'CHECKBOX';
+  const isConsent = field.type === 'CONSENT';
+  // A group or a single tick already has its own visible text, so the wrapper
+  // label layout would double it up.
+  const effectivePosition = isChoiceGroup || isConsent ? 'top' : labelPosition;
+
+  const span = field.colSpan ?? (field.width === 'half' ? 1 : 2);
+  const shownValue = contextValue ?? field.defaultValue ?? undefined;
+
+  const wrapperStyle = { '--fd-span': String(span) } as React.CSSProperties;
+
+  const shared = {
+    id: fieldId,
+    name: field.name,
+    required: field.isRequired,
+    readOnly: field.isReadOnly || undefined,
+    className: 'fd-control',
+    'aria-invalid': invalid || undefined,
+    'aria-describedby': describedBy || undefined,
+    // When the label is hidden the name has to come from somewhere.
+    'aria-label': field.showLabel ? undefined : field.label,
+    onChange: (
+      event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+    ) => onChange(event.target.value),
+  } as const;
+
+  const placeholder = NO_PLACEHOLDER.has(field.type)
+    ? undefined
+    : // Floating labels need a non-empty placeholder for :placeholder-shown to
+      // work, and a single space is invisible.
+      effectivePosition === 'floating'
+      ? (field.placeholder ?? ' ') || ' '
+      : (field.placeholder ?? undefined);
+
+  const choiceLayout =
+    field.settings.choiceLayout === 'inherit' ? styles.choiceLayout : field.settings.choiceLayout;
+
+  const choiceClass = cn(
+    'fd-choices',
+    choiceLayout === 'horizontal' ? 'fd-choices-horizontal' : null,
+    choiceLayout === 'grid' ? 'fd-choices-grid' : null,
+  );
+
+  const label =
+    field.showLabel && !isConsent ? (
+      <label htmlFor={fieldId} className="fd-label">
+        {field.label}
+        {field.isRequired && showRequiredMark ? (
+          <span className="fd-required" aria-hidden="true">
+            {' '}
+            *
+          </span>
+        ) : null}
+      </label>
+    ) : null;
+
+  const control = (() => {
+    switch (field.type) {
+      case 'CONSENT':
+      case 'CHECKBOX':
+        // A lone checkbox carries its label beside the box; a checkbox with
+        // options is a group of them.
+        if (field.type === 'CONSENT' || field.options.length === 0) {
           return (
-            <div
-              key={field.id}
-              className={cn(
-                'space-y-1.5',
-                field.width === 'full' || compact ? 'sm:col-span-2' : 'sm:col-span-1',
-              )}
-            >
-              {field.type === 'CHECKBOX' || field.type === 'CONSENT' ? (
-                <Checkbox
-                  id={fieldId}
-                  name={field.name}
-                  value="true"
-                  required={field.isRequired}
-                  defaultChecked={
-                    field.type === 'CONSENT' &&
-                    /^(true|checked|on|yes)$/i.test(field.defaultValue ?? '')
-                  }
-                  label={field.label}
-                  hint={field.helpText ?? undefined}
-                  aria-invalid={invalid || undefined}
-                />
-              ) : (
-                <>
-                  <Label htmlFor={fieldId} required={field.isRequired}>
-                    {field.label}
-                  </Label>
-
-                  {field.type === 'TEXTAREA' ? (
-                    <Textarea {...shared} rows={4} maxLength={field.maxLength ?? undefined} />
-                  ) : field.type === 'SELECT' ? (
-                    <Select {...shared} defaultValue={field.defaultValue ?? ''}>
-                      <option value="">{field.placeholder || 'Please choose…'}</option>
-                      {field.options.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </Select>
-                  ) : field.type === 'RADIO' ? (
-                    <div className="space-y-2 pt-1" role="radiogroup" aria-label={field.label}>
-                      {field.options.map((option) => (
-                        <label
-                          key={option.value}
-                          className="flex items-center gap-2 text-sm text-content"
-                        >
-                          <input
-                            type="radio"
-                            name={field.name}
-                            value={option.value}
-                            required={field.isRequired}
-                            className="h-4 w-4 border-hairline text-brand focus:ring-brand/30"
-                          />
-                          {option.label}
-                        </label>
-                      ))}
-                    </div>
-                  ) : (
-                    <Input
-                      {...shared}
-                      type={INPUT_TYPES[field.type] ?? 'text'}
-                      autoComplete={autoCompleteFor(field.type, field.name)}
-                      maxLength={field.maxLength ?? undefined}
-                    />
-                  )}
-
-                  {field.helpText && !invalid ? (
-                    <p id={`${fieldId}-help`} className="text-xs text-muted">
-                      {field.helpText}
-                    </p>
-                  ) : null}
-                </>
-              )}
-
-              {invalid ? (
-                <div id={`${fieldId}-error`}>
-                  <FieldError messages={errors} />
-                </div>
-              ) : null}
+            <div className="fd-choice">
+              <input
+                id={fieldId}
+                name={field.name}
+                type="checkbox"
+                value="true"
+                required={field.isRequired}
+                disabled={field.isReadOnly || undefined}
+                defaultChecked={/^(true|checked|on|yes)$/i.test(field.defaultValue ?? '')}
+                aria-invalid={invalid || undefined}
+                aria-describedby={describedBy || undefined}
+                onChange={(event) => onChange(event.target.checked ? 'true' : '')}
+              />
+              <label htmlFor={fieldId} className="fd-choice-label">
+                {field.label}
+                {field.isRequired && showRequiredMark ? (
+                  <span className="fd-required" aria-hidden="true">
+                    {' '}
+                    *
+                  </span>
+                ) : null}
+              </label>
             </div>
           );
-        })}
-      </div>
+        }
+        return (
+          <div className={choiceClass} role="group" aria-label={field.label}>
+            {field.options.map((option) => (
+              <div key={option.value} className="fd-choice">
+                <input
+                  id={`${fieldId}-${option.value}`}
+                  type="checkbox"
+                  name={field.name}
+                  value={option.value}
+                  disabled={field.isReadOnly || undefined}
+                />
+                <label htmlFor={`${fieldId}-${option.value}`} className="fd-choice-label">
+                  {option.label}
+                </label>
+              </div>
+            ))}
+          </div>
+        );
 
-      {form.requireCaptcha ? (
-        <div className="rounded-lg border border-hairline bg-muted/[0.03] p-4">
-          <label htmlFor={captchaId} className="block text-sm font-medium text-content">
-            {captcha ? captcha.question : 'Loading verification question…'}
-            <span className="text-red-600" aria-hidden="true">
-              {' '}
-              *
-            </span>
-          </label>
-          <p className="mt-1 text-xs text-muted">
-            A quick check to help us keep out automated spam.
-          </p>
-          <input
-            id={captchaId}
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            required
-            disabled={!captcha}
-            value={captchaAnswer}
-            onChange={(event) => setCaptchaAnswer(event.target.value)}
-            aria-describedby={fieldErrors._captcha ? `${captchaId}-error` : undefined}
-            aria-invalid={fieldErrors._captcha ? true : undefined}
-            className="mt-2 h-11 w-32 rounded-lg border border-hairline bg-surface px-3 text-sm text-content focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 disabled:opacity-50"
+      case 'RADIO':
+        return (
+          <div className={choiceClass} role="radiogroup" aria-label={field.label}>
+            {field.options.map((option) => (
+              <div key={option.value} className="fd-choice">
+                <input
+                  id={`${fieldId}-${option.value}`}
+                  type="radio"
+                  name={field.name}
+                  value={option.value}
+                  required={field.isRequired}
+                  disabled={field.isReadOnly || undefined}
+                  defaultChecked={field.defaultValue === option.value}
+                  onChange={() => onChange(option.value)}
+                />
+                <label htmlFor={`${fieldId}-${option.value}`} className="fd-choice-label">
+                  {option.label}
+                </label>
+              </div>
+            ))}
+          </div>
+        );
+
+      case 'TEXTAREA':
+        return (
+          <textarea
+            {...shared}
+            rows={field.settings.rows ?? 4}
+            maxLength={field.maxLength ?? undefined}
+            defaultValue={shownValue}
+            placeholder={placeholder}
           />
-          {fieldErrors._captcha ? (
-            <p id={`${captchaId}-error`} className="mt-1.5 text-xs text-red-600" role="alert">
-              {fieldErrors._captcha[0]}
-            </p>
-          ) : null}
-        </div>
+        );
+
+      case 'SELECT':
+        return (
+          <select {...shared} defaultValue={shownValue ?? ''}>
+            <option value="">
+              {field.settings.emptyOptionLabel || field.placeholder || 'Please choose…'}
+            </option>
+            {field.options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        );
+
+      case 'MULTISELECT':
+        return (
+          <select
+            {...shared}
+            multiple
+            size={Math.min(Math.max(field.options.length, 3), 8)}
+            defaultValue={
+              field.defaultValue ? field.defaultValue.split(',').map((v) => v.trim()) : []
+            }
+            onChange={(event) =>
+              onChange(
+                Array.from(event.target.selectedOptions)
+                  .map((option) => option.value)
+                  .join(', '),
+              )
+            }
+          >
+            {field.options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        );
+
+      default:
+        return (
+          <input
+            {...shared}
+            type={INPUT_TYPES[field.type] ?? 'text'}
+            autoComplete={autoCompleteFor(field.type, field.name)}
+            maxLength={field.maxLength ?? undefined}
+            min={field.settings.min ?? undefined}
+            max={field.settings.max ?? undefined}
+            defaultValue={shownValue}
+            placeholder={placeholder}
+          />
+        );
+    }
+  })();
+
+  return (
+    <div
+      className={cn(
+        'fd-field',
+        effectivePosition === 'left' ? 'fd-field-left' : null,
+        effectivePosition === 'floating' ? 'fd-field-floating' : null,
+        field.cssClass || null,
+      )}
+      style={wrapperStyle}
+    >
+      {/* A floating label sits after its input so CSS can react to :placeholder-shown. */}
+      {effectivePosition === 'floating' ? (
+        <>
+          {control}
+          {label}
+        </>
+      ) : (
+        <>
+          {label}
+          {control}
+        </>
+      )}
+
+      {field.helpText && !invalid ? (
+        <p id={`${fieldId}-help`} className="fd-help">
+          {field.helpText}
+        </p>
       ) : null}
 
-      {/* Honeypot — hidden from users and screen readers, filled by bots. */}
-      <div aria-hidden="true" className="absolute left-[-9999px] h-0 w-0 overflow-hidden">
-        <label htmlFor={`hp-${form.slug}`}>Leave this field empty</label>
-        <input id={`hp-${form.slug}`} type="text" name="website" tabIndex={-1} autoComplete="off" />
-      </div>
-
-      {form.consentText ? (
-        <p className="text-xs leading-relaxed text-muted">{form.consentText}</p>
+      {invalid ? (
+        <p id={`${fieldId}-error`} className="fd-error" role="alert">
+          {errors!.join(' ')}
+        </p>
       ) : null}
-
-      <Button type="submit" size="lg" disabled={pending} className="w-full sm:w-auto">
-        {pending ? (
-          <>
-            <Spinner className="h-4 w-4 animate-spin" aria-hidden="true" />
-            Sending…
-          </>
-        ) : (
-          form.submitLabel
-        )}
-      </Button>
-    </form>
+    </div>
   );
 }
 

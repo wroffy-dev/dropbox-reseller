@@ -18,6 +18,7 @@ export function PublicFormLoader({
   compact,
   ctaLabel,
   ctaLocation,
+  context,
 }: {
   slug: string;
   productId?: string | null;
@@ -25,6 +26,8 @@ export function PublicFormLoader({
   compact?: boolean;
   ctaLabel?: string;
   ctaLocation?: string;
+  /** Display values for the form's system fields. */
+  context?: Record<string, string>;
 }) {
   const [form, setForm] = React.useState<PublicForm | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -71,6 +74,7 @@ export function PublicFormLoader({
       compact={compact}
       ctaLabel={ctaLabel}
       ctaLocation={ctaLocation}
+      context={context}
     />
   );
 }

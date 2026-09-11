@@ -82,6 +82,18 @@ export function ProductCta({
           productId={product.id}
           ctaLabel={ctaLabel}
           ctaLocation={ctaLocation}
+          /*
+           * Shown to the visitor so the enquiry is unambiguous. The value the
+           * server stores is resolved from productId, so this is presentation
+           * only — a tampered value changes what the visitor sees, never what
+           * is recorded.
+           */
+          context={{
+            product_id: product.id,
+            product_name: product.name,
+            product_slug: product.slug,
+            plan: product.name,
+          }}
         />
       </Dialog>
     </>

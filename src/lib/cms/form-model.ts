@@ -8,6 +8,9 @@
  * throws and the "New form" route fails before it can render.
  */
 
+import { DEFAULT_FORM_DESIGN, type FormDesign } from '@/lib/forms/form-design';
+import { DEFAULT_FIELD_SETTINGS, type FieldSettings } from '@/lib/forms/field-settings';
+
 export type BuilderField = {
   /** Stable React key. For a saved field this is its database id. */
   key: string;
@@ -24,10 +27,21 @@ export type BuilderField = {
   minLength: string;
   maxLength: string;
   pattern: string;
+  /** Presentation and state — see FormField in the schema. */
+  showLabel: boolean;
+  isEnabled: boolean;
+  isHidden: boolean;
+  isReadOnly: boolean;
+  /** Empty means "derive from width", which is what older forms do. */
+  colSpan: string;
+  cssClass: string;
+  settings: FieldSettings;
 };
 
 export type FormBuilderValues = {
   id?: string;
+  /** The form's own design, edited on the Design tab. */
+  design: FormDesign;
   name: string;
   slug: string;
   description: string;
@@ -45,6 +59,8 @@ export type FormBuilderValues = {
 };
 
 export const FIELD_TYPE_LABELS: Record<string, string> = {
+  TIME: 'Time',
+  MULTISELECT: 'Multi-select',
   NAME: 'Name',
   EMAIL: 'Email',
   PHONE: 'Phone',
@@ -64,9 +80,33 @@ export const FIELD_TYPE_LABELS: Record<string, string> = {
 /** Field types whose values map straight onto Lead columns. */
 export const MAPPED_FIELD_TYPES = new Set(['NAME', 'EMAIL', 'PHONE', 'COMPANY', 'TEXTAREA']);
 
-export const CHOICE_FIELD_TYPES = new Set(['SELECT', 'RADIO']);
+export const CHOICE_FIELD_TYPES = new Set(['SELECT', 'RADIO', 'MULTISELECT', 'CHECKBOX']);
+
+/** Types where a placeholder has no effect, so the control is not offered. */
+export const NO_PLACEHOLDER_TYPES = new Set([
+  'CHECKBOX',
+  'CONSENT',
+  'RADIO',
+  'DATE',
+  'TIME',
+  'HIDDEN',
+  'MULTISELECT',
+]);
+
+/** Types that accept a numeric minimum and maximum. */
+export const NUMERIC_FIELD_TYPES = new Set(['NUMBER']);
+
+/**
+ * Fields whose controls would be meaningless or unsafe to expose.
+ *
+ * A hidden field has no label, placeholder or width to configure, and marking
+ * one required would block every submission with no way for a visitor to fix
+ * it — so the builder does not offer the choice.
+ */
+export const STRUCTURAL_FIELD_TYPES = new Set(['HIDDEN']);
 
 export const EMPTY_FORM: FormBuilderValues = {
+  design: DEFAULT_FORM_DESIGN,
   name: '',
   slug: '',
   description: '',
@@ -114,6 +154,13 @@ export function newField(type = 'TEXT'): BuilderField {
     minLength: '',
     maxLength: '',
     pattern: '',
+    showLabel: true,
+    isEnabled: true,
+    isHidden: type === 'HIDDEN',
+    isReadOnly: false,
+    colSpan: '',
+    cssClass: '',
+    settings: DEFAULT_FIELD_SETTINGS,
   };
 }
 

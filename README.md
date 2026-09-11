@@ -21,6 +21,7 @@ no redeploy.
 - [Deploying with Coolify](#deploying-with-coolify)
 - [File storage: local, S3 and Cloudflare R2](#file-storage-local-s3-and-cloudflare-r2)
 - [Backup and restore](#backup-and-restore)
+- [Forms](#forms)
 - [Email and SMTP](#email-and-smtp)
 - [Marketing and tracking](#marketing-and-tracking)
 - [Adding a new CMS block](#adding-a-new-cms-block)
@@ -343,6 +344,28 @@ default.
 
 Full setup, the Coolify volume and cron configuration, retention rules and
 troubleshooting: **[docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md)**.
+
+---
+
+## Forms
+
+Every form on the site — lead, contact, popup, hero, CTA, product enquiry, CMS
+block — is drawn by one renderer (`src/components/forms/public-form.tsx`) from
+one design schema (`src/lib/forms/form-design.ts`). There is no per-location
+form styling, so a form dropped somewhere new gets the full control set for
+free.
+
+Design and per-field settings live at **Admin → Forms → (form) → Design**:
+layout and columns per breakpoint, spacing, container background and border,
+typography, input and button states, validation messages, and the success
+message. Fields carry their own label visibility, column span, validation and
+conditional-display rules.
+
+Every rule is re-enforced server-side from the stored definitions — a tampered
+payload cannot relax a required field, rewrite a read-only value, or claim a
+product enquiry was about a different product.
+
+Full reference: **[docs/FORM-DESIGN-SYSTEM.md](docs/FORM-DESIGN-SYSTEM.md)**.
 
 ---
 

@@ -5,6 +5,8 @@ import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { FormBuilder } from '@/components/admin/forms/form-builder';
 import type { FormBuilderValues, BuilderField } from '@/lib/cms/form-model';
+import { parseFormDesign } from '@/lib/forms/form-design';
+import { parseFieldSettings } from '@/lib/forms/field-settings';
 import { SubmissionsPanel } from '@/components/admin/forms/submissions-panel';
 import { Badge } from '@/components/ui/badge';
 
@@ -65,10 +67,18 @@ export default async function EditForm({ params }: { params: Promise<{ id: strin
     minLength: field.minLength === null ? '' : String(field.minLength),
     maxLength: field.maxLength === null ? '' : String(field.maxLength),
     pattern: field.pattern ?? '',
+    showLabel: field.showLabel,
+    isEnabled: field.isEnabled,
+    isHidden: field.isHidden,
+    isReadOnly: field.isReadOnly,
+    colSpan: field.colSpan === null ? '' : String(field.colSpan),
+    cssClass: field.cssClass ?? '',
+    settings: parseFieldSettings(field.settings),
   }));
 
   const initial: FormBuilderValues = {
     id: form.id,
+    design: parseFormDesign(form.design),
     name: form.name,
     slug: form.slug,
     description: form.description ?? '',

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import type { PublicFormField } from '@/lib/services/forms';
+import { conditionsSatisfied } from '@/lib/forms/field-settings';
+import type { FormDesign } from '@/lib/forms/form-design';
 
 /** Attribution captured client-side and posted with every submission. */
 export const attributionSchema = z.object({
@@ -50,10 +52,66 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 const PHONE_RE = /^[+\d][\d\s().-]{5,24}$/;
 
 /**
+ * Which fields a submission is actually judged against.
+ *
+ * A field is skipped when the visitor could not have answered it: it is
+ * read-only, it is marked hidden, it is a system field carrying injected
+ * context, or its conditions are not met by the submitted values. All four
+ * matter for the same reason — requiring an answer to a question that was never
+ * asked rejects legitimate submissions, and accepting one trusts a value the
+ * form never offered.
+ *
+ * Conditions are evaluated here, on the server, against the payload, never
+ * taken from the client's opinion of what was visible. The caller then
+ * substitutes the admin's configured default for each skipped field, so a
+ * crafted payload cannot rewrite one.
+ *
+ * `HIDDEN`-type fields are deliberately left in: they predate these flags and
+ * are filled by page scripts today, so taking their value from the server
+ * instead would change behaviour that forms already depend on.
+ */
+export function activeFields(fields: PublicFormField[], values: Record<string, unknown>) {
+  const known = new Set(fields.map((field) => field.name));
+  return fields.filter(
+    (field) =>
+      !field.isReadOnly &&
+      !field.isHidden &&
+      !field.settings.system &&
+      conditionsSatisfied(field.settings, values, known),
+  );
+}
+
+/** The message an admin configured, falling back to the built-in wording. */
+function messageFor(
+  field: PublicFormField,
+  kind: 'required' | 'invalid',
+  fallback: string,
+  design?: FormDesign,
+): string {
+  if (kind === 'required') {
+    if (field.settings.requiredMessage) return field.settings.requiredMessage;
+    if (design?.validation.requiredMessage) return design.validation.requiredMessage;
+    return fallback;
+  }
+  if (field.settings.invalidMessage) return field.settings.invalidMessage;
+  if (field.type === 'EMAIL' && design?.validation.emailMessage) {
+    return design.validation.emailMessage;
+  }
+  if (field.type === 'PHONE' && design?.validation.phoneMessage) {
+    return design.validation.phoneMessage;
+  }
+  if (field.type === 'URL' && design?.validation.urlMessage) return design.validation.urlMessage;
+  return fallback;
+}
+
+/**
  * Builds a Zod schema from the admin-configured field definitions, so the
  * server enforces exactly the rules the admin set — never the client's copy.
  */
-export function buildFieldSchema(fields: PublicFormField[]): z.ZodType<Record<string, unknown>> {
+export function buildFieldSchema(
+  fields: PublicFormField[],
+  design?: FormDesign,
+): z.ZodType<Record<string, unknown>> {
   const shape: Record<string, z.ZodTypeAny> = {};
 
   for (const field of fields) {
@@ -68,7 +126,7 @@ export function buildFieldSchema(fields: PublicFormField[]): z.ZodType<Record<st
           .transform((v) => (Array.isArray(v) ? (v.length > 0 ? 'true' : '') : v));
         if (field.isRequired) {
           rule = rule.refine((v) => v === 'true' || v === 'on' || v === 'checked', {
-            message: `${field.label} must be accepted`,
+            message: messageFor(field, 'required', `${field.label} must be accepted`, design),
           });
         }
         shape[field.name] = rule.optional();
@@ -81,32 +139,67 @@ export function buildFieldSchema(fields: PublicFormField[]): z.ZodType<Record<st
           .transform((v) => (Array.isArray(v) ? v.join(', ') : v));
         if (field.isRequired) {
           rule = rule.refine((v) => Boolean(v && v !== 'false'), {
-            message: `${field.label} is required`,
+            message: messageFor(field, 'required', `${field.label} is required`, design),
           });
         }
         shape[field.name] = rule.optional();
         continue;
 
+      // A multi-select posts one value per chosen option. Each is checked
+      // against the admin's option list, so a tampered payload cannot smuggle
+      // in a value the form never offered.
+      case 'MULTISELECT': {
+        const allowed = field.options.map((o) => o.value);
+        rule = z
+          .union([z.string(), z.array(z.string())])
+          .transform((v) => (Array.isArray(v) ? v : v ? [v] : []))
+          .refine(
+            (list) => allowed.length === 0 || list.every((value) => allowed.includes(value)),
+            { message: messageFor(field, 'invalid', 'Choose from the available options', design) },
+          )
+          .transform((list) => list.join(', '));
+        if (field.isRequired) {
+          rule = rule.refine((v) => Boolean(v), {
+            message: messageFor(field, 'required', `${field.label} is required`, design),
+          });
+        }
+        shape[field.name] = field.isRequired ? rule : rule.optional();
+        continue;
+      }
+
       case 'EMAIL': {
         let s = z.string().trim().max(320);
-        s = s.refine((v) => !v || EMAIL_RE.test(v), { message: 'Enter a valid email address' });
+        s = s.refine((v) => !v || EMAIL_RE.test(v), {
+          message: messageFor(field, 'invalid', 'Enter a valid email address', design),
+        });
         rule = s;
         break;
       }
 
       case 'PHONE': {
         let s = z.string().trim().max(30);
-        s = s.refine((v) => !v || PHONE_RE.test(v), { message: 'Enter a valid phone number' });
+        s = s.refine((v) => !v || PHONE_RE.test(v), {
+          message: messageFor(field, 'invalid', 'Enter a valid phone number', design),
+        });
         rule = s;
         break;
       }
 
       case 'NUMBER': {
+        const { min, max } = field.settings;
         rule = z
           .string()
           .trim()
           .max(20)
-          .refine((v) => !v || /^-?\d+(\.\d+)?$/.test(v), { message: 'Enter a number' });
+          .refine((v) => !v || /^-?\d+(\.\d+)?$/.test(v), {
+            message: messageFor(field, 'invalid', 'Enter a number', design),
+          })
+          .refine((v) => !v || min === null || Number(v) >= min, {
+            message: `${field.label} must be ${min} or more`,
+          })
+          .refine((v) => !v || max === null || Number(v) <= max, {
+            message: `${field.label} must be ${max} or less`,
+          });
         break;
       }
 
@@ -117,7 +210,7 @@ export function buildFieldSchema(fields: PublicFormField[]): z.ZodType<Record<st
           .string()
           .trim()
           .refine((v) => !v || allowed.length === 0 || allowed.includes(v), {
-            message: 'Choose one of the available options',
+            message: messageFor(field, 'invalid', 'Choose one of the available options', design),
           });
         break;
       }
@@ -128,7 +221,7 @@ export function buildFieldSchema(fields: PublicFormField[]): z.ZodType<Record<st
           .trim()
           .max(500)
           .refine((v) => !v || /^(https?:\/\/)?[\w.-]+\.[a-z]{2,}([/?#].*)?$/i.test(v), {
-            message: 'Enter a valid web address',
+            message: messageFor(field, 'invalid', 'Enter a valid web address', design),
           });
         break;
       }
@@ -138,7 +231,20 @@ export function buildFieldSchema(fields: PublicFormField[]): z.ZodType<Record<st
           .string()
           .trim()
           .max(10)
-          .refine((v) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v), { message: 'Choose a date' });
+          .refine((v) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v), {
+            message: messageFor(field, 'invalid', 'Choose a date', design),
+          });
+        break;
+      }
+
+      case 'TIME': {
+        rule = z
+          .string()
+          .trim()
+          .max(5)
+          .refine((v) => !v || /^([01]\d|2[0-3]):[0-5]\d$/.test(v), {
+            message: messageFor(field, 'invalid', 'Choose a time', design),
+          });
         break;
       }
 
@@ -160,7 +266,12 @@ export function buildFieldSchema(fields: PublicFormField[]): z.ZodType<Record<st
 
     if (field.minLength) {
       stringRule = stringRule.refine((v) => !v || v.length >= field.minLength!, {
-        message: `${field.label} must be at least ${field.minLength} characters`,
+        message: messageFor(
+          field,
+          'invalid',
+          `${field.label} must be at least ${field.minLength} characters`,
+          design,
+        ),
       });
     }
     if (field.pattern) {
@@ -174,12 +285,19 @@ export function buildFieldSchema(fields: PublicFormField[]): z.ZodType<Record<st
             return true; // an invalid stored pattern must not block submissions
           }
         },
-        { message: `${field.label} is not in the expected format` },
+        {
+          message: messageFor(
+            field,
+            'invalid',
+            `${field.label} is not in the expected format`,
+            design,
+          ),
+        },
       );
     }
     if (field.isRequired) {
       stringRule = stringRule.refine((v) => Boolean(v && v.trim()), {
-        message: `${field.label} is required`,
+        message: messageFor(field, 'required', `${field.label} is required`, design),
       });
       shape[field.name] = stringRule;
     } else {

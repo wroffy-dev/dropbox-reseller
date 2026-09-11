@@ -6,6 +6,7 @@ import {
   submissionEnvelopeSchema,
   buildFieldSchema,
   extractLeadCore,
+  activeFields,
 } from '@/lib/validation/form-submission';
 import { notifyNewLead, logLeadActivity } from '@/lib/services/leads';
 import { getEmailSettings, getWebsiteSettings } from '@/lib/services/settings';
@@ -15,6 +16,7 @@ import { verifyCaptcha, CAPTCHA_MESSAGES } from '@/lib/forms/captcha';
 import { requestContext } from '@/lib/utils/request';
 import { hashIp } from '@/lib/utils/crypto';
 import { sanitizeText } from '@/lib/utils/sanitize';
+import { productContext, isSystemFieldKey } from '@/lib/forms/system-context';
 import { success, failure, type ActionResult } from '@/lib/utils/result';
 import type { Prisma } from '@prisma/client';
 
@@ -64,7 +66,12 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
     }
   }
 
-  const fieldSchema = buildFieldSchema(form.fields);
+  // Only the fields the visitor could actually have answered are judged: a
+  // question hidden by conditional logic must not be required of them, and a
+  // read-only field's value is never taken from the payload. Both decisions are
+  // made here from the stored definitions, so the client cannot influence them.
+  const judged = activeFields(form.fields, envelope.values);
+  const fieldSchema = buildFieldSchema(judged, form.design);
   const valuesResult = fieldSchema.safeParse(envelope.values);
   if (!valuesResult.success) {
     const fieldErrors: Record<string, string[]> = {};
@@ -76,7 +83,19 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
   }
 
   const values = valuesResult.data as Record<string, string>;
-  const core = extractLeadCore(values, form.fields);
+
+  // Read-only and conditionally hidden fields fall back to the default the
+  // admin configured, never to whatever the browser sent. This is what stops a
+  // crafted payload rewriting a trusted value — a product id or plan injected
+  // as a system field, say — while still recording the value the form intended.
+  const judgedNames = new Set(judged.map((field) => field.name));
+  for (const field of form.fields) {
+    if (judgedNames.has(field.name) || field.type === 'HIDDEN') continue;
+    // A field the visitor could not answer keeps the admin's default, or
+    // nothing when it was conditionally hidden — never the submitted value.
+    const serverSourced = field.isReadOnly || field.isHidden || field.settings.system;
+    values[field.name] = serverSourced ? (field.defaultValue ?? '') : '';
+  }
 
   const formRecord = await prisma.form.findUnique({
     where: { id: form.id },
@@ -91,6 +110,42 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
 
   const attribution = envelope.attribution ?? {};
   const productId = envelope.productId || formRecord?.defaultProductId || null;
+
+  // System fields are filled from the product row, resolved here from the
+  // trusted product id. An admin can put a `product_name` or `plan` field on
+  // any form without that becoming a way for a crafted payload to claim the
+  // enquiry was about something else.
+  const systemFields = form.fields.filter((field) => field.settings.system);
+  if (systemFields.length > 0 && productId) {
+    const product = await prisma.product.findFirst({
+      where: { id: productId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        sku: true,
+        billingPeriod: true,
+        priceSuffix: true,
+        monthlyPrice: true,
+        annualPrice: true,
+      },
+    });
+
+    if (product) {
+      const context = productContext(product);
+      for (const field of systemFields) {
+        if (!isSystemFieldKey(field.name)) continue;
+        const resolved = context[field.name];
+        // A key with nothing behind it keeps the admin's default rather than
+        // blanking the field.
+        if (resolved) values[field.name] = resolved;
+      }
+    }
+  }
+
+  // Computed after the system fill so a mapped field that is also injected
+  // (a company name carried from context, say) reaches the lead.
+  const core = extractLeadCore(values, form.fields);
 
   const landingPath = attribution.pagePath ?? attribution.landingUrl ?? null;
   const landingPage = landingPath

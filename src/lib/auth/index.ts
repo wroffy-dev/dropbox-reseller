@@ -8,6 +8,8 @@ import { authConfig } from '@/lib/auth/config';
 import { rateLimit } from '@/lib/utils/rate-limit';
 import { hashIp } from '@/lib/utils/crypto';
 import { clientIp } from '@/lib/utils/request';
+import { createPendingSession } from '@/lib/auth/session.service';
+import { recordSecurityEvent } from '@/lib/security/security-log';
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -49,11 +51,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (user.status !== 'ACTIVE') return null;
 
         const ok = await verifyPassword(parsed.data.password, user.passwordHash);
-        if (!ok) return null;
+        if (!ok) {
+          await recordSecurityEvent({
+            userId: user.id,
+            userEmail: user.email,
+            action: 'LOGIN_FAILED',
+            summary: 'Incorrect password',
+          });
+          return null;
+        }
 
         await prisma.user.update({
           where: { id: user.id },
           data: { lastLoginAt: new Date() },
+        });
+
+        // A correct password opens a *pending* session and nothing more. It
+        // carries no privilege until the second factor is answered, which is
+        // checked against the database on every request rather than trusted
+        // from the token. See src/lib/auth/session.service.ts.
+        const sid = await createPendingSession(user.id);
+
+        await recordSecurityEvent({
+          userId: user.id,
+          userEmail: user.email,
+          action: 'LOGIN_SUCCESS',
+          summary: 'Password accepted; awaiting two-step verification',
         });
 
         return {
@@ -63,6 +86,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           image: user.image ?? undefined,
           role: user.roles.slug,
           permissions: user.roles.permissions.map((rp) => rp.permission.key),
+          sid,
         };
       },
     }),

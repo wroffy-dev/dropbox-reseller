@@ -1,10 +1,11 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { prisma } from '@/lib/db/prisma';
-import { requirePermission } from '@/lib/auth/guards';
+import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { StaffForm, type StaffFormValues } from '@/components/admin/staff/staff-form';
 import { formatDate } from '@/lib/utils/format';
+import { StaffSecurityCard } from '@/components/admin/staff/staff-security-card';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,6 +30,10 @@ export default async function EditStaff({ params }: { params: Promise<{ id: stri
       : null,
   ]);
   if (!member) notFound();
+
+  const recoveryCodesRemaining = await prisma.recoveryCode.count({
+    where: { userId: member.id, usedAt: null },
+  });
 
   const roles = await prisma.userRole.findMany({
     where: user.role === 'super-admin' || !actorRole ? {} : { rank: { gt: actorRole.rank } },
@@ -60,6 +65,18 @@ export default async function EditStaff({ params }: { params: Promise<{ id: stri
         crumbs={[{ label: 'Staff', href: '/admin/staff' }, { label: member.name }]}
       />
       <StaffForm initial={initial} roles={roles} mode="edit" isSelf={member.id === user.id} />
+
+      <StaffSecurityCard
+        member={{
+          id: member.id,
+          name: member.name,
+          twoFactorEnabled: member.twoFactorEnabled,
+          twoFactorVerifiedAt: member.twoFactorVerifiedAt?.toISOString() ?? null,
+          twoFactorLastUsedAt: member.twoFactorLastUsedAt?.toISOString() ?? null,
+          recoveryCodesRemaining,
+        }}
+        canReset={userCan(user, 'user.mfa.reset')}
+      />
     </div>
   );
 }

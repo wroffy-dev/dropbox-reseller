@@ -12,8 +12,16 @@ const THIRTY_DAYS = 60 * 60 * 24 * 30;
 
 /**
  * Middleware responsibilities:
- *  1. Gate /admin and /preview behind an authenticated session.
+ *  1. Gate /admin, /preview and the two-step screens behind a token.
  *  2. Capture UTM/referrer attribution into first-touch and last-touch cookies.
+ *
+ * Note what this does NOT do: it does not decide whether a session has cleared
+ * two-factor authentication. That state lives in a database row, middleware
+ * runs on the edge without database access, and a check that can only be made
+ * in one of the two places must not be the one users rely on. The
+ * authoritative enforcement is in src/lib/auth/guards.ts, which every admin
+ * page, Server Action and API route already goes through; this is only a cheap
+ * first pass so an anonymous visitor never reaches a server component at all.
  *
  * Database-backed redirects are handled in the catch-all route (Node runtime),
  * so they never add a query to every request.
@@ -23,14 +31,19 @@ export default auth((request) => {
   // /preview renders unpublished pages for the admin preview iframe, so it is
   // gated exactly like /admin. The route itself still checks pages.view.
   const isAdmin = nextUrl.pathname.startsWith('/admin') || nextUrl.pathname.startsWith('/preview');
+  // The enrolment and verification screens need the identity behind a
+  // half-finished sign-in, so they require a token but not a full session.
+  const isTwoStep = nextUrl.pathname.startsWith('/auth/');
   const isLoggedIn = Boolean(request.auth?.user);
 
-  if (isAdmin && !isLoggedIn) {
+  if ((isAdmin || isTwoStep) && !isLoggedIn) {
     const url = new URL('/login', nextUrl.origin);
-    url.searchParams.set('callbackUrl', nextUrl.pathname + nextUrl.search);
+    if (isAdmin) url.searchParams.set('callbackUrl', nextUrl.pathname + nextUrl.search);
     return NextResponse.redirect(url);
   }
 
+  // A signed-in visitor at /login goes to /admin, which redirects onward to
+  // whichever step they still owe.
   if (nextUrl.pathname === '/login' && isLoggedIn) {
     return NextResponse.redirect(new URL('/admin', nextUrl.origin));
   }
@@ -50,6 +63,7 @@ function captureAttribution(request: NextRequest, response: NextResponse) {
   if (
     nextUrl.pathname.startsWith('/admin') ||
     nextUrl.pathname.startsWith('/preview') ||
+    nextUrl.pathname.startsWith('/auth') ||
     nextUrl.pathname.startsWith('/api')
   ) {
     return;

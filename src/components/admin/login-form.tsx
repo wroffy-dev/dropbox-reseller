@@ -39,7 +39,12 @@ export function LoginForm({
     }
 
     // A safe internal path only — an attacker-supplied absolute URL is ignored.
-    const target = callbackUrl.startsWith('/') && !callbackUrl.startsWith('//') ? callbackUrl : '/admin';
+    const target =
+      callbackUrl.startsWith('/') && !callbackUrl.startsWith('//') ? callbackUrl : '/admin';
+    // The password alone does not open a session. Whichever page is requested
+    // next, the server guard sends this browser to enrolment or verification
+    // until the second factor is satisfied — so there is nothing to decide
+    // here, and nothing a modified client could decide differently.
     router.push(target);
     router.refresh();
   }

@@ -212,6 +212,35 @@ model User {
   updatedAt     DateTime   @updatedAt
   deletedAt     DateTime?
 
+  // --- Profile (self-service; none of these confer privilege) ---
+  department     String?
+  timezone       String?
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  state          String?
+  country        String?
+  postalCode     String?
+  alternatePhone String?
+  bio            String? @db.Text
+
+  // --- Security ---
+  /// Two-factor is mandatory for every role. The column exists so a future
+  /// break-glass procedure has somewhere to record an exemption deliberately;
+  /// nothing in the application ever sets it to false.
+  twoFactorRequired Boolean @default(true)
+  twoFactorEnabled  Boolean @default(false)
+  /// AES-256-GCM ciphertext, never the raw TOTP secret.
+  twoFactorSecret   String?
+  /// Enrollment secret, held only until the first valid code proves it works.
+  twoFactorPending  String?
+  twoFactorVerifiedAt DateTime?
+  twoFactorLastUsedAt DateTime?
+  /// Highest TOTP time step already accepted, so a code cannot be replayed
+  /// inside its own 30-second window.
+  twoFactorLastStep BigInt?
+  passwordChangedAt DateTime?
+
   roles  UserRole @relation(fields: [roleId], references: [id], onDelete: Restrict)
   roleId String
 
@@ -227,6 +256,8 @@ model User {
   uploadedMedia     Media[]        @relation("MediaUploader")
   auditLogs         AuditLog[]
   backups           Backup[]       @relation("BackupCreator")
+  authSessions      AuthSession[]
+  recoveryCodes     RecoveryCode[]
 
   @@index([email])
   @@index([roleId])
@@ -311,6 +342,62 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+/// One sign-in, tracked server-side.
+///
+/// Auth.js runs on a JWT strategy, which on its own cannot be revoked: a
+/// stolen or stale token stays valid until it expires. Every token therefore
+/// carries only the id of a row here, and the row is what actually confers
+/// access. That makes three things possible that a bare JWT cannot do —
+/// revoking a session the moment a password changes, holding a session at
+/// "password accepted, second factor still outstanding", and showing the user
+/// the devices signed into their account.
+model AuthSession {
+  id     String @id @default(cuid())
+  userId String
+
+  /// Null until the TOTP challenge is answered. Until then the session grants
+  /// nothing beyond the enrollment and verification screens.
+  mfaVerifiedAt DateTime?
+  /// How the second factor was satisfied: TOTP, RECOVERY_CODE or SETUP.
+  mfaMethod     String?
+
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  /// Why the session ended, for the Activity tab: PASSWORD_CHANGED,
+  /// MFA_RESET, SIGNED_OUT, REVOKED_BY_USER, REVOKED_BY_ADMIN.
+  revokedReason String?
+
+  /// Salted hash, never the address itself.
+  ipHash    String?
+  userAgent String? @db.Text
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// A single-use backup code for when the authenticator app is unavailable.
+///
+/// Stored as an HMAC keyed with the server-side MFA key rather than a bare
+/// digest, so a leaked database alone cannot be brute-forced offline. One row
+/// per code — not a JSON blob — so consuming one is a single indexed update
+/// that cannot race with a second attempt.
+model RecoveryCode {
+  id       String @id @default(cuid())
+  userId   String
+  codeHash String @unique
+
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // ---------------------------------------------------------------------------
@@ -725,6 +812,7 @@ model Media {
   @@index([kind])
   @@index([createdAt])
   @@index([deletedAt])
+  @@index([folderId])
 }
 
 // ---------------------------------------------------------------------------

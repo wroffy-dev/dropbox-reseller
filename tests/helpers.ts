@@ -8,6 +8,7 @@ export const TEST_ACTOR: SessionUser = {
   email: 'test-admin@example.test',
   role: 'super-admin',
   permissions: [...ALL_PERMISSIONS],
+  sessionId: 'test-session',
 };
 
 /**
@@ -42,6 +43,10 @@ export function mockAuth(permissions: string[] = [...ALL_PERMISSIONS], role = 's
         if (!can(user, permission)) throw new AuthorizationError(permission);
         return user;
       },
+      authorizeSelf: async () => user,
+      authorizePartial: async () => ({ user, status: 'authenticated' as const }),
+      requirePartialUser: async () => ({ user, status: 'authenticated' as const }),
+      getAuthState: async () => ({ status: 'authenticated' as const, user }),
     };
   });
 

@@ -9,6 +9,9 @@ import { hashPassword, passwordIssues } from '@/lib/auth/password';
 import { sanitizeText } from '@/lib/utils/sanitize';
 import { ALL_PERMISSIONS } from '@/lib/auth/permissions';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
+import { clearMfaCredentials } from '@/lib/mfa/mfa.service';
+import { revokeUserSessions } from '@/lib/auth/session.service';
+import { recordSecurityEvent } from '@/lib/security/security-log';
 
 const staffSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(160),
@@ -319,4 +322,71 @@ export async function deleteRole(roleId: string): Promise<ActionResult> {
   } catch (error) {
     return toActionError(error);
   }
+}
+
+/**
+ * Administrator-assisted authenticator reset.
+ *
+ * The path for a user who has lost their phone *and* their recovery codes.
+ * Deliberately narrow: it clears the second factor and signs every one of that
+ * user's sessions out, so the next password login lands on forced enrolment
+ * with a new secret. It never reveals a code, never issues one, and cannot be
+ * used to sign in as anybody.
+ */
+export async function adminResetUserMfa(userId: string): Promise<ActionResult> {
+  try {
+    const actor = await authorize('user.mfa.reset');
+
+    const target = await prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { id: true, email: true, name: true, twoFactorEnabled: true, roles: { select: { rank: true } } },
+    });
+    if (!target) return failure('That user no longer exists.');
+
+    // Rank governs who may act on whom everywhere else in staff management;
+    // stripping a second factor is no different, so the same rule applies.
+    const actorRank = await actorRankOf(actor);
+    if (actorRank !== null && target.roles.rank < actorRank) {
+      return failure('You cannot reset the authenticator for a more privileged account.');
+    }
+
+    await clearMfaCredentials(target.id);
+    const revoked = await revokeUserSessions(target.id, 'MFA_RESET_BY_ADMIN');
+
+    await recordSecurityEvent({
+      userId: target.id,
+      userEmail: target.email,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'MFA_RESET_BY_ADMIN',
+      summary: `Authenticator reset by ${actor.email}; ${revoked} session(s) signed out`,
+    });
+
+    await recordAudit({
+      actor,
+      action: 'MFA_RESET_BY_ADMIN',
+      entity: 'User',
+      entityId: target.id,
+      summary: `Reset Microsoft Authenticator for ${target.email}`,
+    });
+
+    revalidatePath(`/admin/staff/${target.id}`);
+    return success(
+      undefined,
+      `${target.name} must set up Microsoft Authenticator again at their next sign-in.`,
+    );
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+/** Super admins outrank everyone; any other role is compared by rank. */
+async function actorRankOf(actor: { role: string | null }): Promise<number | null> {
+  if (actor.role === 'super-admin') return null;
+  if (!actor.role) return Number.MAX_SAFE_INTEGER;
+  const role = await prisma.userRole.findUnique({
+    where: { slug: actor.role },
+    select: { rank: true },
+  });
+  return role?.rank ?? Number.MAX_SAFE_INTEGER;
 }

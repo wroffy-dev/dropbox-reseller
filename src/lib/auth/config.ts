@@ -34,12 +34,19 @@ export const authConfig = {
         token.permissions = (user as { permissions?: string[] }).permissions ?? [];
         token.name = user.name;
         token.email = user.email;
+        // The id of the AuthSession row that actually grants access. Nothing
+        // about the second factor is stored in the token: whether this session
+        // has cleared MFA is read from that row on every request, so a client
+        // cannot assert it and a revoked session cannot keep working.
+        token.sid = (user as { sid?: string }).sid ?? undefined;
       }
-      // Allow a session refresh to pull updated role/permissions.
+      // A session refresh may correct the displayed name after a profile edit.
       if (trigger === 'update' && session && typeof session === 'object') {
-        const s = session as { permissions?: string[]; role?: string; name?: string };
-        if (s.permissions) token.permissions = s.permissions;
-        if (s.role) token.role = s.role;
+        const s = session as { name?: string };
+        // Only presentational fields are accepted from an update() call —
+        // this payload comes from the client. Role and permissions are
+        // re-read from the database by the server-side guards regardless of
+        // what the token says, and `sid` is never writable from here.
         if (s.name) token.name = s.name;
       }
       return token;
@@ -49,6 +56,7 @@ export const authConfig = {
         session.user.id = (token.uid as string) ?? token.sub ?? '';
         session.user.role = (token.role as string | null) ?? null;
         session.user.permissions = (token.permissions as string[]) ?? [];
+        session.user.sessionId = (token.sid as string | undefined) ?? null;
       }
       return session;
     },

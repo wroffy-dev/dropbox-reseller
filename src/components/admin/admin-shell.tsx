@@ -17,6 +17,7 @@ export function AdminShell({
     roleName: string;
     permissions: string[];
     isSuperAdmin: boolean;
+    image?: string | null;
   };
   branding: { siteName: string; logoUrl: string | null };
   children: React.ReactNode;

@@ -3,7 +3,16 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { signOut } from 'next-auth/react';
-import { PanelLeft, LogOut, ChevronDown, Plus, ExternalLink, User } from 'lucide-react';
+import {
+  PanelLeft,
+  LogOut,
+  ChevronDown,
+  Plus,
+  ExternalLink,
+  User,
+  UserCircle,
+  ShieldCheck,
+} from 'lucide-react';
 import { initials } from '@/lib/utils/format';
 import type { PermissionKey } from '@/lib/auth/permissions';
 import { cn } from '@/lib/utils/cn';
@@ -39,7 +48,7 @@ export function AdminTopbar({
   isSuperAdmin,
   onOpenSidebar,
 }: {
-  user: { name: string; email: string; roleName: string };
+  user: { name: string; email: string; roleName: string; image?: string | null };
   permissions: string[];
   isSuperAdmin: boolean;
   onOpenSidebar: () => void;
@@ -102,9 +111,18 @@ export function AdminTopbar({
           label="Account menu"
           trigger={
             <span className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-muted/10">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand">
-                {initials(user.name)}
-              </span>
+              {user.image ? (
+                // eslint-disable-next-line @next/next/no-img-element -- storage URL, may be any host
+                <img
+                  src={user.image}
+                  alt=""
+                  className="h-8 w-8 rounded-full object-cover ring-1 ring-hairline"
+                />
+              ) : (
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand">
+                  {initials(user.name)}
+                </span>
+              )}
               <span className="hidden text-left xl:block">
                 <span className="block max-w-[9rem] truncate text-sm font-medium leading-tight text-content">
                   {user.name}
@@ -120,6 +138,13 @@ export function AdminTopbar({
             <p className="truncate text-xs text-muted">{user.email}</p>
             <p className="mt-1 text-xs text-muted">{user.roleName}</p>
           </div>
+          <MenuItem href="/admin/profile" icon={<UserCircle className="h-4 w-4" />}>
+            My profile
+          </MenuItem>
+          <MenuItem href="/admin/profile?tab=security" icon={<ShieldCheck className="h-4 w-4" />}>
+            Security
+          </MenuItem>
+          <MenuSeparator />
           <MenuItem href="/" external icon={<ExternalLink className="h-4 w-4" />}>
             View website
           </MenuItem>

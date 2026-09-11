@@ -48,6 +48,8 @@ export const PERMISSIONS = {
   'backup.delete': { group: 'backup', label: 'Delete backups' },
   'backup.settings': { group: 'backup', label: 'Configure backup schedule and storage' },
 
+  'user.mfa.reset': { group: 'security', label: "Reset another user's authenticator" },
+
   'media.view': { group: 'media', label: 'View media' },
   'media.upload': { group: 'media', label: 'Upload media' },
   'media.edit': { group: 'media', label: 'Edit media metadata' },
@@ -81,6 +83,7 @@ export const PERMISSION_GROUP_LABELS: Record<string, string> = {
   staff: 'Staff',
   audit: 'Audit log',
   backup: 'Backup & restore',
+  security: 'Account security',
 };
 
 /** System roles seeded on first run. rank: lower == more privileged. */
@@ -107,8 +110,14 @@ export const SYSTEM_ROLES: Array<{
     // point, so neither is granted by default — a super admin must hand them
     // out deliberately from Roles & Permissions. Admins can still take and
     // download backups, which is the part they need day to day.
+    // Resetting someone's authenticator is held back for the same reason: it
+    // strips a user's second factor, so it belongs with the most trusted role
+    // until it is handed out on purpose.
     permissions: ALL_PERMISSIONS.filter(
-      (p) => !(['staff.manage', 'backup.restore', 'backup.delete'] as string[]).includes(p),
+      (p) =>
+        !(
+          ['staff.manage', 'backup.restore', 'backup.delete', 'user.mfa.reset'] as string[]
+        ).includes(p),
     ),
   },
   {

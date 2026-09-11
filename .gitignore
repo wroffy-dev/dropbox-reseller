@@ -18,3 +18,6 @@ next-env.d.ts
 
 # Local backup archives. Never committed: an archive contains the database.
 /backups/
+
+# Compiled seed bundle — rebuilt by `npm run seed:build` during the Docker build.
+prisma/seed.mjs

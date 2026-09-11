@@ -63,6 +63,7 @@ services:
       CRON_SECRET: ${CRON_SECRET:-}
       MFA_ISSUER: ${MFA_ISSUER:-Dropbox Reseller}
       MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:-}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Super Admin}
     ports:
       - '${APP_PORT:-3000}:3000'
     volumes:

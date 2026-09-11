@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { PERMISSIONS, SYSTEM_ROLES, ALL_PERMISSIONS } from '../src/lib/auth/permissions';
 import { DEFAULT_EMAIL_TEMPLATES } from '../src/lib/email/templates';
 import { demoHome, demoPricing, demoContact, demoAbout } from './seed-blocks';
+import { collectSeedProblems } from '../src/lib/env-validation';
 
 const prisma = new PrismaClient();
 
@@ -48,36 +49,76 @@ async function seedRoles() {
   }
 }
 
+/**
+ * Initial super-admin provisioning.
+ *
+ * Idempotent and deliberately conservative: an account that already exists is
+ * never given a new password, never renamed and never recreated. Re-running the
+ * seed on a live deployment therefore cannot lock the real owner out or hand
+ * access back to whoever still has the old SEED_ADMIN_PASSWORD in their
+ * pipeline configuration.
+ *
+ * The password is never logged, and the weakness check reports what is missing
+ * rather than echoing the value.
+ */
 async function seedAdmin() {
   const email = (process.env.SEED_ADMIN_EMAIL || '').toLowerCase().trim();
   const password = process.env.SEED_ADMIN_PASSWORD || '';
-  const name = process.env.SEED_ADMIN_NAME || 'Super Admin';
+  const name = (process.env.SEED_ADMIN_NAME || 'Super Admin').trim() || 'Super Admin';
 
   if (!email || !password) {
     console.log('  admin: skipped (set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD)');
     return;
   }
-  if (password.length < 10) {
-    throw new Error('SEED_ADMIN_PASSWORD must be at least 10 characters');
+
+  const problems = collectSeedProblems(process.env);
+  if (problems.length > 0) {
+    // Names and reasons only — the password itself never reaches a log.
+    throw new Error(
+      `Cannot create the initial admin:\n${problems
+        .map((problem) => `  • ${problem.variable} ${problem.problem}`)
+        .join('\n')}`,
+    );
   }
 
   const role = await prisma.userRole.findUniqueOrThrow({ where: { slug: 'super-admin' } });
-  const passwordHash = await bcrypt.hash(password, 12);
 
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, status: true, deletedAt: true },
+  });
+
   if (existing) {
-    await prisma.user.update({
-      where: { email },
-      data: { roleId: role.id, status: 'ACTIVE', deletedAt: null },
-    });
-    console.log(`  admin: ${email} (existing user kept, password unchanged)`);
+    // Reactivating a suspended or soft-deleted account is the one change worth
+    // making — it is how an operator recovers a locked-out owner — but the
+    // password and the role stay exactly as they are.
+    if (existing.status !== 'ACTIVE' || existing.deletedAt) {
+      await prisma.user.update({
+        where: { email },
+        data: { status: 'ACTIVE', deletedAt: null },
+      });
+      console.log(`  admin: ${email} reactivated (password and role unchanged)`);
+    } else {
+      console.log(`  admin: ${email} already exists (nothing changed)`);
+    }
     return;
   }
 
   await prisma.user.create({
-    data: { email, name, passwordHash, roleId: role.id, status: 'ACTIVE' },
+    data: {
+      email,
+      name,
+      passwordHash: await bcrypt.hash(password, 12),
+      roleId: role.id,
+      status: 'ACTIVE',
+      // Two-step verification is mandatory, so the new owner is walked through
+      // enrolment at their first sign-in rather than arriving unprotected.
+      twoFactorRequired: true,
+      twoFactorEnabled: false,
+    },
   });
-  console.log(`  admin: ${email} created`);
+  console.log(`  admin: ${email} created — set up Microsoft Authenticator at first sign-in`);
+  console.log('  NOTE: set RUN_SEED=false and clear SEED_ADMIN_PASSWORD now that the admin exists.');
 }
 
 async function seedSettings() {
@@ -720,7 +761,10 @@ async function main() {
   await seedAdmin();
   await seedSettings();
 
-  if (process.env.SEED_DEMO_CONTENT !== 'false') {
+  // Opt-in, not opt-out. A production operator who sets RUN_SEED=true to create
+  // the first admin must not silently get demo pages, products and fake leads
+  // on their live site because they did not know to say no.
+  if (/^(1|true|yes|on)$/i.test((process.env.SEED_DEMO_CONTENT || '').trim())) {
     await seedProducts();
     await seedForms();
     await seedPages();
@@ -729,16 +773,19 @@ async function main() {
     await seedLeads();
     await seedCustomers();
   } else {
-    console.log('  demo content: skipped (SEED_DEMO_CONTENT=false)');
+    console.log('  demo content: skipped (set SEED_DEMO_CONTENT=true to include it)');
   }
   console.log('Seed complete.');
 }
 
 main()
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
+  .then(async () => {
     await prisma.$disconnect();
+  })
+  .catch(async (error) => {
+    // The message, not the stack: a seed failure is a configuration problem and
+    // the stack tells an operator nothing useful while risking echoing input.
+    console.error(`Seed failed: ${error instanceof Error ? error.message : String(error)}`);
+    await prisma.$disconnect().catch(() => undefined);
+    process.exit(1);
   });

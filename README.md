@@ -19,6 +19,7 @@ no redeploy.
 - [Production build](#production-build)
 - [Docker](#docker)
 - [Deploying with Coolify](#deploying-with-coolify)
+- [Deploying to Microsoft Azure](#deploying-to-microsoft-azure)
 - [File storage: local, S3 and Cloudflare R2](#file-storage-local-s3-and-cloudflare-r2)
 - [Backup and restore](#backup-and-restore)
 - [Forms](#forms)
@@ -252,10 +253,18 @@ before the server starts, retrying while the database comes up. Set
 The image:
 
 - builds in three stages, so dependencies cache independently of source changes;
-- runs as a non-root user;
-- exposes `/api/health`, which returns 503 when the database is unreachable so
-  an orchestrator can distinguish "starting" from "broken";
-- declares a volume at `/app/public/uploads` for locally-stored media.
+- runs as a non-root user (`nextjs`) on Node 22, from the Next.js standalone
+  output;
+- ships a PostgreSQL 16 client, verified at build time, because `pg_dump`
+  refuses to read a database newer than itself and the backup system depends on
+  it;
+- exposes `/api/health` (liveness) and `/api/ready` (readiness — it also checks
+  migrations have been applied), both returning 503 rather than a misleading
+  200 when the database is unreachable;
+- declares volumes at `/app/public/uploads` and `/app/backups` for locally
+  stored media and backups;
+- contains **no secrets**. Configuration is supplied at runtime, so the same
+  image can be promoted between environments unchanged.
 
 ---
 
@@ -281,6 +290,49 @@ The image:
 before serving traffic. Set it to `false` if you would rather run them yourself.
 
 ---
+
+## Deploying to Microsoft Azure
+
+Azure Container Apps is the supported managed target. The flow is:
+
+```
+GitHub main → GitHub Actions → Azure Container Registry → Azure Container Apps
+                                                              ├─ Azure PostgreSQL 16
+                                                              ├─ R2/S3 for media
+                                                              └─ private R2/S3 for backups
+```
+
+Pushing to `main` runs lint, typecheck, tests and a build; only if all four pass
+does it build the image, push it, start a new revision, wait for that revision to
+report healthy, and smoke-test the public URL. A failure at any point stops the
+deployment — nothing is masked.
+
+Two things differ from a single-server deployment and are not optional:
+
+- **`STORAGE_PROVIDER` must be `r2` or `s3`.** Several copies of the app run at
+  once and the filesystem is replaced on each release, so a locally stored upload
+  is invisible to the other copies and gone at the next deploy.
+- **`BACKUP_STORAGE_DRIVER` must be `s3`**, for the same reason.
+
+Everything else — the same Dockerfile, the same entrypoint, the same environment
+variables — is shared with the Docker and Coolify paths. No Azure SDK is a
+runtime dependency, so the application stays portable.
+
+- **[docs/AZURE-DEPLOYMENT.md](docs/AZURE-DEPLOYMENT.md)** — the full walkthrough,
+  written for someone who has not used Azure before: portal steps, first
+  deployment, admin creation, custom domain, troubleshooting and rollback.
+- **[docs/AZURE-ENVIRONMENT.md](docs/AZURE-ENVIRONMENT.md)** — every variable,
+  which ones must be Azure secrets, and a copy-paste template.
+
+Once deployed, check it from anywhere:
+
+```bash
+npm run verify:production -- https://your-domain.com
+```
+
+That checks the homepage, `/api/health`, `/api/ready`, `robots.txt`,
+`sitemap.xml`, the login page, and that `/admin` is gated. No credentials needed,
+nothing destructive.
 
 ## File storage: local, S3 and Cloudflare R2
 

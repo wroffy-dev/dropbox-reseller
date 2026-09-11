@@ -1,3 +1,28 @@
+/**
+ * HSTS, only where it is both meaningful and safe.
+ *
+ * The header instructs browsers to refuse plain HTTP for this host for two
+ * years, and `includeSubDomains` extends that to every subdomain. Sent from a
+ * development server on localhost it can make a developer's other local
+ * projects unreachable over http — a confusing, persistent, browser-level
+ * problem that no code change fixes.
+ *
+ * Azure Container Apps terminates TLS in front of the container and serves the
+ * app over HTTPS, so production gets the header and local development does not.
+ * `preload` is deliberately omitted: submitting a domain to the HSTS preload
+ * list is effectively irreversible and is the site owner's decision, not a
+ * default.
+ */
+const hstsHeader =
+  process.env.NODE_ENV === 'production'
+    ? [
+        {
+          key: 'Strict-Transport-Security',
+          value: 'max-age=63072000; includeSubDomains',
+        },
+      ]
+    : [];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
@@ -32,11 +57,7 @@ const nextConfig = {
             value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
           },
           { key: 'X-DNS-Prefetch-Control', value: 'on' },
-          {
-            // HSTS is only meaningful over TLS; harmless on http during local dev.
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload',
-          },
+          ...hstsHeader,
         ],
       },
       {

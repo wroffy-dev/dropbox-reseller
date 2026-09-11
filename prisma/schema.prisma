@@ -75,6 +75,36 @@ enum BillingPeriod {
   ONE_TIME
 }
 
+enum BackupType {
+  FULL
+  DATABASE
+  MEDIA
+}
+
+enum BackupStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  DELETING
+  RESTORING
+}
+
+enum BackupStorage {
+  LOCAL
+  S3
+}
+
+/// Why a backup exists. SAFETY backups are taken automatically immediately
+/// before a restore and are exempt from retention pruning, so the rollback
+/// point cannot be deleted by the same cleanup that trims routine backups.
+enum BackupOrigin {
+  MANUAL
+  SCHEDULED
+  SAFETY
+  IMPORTED
+}
+
 enum RedirectType {
   PERMANENT
   TEMPORARY
@@ -196,6 +226,7 @@ model User {
   authoredPosts     BlogPost[]     @relation("PostAuthor")
   uploadedMedia     Media[]        @relation("MediaUploader")
   auditLogs         AuditLog[]
+  backups           Backup[]       @relation("BackupCreator")
 
   @@index([email])
   @@index([roleId])
@@ -1343,4 +1374,113 @@ model AuditLog {
   @@index([entity, entityId])
   @@index([actorId])
   @@index([createdAt])
+}
+
+/// A single backup archive.
+///
+/// The row is created before the work starts so a crashed or killed process
+/// still leaves a visible FAILED record rather than nothing at all.
+model Backup {
+  id      String        @id @default(cuid())
+  type    BackupType
+  status  BackupStatus  @default(PENDING)
+  storage BackupStorage
+  origin  BackupOrigin  @default(MANUAL)
+
+  fileName   String?
+  /// Key within the backup storage provider. Never a user-supplied path.
+  storageKey String?
+  /// Archives can exceed 2 GB, which overflows a 32-bit Int.
+  sizeBytes  BigInt?
+  /// SHA-256 of the finished archive, re-verified before any restore.
+  checksum   String?
+
+  /// Copied from manifest.json so History can be read without opening archives.
+  manifestVersion  Int?
+  appVersion       String?
+  mediaIncluded    Boolean @default(false)
+  databaseIncluded Boolean @default(false)
+
+  startedAt    DateTime?
+  completedAt  DateTime?
+  failedAt     DateTime?
+  /// Sanitised before storage — never contains a connection string or secret.
+  errorMessage String?   @db.Text
+
+  createdById String?
+  /// Retained for compatibility with the original spec; mirrors origin != MANUAL.
+  automatic   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy User?           @relation("BackupCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  restores  BackupRestore[]
+
+  @@index([createdAt])
+  @@index([status])
+  @@index([type, status])
+  @@index([origin])
+}
+
+/// One restore attempt, kept even when it fails so the history is auditable.
+model BackupRestore {
+  id       String       @id @default(cuid())
+  backupId String
+  status   BackupStatus @default(RUNNING)
+
+  /// The safety backup taken immediately before this restore.
+  safetyBackupId String?
+
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+  failedAt     DateTime?
+  errorMessage String?   @db.Text
+
+  restoredById String?
+
+  backup Backup @relation(fields: [backupId], references: [id], onDelete: Cascade)
+
+  @@index([backupId])
+  @@index([startedAt])
+}
+
+/// Schedule for automatic backups. A singleton, like the other settings rows.
+model BackupSchedule {
+  id      String  @id @default("singleton")
+  enabled Boolean @default(false)
+
+  /// daily | weekly | monthly
+  frequency  String     @default("daily")
+  hour       Int        @default(3)
+  minute     Int        @default(0)
+  /// Day of week for weekly (0 = Sunday) or day of month for monthly.
+  dayOfWeek  Int        @default(0)
+  dayOfMonth Int        @default(1)
+  backupType BackupType @default(FULL)
+  timezone   String     @default("Asia/Kolkata")
+
+  retentionDaily   Int @default(7)
+  retentionWeekly  Int @default(4)
+  retentionMonthly Int @default(3)
+
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Single-row claim guarding backup and restore.
+///
+/// An advisory lock alone is re-entrant within a session, and Prisma pools
+/// connections, so two acquisitions can share a connection and both succeed.
+/// This row is unambiguous across connections; `expiresAt` lets a claim left
+/// by a killed container lapse rather than blocking the system forever.
+model BackupLock {
+  id         String   @id @default("singleton")
+  operation  String
+  holder     String?
+  acquiredAt DateTime @default(now())
+  expiresAt  DateTime
 }

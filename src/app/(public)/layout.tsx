@@ -6,11 +6,13 @@ import {
   getNavigations,
   getPrimaryNavigation,
 } from "@/lib/services/navigation";
+import { MaintenanceNotice } from "@/components/public/maintenance-notice";
 import { SiteHeader } from "@/components/public/site-header";
 import { SiteFooter } from "@/components/public/site-footer";
 import { PopupHost } from "@/components/public/popup-host";
 import { JsonLd } from "@/components/seo/json-ld";
 import { organizationSchema, websiteSchema } from "@/lib/seo/structured-data";
+import { getCurrentUser } from "@/lib/auth/guards";
 
 export default async function PublicLayout({
   children,
@@ -46,6 +48,16 @@ export default async function PublicLayout({
       },
     }),
   ]);
+
+  // Maintenance mode hides the public site from visitors — a restore turns it
+  // on for the duration so nobody browses a half-restored database. Signed-in
+  // staff are exempt, so the person running the restore can still check it.
+  if (site.maintenanceMode) {
+    const staff = await getCurrentUser();
+    if (!staff) {
+      return <MaintenanceNotice siteName={site.siteName} logoUrl={site.logoUrl} />;
+    }
+  }
 
   return (
     <>

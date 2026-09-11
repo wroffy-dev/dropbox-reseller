@@ -20,6 +20,7 @@ no redeploy.
 - [Docker](#docker)
 - [Deploying with Coolify](#deploying-with-coolify)
 - [File storage: local, S3 and Cloudflare R2](#file-storage-local-s3-and-cloudflare-r2)
+- [Backup and restore](#backup-and-restore)
 - [Email and SMTP](#email-and-smtp)
 - [Marketing and tracking](#marketing-and-tracking)
 - [Adding a new CMS block](#adding-a-new-cms-block)
@@ -314,6 +315,34 @@ S3_FORCE_PATH_STYLE=false
 `S3_PUBLIC_URL` should point at whatever actually serves the bucket — a CDN
 domain, or the R2 public bucket URL. Switching providers does not migrate
 existing files; each `Media` row records the provider it was stored with.
+
+---
+
+## Backup and restore
+
+Full-site backups — database plus media library — from
+**Admin → Settings → Backup & restore**. Take one by hand, schedule them, keep
+them on disk or in a private S3/R2 bucket, download them, and restore the site
+from one when something goes wrong.
+
+Two things are required in production and easy to forget:
+
+```env
+BACKUP_LOCAL_PATH=/app/backups   # must be a persistent volume
+CRON_SECRET=...                  # openssl rand -hex 32; enables scheduled runs
+```
+
+The container image installs `postgresql16-client` for `pg_dump` and
+`pg_restore`; the major version must match your PostgreSQL server. A restore
+always takes a safety backup first, verifies the archive checksum before
+writing anything, and puts the public site into maintenance mode until it
+finishes.
+
+`backup.restore` and `backup.delete` are granted to super-admins only by
+default.
+
+Full setup, the Coolify volume and cron configuration, retention rules and
+troubleshooting: **[docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md)**.
 
 ---
 

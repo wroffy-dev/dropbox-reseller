@@ -35,7 +35,12 @@ RUN npm run build
 # Runtime
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS runner
-RUN apk add --no-cache libc6-compat openssl curl
+# postgresql16-client supplies pg_dump and pg_restore for the backup system.
+# The major version must match the server: pg_dump refuses to read a database
+# newer than itself. Falls back to the unversioned package if the pinned one is
+# not in this Alpine release.
+RUN apk add --no-cache libc6-compat openssl curl \
+ && (apk add --no-cache postgresql16-client || apk add --no-cache postgresql-client)
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -63,7 +68,13 @@ RUN chmod +x /app/entrypoint.sh
 
 # Locally-stored uploads live here; mount a volume so they survive a redeploy.
 RUN mkdir -p /app/public/uploads && chown -R nextjs:nodejs /app/public/uploads
-VOLUME ["/app/public/uploads"]
+
+# Backup archives. The container filesystem is replaced on every deploy, so
+# this MUST be a persistent volume in production or the backups are lost with
+# the container that made them. Off-site copies belong in S3/R2.
+RUN mkdir -p /app/backups && chown -R nextjs:nodejs /app/backups
+
+VOLUME ["/app/public/uploads", "/app/backups"]
 
 USER nextjs
 EXPOSE 3000

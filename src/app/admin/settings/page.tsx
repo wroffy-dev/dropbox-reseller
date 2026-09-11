@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Mail, Palette } from 'lucide-react';
+import { DatabaseBackup, Mail, Palette } from 'lucide-react';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { getWebsiteSettings } from '@/lib/services/settings';
 import { AdminPageHeader } from '@/components/admin/page-header';
@@ -41,6 +41,12 @@ export default async function SettingsAdmin() {
               <Mail className="h-4 w-4" aria-hidden="true" />
               Email settings
             </Link>
+            {userCan(user, 'backup.view') ? (
+              <Link href="/admin/settings/backups" className={buttonClasses('outline', 'md')}>
+                <DatabaseBackup className="h-4 w-4" aria-hidden="true" />
+                Backup &amp; restore
+              </Link>
+            ) : null}
           </>
         }
       />

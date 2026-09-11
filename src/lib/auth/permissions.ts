@@ -41,6 +41,13 @@ export const PERMISSIONS = {
   'forms.edit': { group: 'forms', label: 'Edit forms' },
   'forms.delete': { group: 'forms', label: 'Delete forms' },
 
+  'backup.view': { group: 'backup', label: 'View backups' },
+  'backup.create': { group: 'backup', label: 'Create backups' },
+  'backup.download': { group: 'backup', label: 'Download backups' },
+  'backup.restore': { group: 'backup', label: 'Restore from a backup' },
+  'backup.delete': { group: 'backup', label: 'Delete backups' },
+  'backup.settings': { group: 'backup', label: 'Configure backup schedule and storage' },
+
   'media.view': { group: 'media', label: 'View media' },
   'media.upload': { group: 'media', label: 'Upload media' },
   'media.edit': { group: 'media', label: 'Edit media metadata' },
@@ -73,6 +80,7 @@ export const PERMISSION_GROUP_LABELS: Record<string, string> = {
   settings: 'Settings',
   staff: 'Staff',
   audit: 'Audit log',
+  backup: 'Backup & restore',
 };
 
 /** System roles seeded on first run. rank: lower == more privileged. */
@@ -95,7 +103,13 @@ export const SYSTEM_ROLES: Array<{
     name: 'Admin',
     description: 'Full administrative access except destructive staff/role changes.',
     rank: 10,
-    permissions: ALL_PERMISSIONS.filter((p) => p !== 'staff.manage'),
+    // Restore replaces the entire database and delete destroys the rollback
+    // point, so neither is granted by default — a super admin must hand them
+    // out deliberately from Roles & Permissions. Admins can still take and
+    // download backups, which is the part they need day to day.
+    permissions: ALL_PERMISSIONS.filter(
+      (p) => !(['staff.manage', 'backup.restore', 'backup.delete'] as string[]).includes(p),
+    ),
   },
   {
     slug: 'sales',

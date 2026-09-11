@@ -292,6 +292,12 @@ export const ADMIN_NAV: AdminNavModule[] = [
         description: 'What each role is allowed to do',
         exact: true,
       },
+      {
+        label: 'Backup & Restore',
+        href: '/admin/settings/backups',
+        permission: 'backup.view',
+        description: 'Download, schedule and restore site backups',
+      },
     ],
   },
 ];

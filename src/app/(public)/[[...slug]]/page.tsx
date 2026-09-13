@@ -1,7 +1,7 @@
 import { notFound, permanentRedirect, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { prisma } from '@/lib/db/prisma';
-import { getPublishedPage, findRedirect, publishedPageWhere } from '@/lib/services/pages';
+import { getPublishedPage, findRedirect } from '@/lib/services/pages';
 import { getWebsiteSettings } from '@/lib/services/settings';
 import { SectionList } from '@/components/cms/section-renderer';
 import { JsonLd } from '@/components/seo/json-ld';
@@ -11,23 +11,10 @@ import { parseBlockContent, type FaqContent } from '@/lib/cms/blocks';
 
 type Params = { slug?: string[] };
 
-export const revalidate = 60;
-export const dynamicParams = true;
-
-/** Pre-renders every published page at build time; new pages are handled on demand. */
-export async function generateStaticParams(): Promise<Params[]> {
-  try {
-    const pages = await prisma.page.findMany({
-      where: publishedPageWhere(),
-      select: { slug: true },
-      take: 500,
-    });
-    return pages.map((page) => ({ slug: page.slug ? page.slug.split('/') : [] }));
-  } catch {
-    // The database may be unreachable during a build; fall back to on-demand.
-    return [];
-  }
-}
+// The root layout reads the visitor's tracking-consent cookie, so nothing under
+// it can be rendered statically. Declaring `revalidate` here made Next try
+// anyway and every request failed with DYNAMIC_SERVER_USAGE.
+export const dynamic = 'force-dynamic';
 
 function slugFrom(params: Params): string {
   return (params.slug ?? []).join('/');

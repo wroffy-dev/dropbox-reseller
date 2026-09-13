@@ -2,7 +2,9 @@ import type { MetadataRoute } from 'next';
 import { getSeoSettings } from '@/lib/services/settings';
 import { siteUrl } from '@/lib/env';
 
-export const revalidate = 3600;
+// Rendered per request: the image is built without a database, so anything
+// baked in at build time would ship empty.
+export const dynamic = 'force-dynamic';
 
 export default async function robots(): Promise<MetadataRoute.Robots> {
   const base = siteUrl();

@@ -13,6 +13,26 @@ COPY prisma ./prisma
 RUN npm ci --ignore-scripts && npx prisma generate
 
 # ---------------------------------------------------------------------------
+# Runtime dependencies
+# ---------------------------------------------------------------------------
+# Exactly what `dependencies` resolves to — installed the way npm would install
+# it, then copied into the runtime image whole.
+#
+# The runtime stage used to hand-pick packages out of the builder's
+# node_modules. That cannot work: the Prisma CLI pulls in more than thirty
+# transitive modules (@prisma/config -> effect -> fast-check -> ...), so each
+# missing one surfaced as the next `Cannot find module` at container start and
+# was patched by adding one more COPY. Copying a real install ends that cycle
+# and cannot drift when Prisma is upgraded.
+FROM node:22-alpine AS prod-deps
+RUN apk add --no-cache libc6-compat openssl
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+COPY prisma ./prisma
+RUN npm ci --omit=dev --ignore-scripts && npx prisma generate
+
+# ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS builder
@@ -74,19 +94,18 @@ ENV HOSTNAME=0.0.0.0
 RUN addgroup --system --gid 1001 nodejs \
  && adduser --system --uid 1001 nextjs
 
-# The standalone bundle carries only the modules the server actually needs.
+# The production dependency tree, including the Prisma CLI the entrypoint runs.
+COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+
+# The standalone server, and the modules Next traced for it. Its node_modules
+# merges into the tree above rather than replacing it.
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Prisma CLI, schema, migrations and the compiled seed, so the entrypoint can
-# run `migrate deploy` and, when asked, the one-time seed.
+# Schema, migrations and the compiled seed, so the entrypoint can run
+# `migrate deploy` and, when asked, the one-time seed.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin ./node_modules/.bin
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/effect ./node_modules/effect
 
 COPY --chown=nextjs:nodejs docker/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh

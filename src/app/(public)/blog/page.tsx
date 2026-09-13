@@ -11,7 +11,10 @@ import { cn } from '@/lib/utils/cn';
 
 type SearchParams = Promise<{ page?: string; q?: string; tag?: string }>;
 
-export const revalidate = 120;
+// The root layout reads the visitor's tracking-consent cookie, so nothing under
+// it can be rendered statically. Declaring `revalidate` here made Next try
+// anyway and every request failed with DYNAMIC_SERVER_USAGE.
+export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
   return buildMetadata({

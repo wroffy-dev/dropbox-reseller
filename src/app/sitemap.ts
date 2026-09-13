@@ -6,7 +6,9 @@ import { publishedPostWhere } from '@/lib/services/blog';
 import { publishedProductWhere } from '@/lib/services/products';
 import { siteUrl } from '@/lib/env';
 
-export const revalidate = 3600;
+// Rendered per request: the image is built without a database, so anything
+// baked in at build time would ship empty.
+export const dynamic = 'force-dynamic';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = siteUrl();

@@ -10,16 +10,10 @@ import { EmptyState } from '@/components/ui/states';
 import { JsonLd } from '@/components/seo/json-ld';
 import { breadcrumbSchema } from '@/lib/seo/structured-data';
 
-export const revalidate = 120;
-
-export async function generateStaticParams() {
-  try {
-    const categories = await prisma.blogCategory.findMany({ select: { slug: true }, take: 100 });
-    return categories.map((c) => ({ slug: c.slug }));
-  } catch {
-    return [];
-  }
-}
+// The root layout reads the visitor's tracking-consent cookie, so nothing under
+// it can be rendered statically. Declaring `revalidate` here made Next try
+// anyway and every request failed with DYNAMIC_SERVER_USAGE.
+export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({
   params,

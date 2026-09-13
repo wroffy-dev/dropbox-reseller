@@ -3,8 +3,7 @@ import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ChevronRight } from 'lucide-react';
-import { prisma } from '@/lib/db/prisma';
-import { getPublishedPost, getRelatedPosts, publishedPostWhere } from '@/lib/services/blog';
+import { getPublishedPost, getRelatedPosts } from '@/lib/services/blog';
 import { getSeoSettings, getWebsiteSettings } from '@/lib/services/settings';
 import { buildMetadata } from '@/lib/seo/metadata';
 import { JsonLd } from '@/components/seo/json-ld';
@@ -13,20 +12,10 @@ import { RichText } from '@/components/cms/blocks/shared';
 import { PostCard } from '@/components/blog/post-card';
 import { formatDate, initials } from '@/lib/utils/format';
 
-export const revalidate = 120;
-
-export async function generateStaticParams() {
-  try {
-    const posts = await prisma.blogPost.findMany({
-      where: publishedPostWhere(),
-      select: { slug: true },
-      take: 300,
-    });
-    return posts.map((p) => ({ slug: p.slug }));
-  } catch {
-    return [];
-  }
-}
+// The root layout reads the visitor's tracking-consent cookie, so nothing under
+// it can be rendered statically. Declaring `revalidate` here made Next try
+// anyway and every request failed with DYNAMIC_SERVER_USAGE.
+export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({
   params,

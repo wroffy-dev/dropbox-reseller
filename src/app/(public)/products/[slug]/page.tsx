@@ -15,20 +15,10 @@ import { RichText } from '@/components/cms/blocks/shared';
 import { ProductCta } from '@/components/products/product-cta';
 import { ProductCard } from '@/components/products/product-card';
 
-export const revalidate = 300;
-
-export async function generateStaticParams() {
-  try {
-    const products = await prisma.product.findMany({
-      where: publishedProductWhere(),
-      select: { slug: true },
-      take: 200,
-    });
-    return products.map((p) => ({ slug: p.slug }));
-  } catch {
-    return [];
-  }
-}
+// The root layout reads the visitor's tracking-consent cookie, so nothing under
+// it can be rendered statically. Declaring `revalidate` here made Next try
+// anyway and every request failed with DYNAMIC_SERVER_USAGE.
+export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({
   params,

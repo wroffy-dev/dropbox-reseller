@@ -116,3 +116,47 @@ export const getDefaultForm = cache(async (): Promise<PublicForm | null> => {
   });
   return form ? getPublicForm(form.slug) : null;
 });
+
+/**
+ * The form behind the footer's "stay updated" column.
+ *
+ * Resolves the admin's chosen form id to the slug and email field name the
+ * footer widget needs. Returns null — and the column hides itself — when no
+ * form is chosen, the form was deleted or deactivated, or it has no email
+ * field to submit into. That last case matters: a form without one would
+ * accept the subscription and create nothing.
+ */
+export const getFooterNewsletterForm = cache(
+  async (
+    formId: string | null,
+  ): Promise<{ formSlug: string; emailField: string; requireCaptcha: boolean } | null> => {
+    if (!formId) return null;
+
+    const record = await prisma.form.findFirst({
+      where: { id: formId, isActive: true, deletedAt: null },
+      select: { slug: true },
+    });
+    if (!record) return null;
+
+    const form = await getPublicForm(record.slug);
+    if (!form) return null;
+
+    const emailField = form.fields.find((field) => field.type === 'EMAIL' && !field.isHidden);
+    if (!emailField) return null;
+
+    // Anything else the form asks for cannot be answered from a single input,
+    // so a required extra field would fail server-side validation every time.
+    const blocked = form.fields.some(
+      (field) =>
+        field.name !== emailField.name &&
+        field.isRequired &&
+        !field.isHidden &&
+        !field.isReadOnly &&
+        !field.settings.system &&
+        !field.defaultValue,
+    );
+    if (blocked) return null;
+
+    return { formSlug: form.slug, emailField: emailField.name, requireCaptcha: form.requireCaptcha };
+  },
+);

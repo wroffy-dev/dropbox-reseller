@@ -10,6 +10,7 @@ export type ResolvedNavItem = {
   description: string | null;
   openInNewTab: boolean;
   isHighlighted: boolean;
+  isNoFollow: boolean;
   children: ResolvedNavItem[];
 };
 
@@ -53,7 +54,9 @@ const navInclude = {
 export const getNavigations = cache(
   async (location: NavigationLocation): Promise<ResolvedNavigation[]> => {
     const menus = await prisma.navigation.findMany({
-      where: { location },
+      // A hidden menu is a footer column an admin switched off; it never
+      // reaches the public site, links and all.
+      where: { location, isVisible: true },
       orderBy: { createdAt: 'asc' },
       include: {
         items: {
@@ -81,6 +84,7 @@ export const getNavigations = cache(
           description: item.description,
           openInNewTab: item.openInNewTab,
           isHighlighted: item.isHighlighted,
+          isNoFollow: item.isNoFollow,
           children: build(item.id),
         }));
 

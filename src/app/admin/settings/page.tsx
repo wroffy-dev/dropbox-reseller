@@ -2,9 +2,11 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { DatabaseBackup, Mail, Palette } from 'lucide-react';
 import { requirePermission, userCan } from '@/lib/auth/guards';
-import { getWebsiteSettings } from '@/lib/services/settings';
+import { prisma } from '@/lib/db/prisma';
+import { getAllSocialLinks, getWebsiteSettings } from '@/lib/services/settings';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { WebsiteSettingsForm } from '@/components/admin/settings/settings-form';
+import { SocialLinksForm } from '@/components/admin/settings/social-links-form';
 import { buttonClasses } from '@/components/ui/button';
 
 export const metadata: Metadata = { title: 'Website settings' };
@@ -12,14 +14,20 @@ export const dynamic = 'force-dynamic';
 
 export default async function SettingsAdmin() {
   const user = await requirePermission('settings.manage');
-  const settings = await getWebsiteSettings();
+  const [settings, socials, forms] = await Promise.all([
+    getWebsiteSettings(),
+    getAllSocialLinks(),
+    prisma.form.findMany({
+      where: { isActive: true, deletedAt: null },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    }),
+  ]);
 
   // Send everything except the timestamps; the form owns the whole record.
-  const { id, updatedAt, footerNewsletterEnabled, footerNewsletterFormId, ...rest } = settings;
+  const { id, updatedAt, ...rest } = settings;
   void id;
   void updatedAt;
-  void footerNewsletterEnabled;
-  void footerNewsletterFormId;
 
   const initial = Object.fromEntries(
     Object.entries(rest).map(([key, value]) => [key, value === null ? '' : value]),
@@ -54,6 +62,17 @@ export default async function SettingsAdmin() {
         initial={initial}
         canEdit={userCan(user, 'settings.manage')}
         only={['general', 'branding', 'header', 'footer']}
+        forms={forms}
+      />
+      <SocialLinksForm
+        initial={socials.map((link) => ({
+          id: link.id,
+          network: link.network,
+          label: link.label,
+          url: link.url,
+          isVisible: link.isVisible,
+        }))}
+        canEdit={userCan(user, 'settings.manage')}
       />
     </div>
   );

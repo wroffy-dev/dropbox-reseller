@@ -12,6 +12,7 @@ import { success, failure, toActionError, type ActionResult } from '@/lib/utils/
 const menuSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(120),
   location: z.enum(['HEADER', 'FOOTER', 'FOOTER_SECONDARY', 'LEGAL', 'MOBILE', 'SIDEBAR']),
+  isVisible: z.coerce.boolean().default(true),
 });
 
 export async function saveNavigation(
@@ -23,6 +24,9 @@ export async function saveNavigation(
     const input = menuSchema.parse({
       name: formData.get('name'),
       location: formData.get('location') || 'HEADER',
+      // Absent means "leave it visible" — a caller that does not know about
+      // the toggle must not hide a menu by omission.
+      isVisible: formData.get('isVisible') !== 'false',
     });
 
     const slug =
@@ -39,10 +43,19 @@ export async function saveNavigation(
     const menu = navigationId
       ? await prisma.navigation.update({
           where: { id: navigationId },
-          data: { name: sanitizeText(input.name), location: input.location },
+          data: {
+            name: sanitizeText(input.name),
+            location: input.location,
+            isVisible: input.isVisible,
+          },
         })
       : await prisma.navigation.create({
-          data: { name: sanitizeText(input.name), slug: slug!, location: input.location },
+          data: {
+            name: sanitizeText(input.name),
+            slug: slug!,
+            location: input.location,
+            isVisible: input.isVisible,
+          },
         });
 
     await recordAudit({
@@ -100,6 +113,7 @@ const itemSchema = z.object({
   description: z.string().max(200).optional().nullable(),
   openInNewTab: z.boolean().default(false),
   isHighlighted: z.boolean().default(false),
+  isNoFollow: z.boolean().default(false),
   isVisible: z.boolean().default(true),
   children: z.array(z.lazy((): z.ZodTypeAny => itemSchema)).max(30).default([]),
 });
@@ -121,6 +135,7 @@ type ItemInput = {
   description?: string | null;
   openInNewTab: boolean;
   isHighlighted: boolean;
+  isNoFollow: boolean;
   isVisible: boolean;
   children: ItemInput[];
 };
@@ -163,6 +178,7 @@ export async function saveNavigationItems(input: unknown): Promise<ActionResult>
               description: item.description ? sanitizeText(item.description) : null,
               openInNewTab: item.openInNewTab,
               isHighlighted: item.isHighlighted,
+              isNoFollow: item.isNoFollow,
               isVisible: item.isVisible,
               sortOrder: (index + 1) * 10,
             },

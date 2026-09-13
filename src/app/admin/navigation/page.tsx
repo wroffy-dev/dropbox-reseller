@@ -48,6 +48,7 @@ export default async function NavigationAdmin() {
     blogCategoryId: row.blogCategoryId ?? '',
     description: row.description ?? '',
     openInNewTab: row.openInNewTab,
+    isNoFollow: row.isNoFollow,
     isHighlighted: row.isHighlighted,
     isVisible: row.isVisible,
     children: [],
@@ -63,7 +64,14 @@ export default async function NavigationAdmin() {
       else roots.push(editor);
     }
 
-    return { id: menu.id, name: menu.name, slug: menu.slug, location: menu.location, items: roots };
+    return {
+      id: menu.id,
+      name: menu.name,
+      slug: menu.slug,
+      location: menu.location,
+      isVisible: menu.isVisible,
+      items: roots,
+    };
   });
 
   const targets: NavTargets = { pages, products, posts, categories };

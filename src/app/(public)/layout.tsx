@@ -1,7 +1,12 @@
 import { headers } from "next/headers";
 import { prisma } from "@/lib/db/prisma";
 import { getPublishedPage } from "@/lib/services/pages";
-import { getSeoSettings, getWebsiteSettings } from "@/lib/services/settings";
+import {
+  getSeoSettings,
+  getSocialLinks,
+  getWebsiteSettings,
+} from "@/lib/services/settings";
+import { getFooterNewsletterForm } from "@/lib/services/forms";
 import {
   getNavigations,
   getPrimaryNavigation,
@@ -27,12 +32,13 @@ export default async function PublicLayout({
   // this adds no extra query for the page route itself.
   const chrome = await resolveChrome(pathname);
 
-  const [site, seo, nav, footerMenus, legalMenus, popups] = await Promise.all([
+  const [site, seo, nav, footerMenus, legalMenus, socials, popups] = await Promise.all([
     getWebsiteSettings(),
     getSeoSettings(),
     getPrimaryNavigation(),
     getNavigations("FOOTER"),
     getNavigations("LEGAL"),
+    getSocialLinks(),
     prisma.popup.findMany({
       where: {
         isActive: true,
@@ -48,6 +54,12 @@ export default async function PublicLayout({
       },
     }),
   ]);
+
+  // Resolved after settings, since which form to use is a setting. The column
+  // hides itself when the chosen form is gone or cannot take a single email.
+  const newsletter = chrome.showFooter
+    ? await getFooterNewsletterForm(site.footerNewsletterFormId)
+    : null;
 
   // Maintenance mode hides the public site from visitors — a restore turns it
   // on for the duration so nobody browses a half-restored database. Signed-in
@@ -89,6 +101,8 @@ export default async function PublicLayout({
           settings={site}
           columns={footerMenus}
           legal={legalMenus[0]?.items ?? []}
+          socials={socials}
+          newsletter={newsletter}
         />
       ) : null}
       <PopupHost
@@ -114,7 +128,7 @@ export default async function PublicLayout({
           pageSlugs: p.pageTargets.map((t) => t.page.slug),
         }))}
       />
-      <JsonLd data={[organizationSchema(seo, site), websiteSchema(site)]} />
+      <JsonLd data={[organizationSchema(seo, site, socials), websiteSchema(site)]} />
     </>
   );
 }

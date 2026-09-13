@@ -2,7 +2,8 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { requirePermission } from '@/lib/auth/guards';
 import { getPageForPreview } from '@/lib/services/pages';
-import { getWebsiteSettings } from '@/lib/services/settings';
+import { getSocialLinks, getWebsiteSettings } from '@/lib/services/settings';
+import { getFooterNewsletterForm } from '@/lib/services/forms';
 import { getNavigations, getPrimaryNavigation } from '@/lib/services/navigation';
 import { SectionList } from '@/components/cms/section-renderer';
 import { SiteHeader } from '@/components/public/site-header';
@@ -34,12 +35,19 @@ export default async function PreviewRender({ params }: { params: Promise<{ id: 
   const page = await getPageForPreview(id);
   if (!page) notFound();
 
-  const [site, nav, footerMenus, legalMenus] = await Promise.all([
+  const [site, nav, footerMenus, legalMenus, socials] = await Promise.all([
     getWebsiteSettings(),
     getPrimaryNavigation(),
     getNavigations('FOOTER'),
     getNavigations('LEGAL'),
+    getSocialLinks(),
   ]);
+
+  // The preview renders the real footer, newsletter column included, so an
+  // admin sees what a visitor will.
+  const newsletter = page.showFooter
+    ? await getFooterNewsletterForm(site.footerNewsletterFormId)
+    : null;
 
   return (
     <>
@@ -66,7 +74,13 @@ export default async function PreviewRender({ params }: { params: Promise<{ id: 
       </main>
 
       {page.showFooter ? (
-        <SiteFooter settings={site} columns={footerMenus} legal={legalMenus[0]?.items ?? []} />
+        <SiteFooter
+          settings={site}
+          columns={footerMenus}
+          legal={legalMenus[0]?.items ?? []}
+          socials={socials}
+          newsletter={newsletter}
+        />
       ) : null}
     </>
   );

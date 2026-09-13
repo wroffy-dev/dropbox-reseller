@@ -501,4 +501,23 @@
     color: var(--fd-ok-heading, var(--fd-ok-color, #065f46));
     font-family: var(--fd-base-font, inherit);
   }
+
+  /* ---------------------------------------------------------------- footer */
+  /* Colours come from the --footer-* tokens BrandStyle emits, so the hover
+     states follow whatever the admin configured without a rebuild. */
+  .footer-link {
+    color: var(--footer-link, inherit);
+  }
+  .footer-link:hover,
+  .footer-link:focus-visible {
+    color: var(--footer-link-hover, inherit);
+  }
+  .footer-social {
+    color: var(--footer-link, inherit);
+  }
+  .footer-social:hover,
+  .footer-social:focus-visible {
+    color: var(--footer-link-hover, inherit);
+    border-color: var(--footer-link-hover, currentColor);
+  }
 }

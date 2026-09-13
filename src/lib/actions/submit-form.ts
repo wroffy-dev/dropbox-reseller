@@ -22,6 +22,9 @@ import type { Prisma } from '@prisma/client';
 
 export type SubmitFormResult = ActionResult<{ message: string; redirectUrl: string | null }>;
 
+/** How long an identical payload counts as a repeat of the same submission. */
+const DUPLICATE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Public form submission — the single entry point for every lead on the site.
  *
@@ -146,6 +149,28 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
   // Computed after the system fill so a mapped field that is also injected
   // (a company name carried from context, say) reaches the lead.
   const core = extractLeadCore(values, form.fields);
+
+  // Duplicate submissions.
+  //
+  // An identical payload on the same form within a day is the same person
+  // clicking twice — a double-tapped newsletter button, a back-and-resubmit —
+  // and creating a second lead for it makes the CRM worse, not better. The
+  // comparison is the whole value set, not the email alone, so a contact form
+  // sent again with a different message is still a new lead. The visitor sees
+  // the ordinary success message either way: telling them they already
+  // subscribed leaks who is on the list.
+  const duplicateSince = new Date(Date.now() - DUPLICATE_WINDOW_MS);
+  const duplicate = await prisma.formSubmission.findFirst({
+    where: {
+      formId: form.id,
+      createdAt: { gte: duplicateSince },
+      data: { equals: values as Prisma.InputJsonValue },
+    },
+    select: { id: true },
+  });
+  if (duplicate) {
+    return success({ message: form.successMessage, redirectUrl: form.redirectUrl });
+  }
 
   const landingPath = attribution.pagePath ?? attribution.landingUrl ?? null;
   const landingPage = landingPath

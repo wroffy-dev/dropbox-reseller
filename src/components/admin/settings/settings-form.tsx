@@ -29,6 +29,27 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]['id'];
 
+/** Footer palette — every entry is optional and inherits when left empty. */
+const FOOTER_COLORS: Array<[string, string]> = [
+  ['footerBackground', 'Background'],
+  ['footerHeadingColor', 'Headings'],
+  ['footerTextColor', 'Text'],
+  ['footerLinkColor', 'Links'],
+  ['footerLinkHoverColor', 'Link hover'],
+  ['footerButtonBg', 'Button background'],
+  ['footerButtonText', 'Button text'],
+  ['footerInputBg', 'Input background'],
+  ['footerInputBorder', 'Input border'],
+  ['footerDividerColor', 'Dividers'],
+];
+
+const FOOTER_SPACING: Array<[string, string, string]> = [
+  ['footerPaddingTop', 'Top padding', '4rem'],
+  ['footerPaddingBottom', 'Bottom padding', '2.5rem'],
+  ['footerColumnGap', 'Column gap', '2.5rem'],
+  ['footerRowGap', 'Row gap', '2.5rem'],
+];
+
 /**
  * Website settings.
  *
@@ -41,10 +62,13 @@ export function WebsiteSettingsForm({
   initial,
   canEdit,
   only,
+  forms = [],
 }: {
   initial: WebsiteSettingsValues;
   canEdit: boolean;
   only?: readonly TabId[];
+  /** Choices for the footer newsletter picker; only the Footer tab reads it. */
+  forms?: Array<{ id: string; name: string }>;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -215,27 +239,11 @@ export function WebsiteSettingsForm({
                   />
                 </Field>
 
-                <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
-                  <legend className="px-1 text-sm font-medium text-content">Social profiles</legend>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {[
-                      ['linkedinUrl', 'LinkedIn'],
-                      ['twitterUrl', 'X / Twitter'],
-                      ['facebookUrl', 'Facebook'],
-                      ['instagramUrl', 'Instagram'],
-                      ['youtubeUrl', 'YouTube'],
-                    ].map(([key, label]) => (
-                      <Field key={key} label={label!} htmlFor={key}>
-                        <Input
-                          id={key}
-                          value={str(key!)}
-                          placeholder="https://"
-                          onChange={(e) => set(key!, e.target.value)}
-                        />
-                      </Field>
-                    ))}
-                  </div>
-                </fieldset>
+                <p className="rounded-lg border border-hairline p-4 text-sm text-muted">
+                  Social profiles are managed in their own list below, where they can be
+                  reordered, switched off and extended beyond the five networks this form used
+                  to offer.
+                </p>
 
                 <div className="rounded-lg border border-hairline p-4">
                   <Switch
@@ -752,6 +760,40 @@ export function WebsiteSettingsForm({
                     </Field>
                   </div>
                 </fieldset>
+
+                <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
+                  <legend className="px-1 text-sm font-medium text-content">Footer</legend>
+                  <p className="text-sm text-muted">
+                    Every colour is optional. An empty one inherits a default built for a dark
+                    footer — the brand secondary behind white text — so set the text colours too if
+                    you choose a light background.
+                  </p>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {FOOTER_COLORS.map(([key, label]) => (
+                      <ColorField
+                        key={key}
+                        label={label}
+                        name={key}
+                        value={str(key)}
+                        onChange={(v) => set(key, v)}
+                        error={errors[key]}
+                        optional
+                      />
+                    ))}
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {FOOTER_SPACING.map(([key, label, placeholder]) => (
+                      <Field key={key} label={label} htmlFor={key} error={errors[key]}>
+                        <Input
+                          id={key}
+                          value={str(key)}
+                          placeholder={placeholder}
+                          onChange={(e) => set(key, e.target.value)}
+                        />
+                      </Field>
+                    ))}
+                  </div>
+                </fieldset>
               </>
             ) : null}
 
@@ -822,18 +864,118 @@ export function WebsiteSettingsForm({
 
             {tab === 'footer' ? (
               <>
-                <Field
-                  label="Footer description"
-                  htmlFor="footerDescription"
-                  hint="Shown under the logo in the first footer column."
-                >
-                  <Textarea
-                    id="footerDescription"
-                    rows={3}
-                    value={str('footerDescription')}
-                    onChange={(e) => set('footerDescription', e.target.value)}
+                <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
+                  <legend className="px-1 text-sm font-medium text-content">Brand column</legend>
+
+                  <Switch
+                    label="Show the logo"
+                    checked={bool('footerShowLogo')}
+                    onChange={(v) => set('footerShowLogo', v)}
                   />
-                </Field>
+                  <MediaUrlPicker
+                    label="Footer logo"
+                    value={str('footerLogoUrl')}
+                    onChange={(v) => set('footerLogoUrl', v)}
+                    hint="Leave empty to use the dark logo, then the main logo."
+                  />
+                  <Field
+                    label="Logo width"
+                    htmlFor="footerLogoWidth"
+                    hint="A CSS length such as 144px or 9rem."
+                    error={errors.footerLogoWidth}
+                  >
+                    <Input
+                      id="footerLogoWidth"
+                      value={str('footerLogoWidth')}
+                      onChange={(e) => set('footerLogoWidth', e.target.value)}
+                    />
+                  </Field>
+
+                  <Switch
+                    label="Show the description"
+                    checked={bool('footerShowDescription')}
+                    onChange={(v) => set('footerShowDescription', v)}
+                  />
+                  <Field
+                    label="Footer description"
+                    htmlFor="footerDescription"
+                    hint="Shown under the logo in the first footer column."
+                  >
+                    <Textarea
+                      id="footerDescription"
+                      rows={3}
+                      value={str('footerDescription')}
+                      onChange={(e) => set('footerDescription', e.target.value)}
+                    />
+                  </Field>
+                </fieldset>
+
+                <fieldset className="space-y-4 rounded-lg border border-hairline p-4">
+                  <legend className="px-1 text-sm font-medium text-content">Stay updated</legend>
+
+                  <Switch
+                    label="Show the email sign-up column"
+                    checked={bool('footerNewsletterEnabled')}
+                    onChange={(v) => set('footerNewsletterEnabled', v)}
+                  />
+                  <Field
+                    label="Form"
+                    htmlFor="footerNewsletterFormId"
+                    hint="Submissions become leads on this form, with its lead source, in the Leads dashboard."
+                  >
+                    <Select
+                      id="footerNewsletterFormId"
+                      value={str('footerNewsletterFormId')}
+                      onChange={(e) => set('footerNewsletterFormId', e.target.value)}
+                    >
+                      <option value="">Choose a form…</option>
+                      {forms.map((form) => (
+                        <option key={form.id} value={form.id}>
+                          {form.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="Heading" htmlFor="footerNewsletterHeading">
+                    <Input
+                      id="footerNewsletterHeading"
+                      value={str('footerNewsletterHeading')}
+                      onChange={(e) => set('footerNewsletterHeading', e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Description" htmlFor="footerNewsletterDescription">
+                    <Textarea
+                      id="footerNewsletterDescription"
+                      rows={2}
+                      value={str('footerNewsletterDescription')}
+                      onChange={(e) => set('footerNewsletterDescription', e.target.value)}
+                    />
+                  </Field>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Input placeholder" htmlFor="footerNewsletterPlaceholder">
+                      <Input
+                        id="footerNewsletterPlaceholder"
+                        value={str('footerNewsletterPlaceholder')}
+                        onChange={(e) => set('footerNewsletterPlaceholder', e.target.value)}
+                      />
+                    </Field>
+                    <Field label="Button text" htmlFor="footerNewsletterButtonLabel">
+                      <Input
+                        id="footerNewsletterButtonLabel"
+                        value={str('footerNewsletterButtonLabel')}
+                        onChange={(e) => set('footerNewsletterButtonLabel', e.target.value)}
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Success message" htmlFor="footerNewsletterSuccess">
+                    <Input
+                      id="footerNewsletterSuccess"
+                      value={str('footerNewsletterSuccess')}
+                      onChange={(e) => set('footerNewsletterSuccess', e.target.value)}
+                    />
+                  </Field>
+                </fieldset>
+
                 <Field
                   label="Copyright line"
                   htmlFor="copyrightText"
@@ -846,8 +988,8 @@ export function WebsiteSettingsForm({
                   />
                 </Field>
                 <p className="text-sm text-muted">
-                  Footer columns come from Navigation — every menu with a footer location becomes a
-                  column.
+                  Footer columns come from Navigation — every visible menu with a footer location
+                  becomes a column. Colours and spacing live under Website design → Footer.
                 </p>
               </>
             ) : null}
@@ -874,6 +1016,11 @@ export function WebsiteSettingsForm({
 }
 
 function tabForField(field: string): TabId {
+  // Footer appearance lives on the design screen; the rest of the footer
+  // fields on the settings screen.
+  if (FOOTER_COLORS.some(([key]) => key === field)) return 'design';
+  if (FOOTER_SPACING.some(([key]) => key === field)) return 'design';
+  if (field.startsWith('footer')) return 'footer';
   if (field.startsWith('color')) return 'theme';
   if (
     field.includes('Font') ||

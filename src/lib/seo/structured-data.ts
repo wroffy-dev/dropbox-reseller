@@ -1,13 +1,15 @@
 import 'server-only';
-import type { SeoSettings, WebsiteSettings } from '@prisma/client';
+import type { SeoSettings, SocialLink, WebsiteSettings } from '@prisma/client';
 import { absoluteUrl } from './metadata';
 
 type Json = Record<string, unknown>;
 
-export function organizationSchema(seo: SeoSettings, site: WebsiteSettings): Json {
-  const sameAs = [site.linkedinUrl, site.twitterUrl, site.facebookUrl, site.instagramUrl, site.youtubeUrl].filter(
-    Boolean,
-  );
+export function organizationSchema(
+  seo: SeoSettings,
+  site: WebsiteSettings,
+  socials: SocialLink[] = [],
+): Json {
+  const sameAs = socials.map((link) => link.url).filter(Boolean);
   return {
     '@context': 'https://schema.org',
     '@type': seo.organizationType || 'Organization',

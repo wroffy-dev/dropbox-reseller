@@ -19,7 +19,8 @@ const { getPublishedPage, findPublishedPageCountries } = await import('@/lib/ser
 const { getPublishedPost } = await import('@/lib/services/blog');
 const { getPublicProduct, selectProducts } = await import('@/lib/services/products');
 const { getNavigations } = await import('@/lib/services/navigation');
-const { listCountries } = await import('@/lib/country/registry');
+const { listCountries, invalidateCountryCache } = await import('@/lib/country/registry');
+const { resolveMarketOptions } = await import('@/lib/country/switch');
 
 /**
  * The properties that make two storefronts genuinely independent.
@@ -373,5 +374,76 @@ describe('leads carry their storefront', () => {
     expect(indiaLeads).toBe(0);
 
     await prisma.lead.delete({ where: { id: lead.id } });
+  });
+});
+
+describe('the market switcher only offers somewhere to land', () => {
+  /*
+   * A market created before its content is active and empty — the state every
+   * new market starts in. Offering it would hand the visitor a link to a 404,
+   * which is what happened to the UAE in production before it had any pages.
+   *
+   * Qatar is used rather than one of the fixture markets precisely because it
+   * starts empty, which is the condition under test.
+   */
+  const homeSlug = `mc-home-${suffix}`;
+  let qatar = '';
+  const homeIds: string[] = [];
+
+  beforeAll(async () => {
+    const country = await prisma.country.upsert({
+      where: { code: 'QA' },
+      update: { isActive: true },
+      create: {
+        name: 'Qatar',
+        code: 'QA',
+        slug: 'qa',
+        locale: 'en-QA',
+        currency: 'QAR',
+        currencySymbol: 'QAR',
+        isDefault: false,
+        isActive: true,
+        sortOrder: 9,
+      },
+    });
+    qatar = country.id;
+    invalidateCountryCache();
+  });
+
+  afterAll(async () => {
+    await prisma.pageSection.deleteMany({ where: { pageId: { in: homeIds } } });
+    await prisma.page.deleteMany({ where: { id: { in: homeIds } } });
+    await prisma.country.deleteMany({ where: { id: qatar } });
+    invalidateCountryCache();
+  });
+
+  it('leaves out an active market with no published home page', async () => {
+    const { home } = await contexts();
+    const options = await resolveMarketOptions(home, '/');
+
+    expect(options.some((option) => option.code === 'QA')).toBe(false);
+    // The markets that do have content are still offered.
+    expect(options.some((option) => option.code === 'AE')).toBe(true);
+  });
+
+  it('offers that market as soon as it has one, at its own prefix', async () => {
+    const created = await createPage(
+      formData({
+        title: `Home QA ${suffix}`,
+        slug: homeSlug,
+        status: 'PUBLISHED',
+        countryId: qatar,
+      }),
+    );
+    expect(created.ok, JSON.stringify(created)).toBe(true);
+    const id = (created as { data: { id: string } }).data.id;
+    homeIds.push(id);
+    await prisma.page.update({ where: { id }, data: { isHomepage: true } });
+
+    const { home } = await contexts();
+    const options = await resolveMarketOptions(home, '/');
+
+    expect(options.find((option) => option.code === 'QA')?.href).toBe('/qa');
+    expect(options.find((option) => option.code === 'IN')?.href).toBe('/');
   });
 });

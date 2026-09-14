@@ -100,6 +100,23 @@ async function countriesWithEquivalent(surface: Surface): Promise<Set<string>> {
   return new Set(rows.map((row) => row.countryId));
 }
 
+/**
+ * Markets whose own home page is published.
+ *
+ * Every fallback the switcher offers is a market's root, so a market without a
+ * published home page has no reachable fallback — offering it would send the
+ * visitor to a 404. That is not hypothetical: a market created ahead of its
+ * content is active and empty, which is exactly the state a new market starts
+ * in. One query, not one per market.
+ */
+async function countriesWithHome(): Promise<Set<string>> {
+  const rows = await prisma.page.findMany({
+    where: { ...publishedPageWhere(), isHomepage: true },
+    select: { countryId: true },
+  });
+  return new Set(rows.map((row) => row.countryId));
+}
+
 export const resolveMarketOptions = cache(
   async (current: CountryContext, path: string): Promise<MarketOption[]> => {
     const [countries, surface] = await Promise.all([
@@ -108,9 +125,25 @@ export const resolveMarketOptions = cache(
     ]);
 
     if (countries.length < 2) return [];
-    const equivalents = await countriesWithEquivalent(surface);
+    const [equivalents, withHome] = await Promise.all([
+      countriesWithEquivalent(surface),
+      countriesWithHome(),
+    ]);
 
-    return countries.map((country) => {
+    /*
+     * A market is offered only when the visitor has somewhere to land: this
+     * content in that market, or that market's home page. The market being
+     * viewed always stays, so the switcher can show what is current.
+     */
+    const reachable = countries.filter(
+      (country) =>
+        country.id === current.id || withHome.has(country.id) || equivalents.has(country.id),
+    );
+
+    // One option is the market already being viewed; that is not a switcher.
+    if (reachable.length < 2) return [];
+
+    return reachable.map((country) => {
       const isCurrent = country.id === current.id;
 
       let href = countryPath(country);

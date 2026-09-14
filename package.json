@@ -18,7 +18,8 @@
     "db:studio": "prisma studio",
     "seed:build": "esbuild prisma/seed.ts --bundle --platform=node --target=node22 --format=esm --outfile=prisma/seed.mjs --external:@prisma/client --external:bcryptjs",
     "seed:prod": "node prisma/seed.mjs",
-    "verify:production": "node scripts/verify-production.mjs"
+    "verify:production": "node scripts/verify-production.mjs",
+    "db:rehearse": "node scripts/rehearse-migration.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

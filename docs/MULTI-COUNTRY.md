@@ -31,6 +31,7 @@ that proves it.
 - [Permissions](#permissions)
 - [The admin country selector](#the-admin-country-selector)
 - [Migration notes](#migration-notes)
+- [Rehearsing the migration](#rehearsing-the-migration)
 - [How to add a country](#how-to-add-a-country)
 
 ---
@@ -452,6 +453,52 @@ offline without touching anything.
 
 Backups are unaffected: they are `pg_dump -Fc` of the whole database, so the new
 tables are included automatically.
+
+---
+
+## Rehearsing the migration
+
+A migration that has only ever run against seed data has not really been tested.
+Production carries soft-deleted rows with mangled slugs, nulls in columns the
+code "always" writes, empty-string currencies, archived and scheduled content,
+emoji in titles and nested slugs nobody would think to invent. Rehearse against
+a copy of the real thing before touching production:
+
+```bash
+# 1. Take a dump of production (or use the newest file the backup system wrote).
+pg_dump -Fc "$PRODUCTION_DATABASE_URL" -f production.dump
+
+# 2. Restore it into a scratch database, migrate it, and check the result.
+REHEARSAL_DATABASE_URL=postgresql://user@localhost:5432/rehearsal \
+  npm run db:rehearse -- ./production.dump
+```
+
+`scripts/rehearse-migration.mjs` drops and recreates the scratch database,
+restores the dump, runs `prisma migrate deploy`, and then asserts:
+
+- exactly one default market, and it owns the site root (empty prefix);
+- no rows lost from any content table;
+- every page and article slug is **byte-identical** to before, so no URL moved;
+- the global product rows are untouched, and every product's price, annual
+  price, status, currency and featured flag landed in `ProductCountry`;
+- every page, article, menu and lead belongs to the default market;
+- the global settings were copied into the default market (and that none were
+  invented when there were none to copy);
+- forms and popups stayed shared;
+- the global slug uniques are gone and the `(countryId, slug)` ones exist;
+- `countryId` is `NOT NULL` everywhere it must be;
+- `prisma migrate diff` reports **no drift** between the migrated database and
+  `prisma/schema.prisma`.
+
+It exits non-zero and prints the failing checks if any of that is untrue, so it
+works as a deployment gate in CI as well as by hand. It refuses to run if
+`REHEARSAL_DATABASE_URL` points at the same host and database as
+`DATABASE_URL`, and it only ever writes to the scratch database — the dump file
+and production are read-only to it.
+
+Accepts a `pg_dump -Fc` archive (what this app's own backup system produces) or
+a plain `.sql` file. If the dump already has every migration applied it says so
+and exits 0 rather than pretending to have tested anything.
 
 ---
 

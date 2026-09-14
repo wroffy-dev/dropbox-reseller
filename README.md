@@ -154,6 +154,7 @@ openssl rand -base64 32   # ENCRYPTION_KEY
 | `npm run db:deploy` | Apply existing migrations (production) |
 | `npm run db:seed` | Seed roles, permissions, the admin and demo content |
 | `npm run db:studio` | Prisma Studio |
+| `npm run db:rehearse` | Rehearse pending migrations against a restored production dump |
 | `./scripts/smoke.sh` | Boot the production build and run the HTTP smoke suite |
 
 ---
@@ -193,6 +194,22 @@ npm run db:deploy                            # production: apply only
 
 After changing `prisma/schema.prisma`, always create a migration rather than
 using `db push`, so production has the same history.
+
+Before applying a migration that touches existing data, rehearse it against a
+copy of production. This restores a dump into a scratch database, migrates it,
+and asserts that no rows were lost, no slug changed and the result matches
+`prisma/schema.prisma` with no drift:
+
+```bash
+pg_dump -Fc "$PRODUCTION_DATABASE_URL" -f production.dump
+REHEARSAL_DATABASE_URL=postgresql://user@localhost:5432/rehearsal \
+  npm run db:rehearse -- ./production.dump
+```
+
+It exits non-zero and names the failing checks if anything is wrong, so it also
+works as a CI gate. It refuses to run against `DATABASE_URL`, and writes only to
+the scratch database. See
+[docs/MULTI-COUNTRY.md](docs/MULTI-COUNTRY.md#rehearsing-the-migration).
 
 ---
 

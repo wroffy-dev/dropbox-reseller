@@ -25,7 +25,7 @@ const {
 const { encryptTotpSecret, decryptTotpSecret, hashRecoveryCode } = await import(
   '@/lib/mfa/crypto'
 );
-const { otpauthUri, verifyTotp, generateTotpSecret, TOTP_PERIOD } = await import(
+const { otpauthUri, verifyTotp, generateTotpSecret, mfaIssuer, TOTP_PERIOD } = await import(
   '@/lib/mfa/totp'
 );
 const {
@@ -150,7 +150,7 @@ describe('otpauth URI', () => {
     expect(uri).toContain('digits=6');
     expect(uri).toContain('period=30');
     expect(uri).toContain(`secret=${secret}`);
-    expect(decodeURIComponent(uri)).toContain('Dropbox Reseller:user@example.com');
+    expect(decodeURIComponent(uri)).toContain(`${mfaIssuer()}:user@example.com`);
   });
 });
 

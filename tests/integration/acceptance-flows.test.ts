@@ -6,7 +6,15 @@
  * flows compose, not to re-test each action in isolation.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mockAuth, formData, uniqueSuffix, TEST_ACTOR, ensureTestCountry, testCountryContext } from '../helpers';
+import {
+  mockAuth,
+  formData,
+  uniqueSuffix,
+  TEST_ACTOR,
+  ensureTestCountry,
+  testCountryContext,
+  ensureSystemRoles,
+} from '../helpers';
 
 mockAuth();
 
@@ -41,6 +49,7 @@ const cleanup = {
 };
 
 beforeAll(async () => {
+  await ensureSystemRoles();
   const role = await prisma.userRole.findUniqueOrThrow({ where: { slug: 'super-admin' } });
   await prisma.user.upsert({
     where: { id: TEST_ACTOR.id },

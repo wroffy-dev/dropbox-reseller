@@ -156,3 +156,52 @@ export function testCountryContext(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+/**
+ * The permission catalogue and the four built-in roles.
+ *
+ * Several suites act as a real staff member and need the roles the seed
+ * creates. Depending on a seeded database made those suites pass locally and
+ * fail on a freshly migrated one — which is what CI has — so they now provision
+ * what they need. Driven by `SYSTEM_ROLES` and `PERMISSIONS`, the same sources
+ * the seed reads, so the two can never drift apart.
+ *
+ * Idempotent, and cheap on the second call: suites may call it freely.
+ */
+export async function ensureSystemRoles(): Promise<void> {
+  const { prisma } = await import('@/lib/db/prisma');
+  const { PERMISSIONS, SYSTEM_ROLES } = await import('@/lib/auth/permissions');
+
+  for (const [key, meta] of Object.entries(PERMISSIONS)) {
+    await prisma.permission.upsert({
+      where: { key },
+      update: {},
+      create: { key, group: meta.group, label: meta.label },
+    });
+  }
+
+  const byKey = new Map((await prisma.permission.findMany()).map((p) => [p.key, p.id]));
+
+  for (const role of SYSTEM_ROLES) {
+    const record = await prisma.userRole.upsert({
+      where: { slug: role.slug },
+      update: { rank: role.rank, isSystem: true },
+      create: {
+        slug: role.slug,
+        name: role.name,
+        description: role.description,
+        rank: role.rank,
+        isSystem: true,
+      },
+    });
+
+    const keys = role.permissions === 'all' ? [...ALL_PERMISSIONS] : role.permissions;
+    await prisma.rolePermission.createMany({
+      data: keys
+        .map((k) => byKey.get(k))
+        .filter((id): id is string => Boolean(id))
+        .map((permissionId) => ({ roleId: record.id, permissionId })),
+      skipDuplicates: true,
+    });
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { mockAuth, formData, uniqueSuffix, TEST_ACTOR } from '../helpers';
+import { mockAuth, formData, uniqueSuffix, TEST_ACTOR, ensureSystemRoles } from '../helpers';
 
 mockAuth();
 
@@ -22,6 +22,7 @@ let superAdminRoleId = '';
 let trackingBackup: Record<string, unknown> | null = null;
 
 beforeAll(async () => {
+  await ensureSystemRoles();
   const [sales, admin, superAdmin] = await Promise.all([
     prisma.userRole.findUniqueOrThrow({ where: { slug: 'sales' } }),
     prisma.userRole.findUniqueOrThrow({ where: { slug: 'admin' } }),

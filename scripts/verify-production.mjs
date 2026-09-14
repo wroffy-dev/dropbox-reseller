@@ -101,6 +101,15 @@ const checks = [
     required: true,
   },
   {
+    // The second storefront answers on its own prefix. Not required: a
+    // deployment may legitimately have only the root market live, and an
+    // inactive market correctly 404s.
+    name: 'UAE storefront (/ae)',
+    path: '/ae',
+    expect: [200, 404],
+    required: false,
+  },
+  {
     name: 'Admin is gated',
     path: '/admin',
     // Anonymous access must not reach the dashboard. A 200 here would mean the

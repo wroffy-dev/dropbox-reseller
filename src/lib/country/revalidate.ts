@@ -1,5 +1,6 @@
 import 'server-only';
 import { revalidatePath } from 'next/cache';
+import { listActiveCountries } from './registry';
 import { countryPath } from './routing';
 import type { CountryContext } from './types';
 
@@ -30,5 +31,20 @@ export function revalidateCountryBlog(
 ): void {
   revalidatePath(countryPath(country, 'blog'), 'layout');
   if (slug) revalidatePath(countryPath(country, `blog/${slug}`));
+  revalidatePath('/sitemap.xml');
+}
+
+/**
+ * Invalidates every market's blog after a change that is genuinely global —
+ * the blog's layout and design, or a category or tag every market shares.
+ *
+ * Revalidating `/blog` alone would leave `/ae/blog` serving the old
+ * arrangement, which is the one mistake this module exists to prevent.
+ */
+export async function revalidateAllCountryBlogs(): Promise<void> {
+  const countries = await listActiveCountries();
+  for (const country of countries) {
+    revalidatePath(countryPath(country, 'blog'), 'layout');
+  }
   revalidatePath('/sitemap.xml');
 }

@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS "Country" (
     "isActive"       BOOLEAN      NOT NULL DEFAULT true,
     "sortOrder"      INTEGER      NOT NULL DEFAULT 0,
     "createdAt"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"      TIMESTAMP(3) NOT NULL,
     CONSTRAINT "Country_pkey" PRIMARY KEY ("id")
 );
 
@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS "CountrySettings" (
     "latitude"            TEXT,
     "longitude"           TEXT,
     "createdAt"           TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt"           TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"           TIMESTAMP(3) NOT NULL,
     CONSTRAINT "CountrySettings_pkey" PRIMARY KEY ("id")
 );
 
@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS "ProductCountry" (
     "noIndex"          BOOLEAN         NOT NULL DEFAULT false,
     "ogImageId"        TEXT,
     "createdAt"        TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt"        TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"        TIMESTAMP(3)    NOT NULL,
     CONSTRAINT "ProductCountry_pkey" PRIMARY KEY ("id")
 );
 
@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS "ProductVariantCountry" (
     "annualPrice"  DECIMAL(12,2),
     "isAvailable"  BOOLEAN       NOT NULL DEFAULT true,
     "createdAt"    TIMESTAMP(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt"    TIMESTAMP(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"    TIMESTAMP(3)  NOT NULL,
     CONSTRAINT "ProductVariantCountry_pkey" PRIMARY KEY ("id")
 );
 
@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS "BlogCategoryCountry" (
     "noIndex"            BOOLEAN      NOT NULL DEFAULT false,
     "noFollow"           BOOLEAN      NOT NULL DEFAULT false,
     "createdAt"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"          TIMESTAMP(3) NOT NULL,
     CONSTRAINT "BlogCategoryCountry_pkey" PRIMARY KEY ("id")
 );
 

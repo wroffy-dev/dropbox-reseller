@@ -78,6 +78,18 @@ export default async function PublicLayout({
     }
   }
 
+  /*
+   * A popup pinned to specific pages is pinned to pages in one market. Dropping
+   * it here rather than in the client matters: an empty target list means
+   * "everywhere", so a popup whose only targets are India's pages would
+   * otherwise start firing on every UAE page instead of none.
+   */
+  const visiblePopups = popups.filter(
+    (popup) =>
+      popup.pageTargets.length === 0 ||
+      popup.pageTargets.some((target) => target.page.countryId === country.id),
+  );
+
   return (
     <>
       <a href="#main" className="skip-link">
@@ -119,7 +131,7 @@ export default async function PublicLayout({
       ) : null}
       <PopupHost
         basePath={countryPath(country)}
-        popups={popups.map((p) => ({
+        popups={visiblePopups.map((p) => ({
           id: p.id,
           type: p.type,
           heading: p.heading,

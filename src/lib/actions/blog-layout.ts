@@ -18,6 +18,7 @@ import {
 import { materialiseSurface } from '@/lib/services/blog-cms';
 import { sanitizeText } from '@/lib/utils/sanitize';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
+import { revalidateAllCountryBlogs } from '@/lib/country/revalidate';
 
 /**
  * Blog structure and design actions.
@@ -37,8 +38,10 @@ const SURFACE_PERMISSIONS: Record<BlogSurface, PermissionKey[]> = {
   SIDEBAR: ['blog.sidebar', 'blog.edit'],
 };
 
-function revalidateBlog() {
-  revalidatePath('/blog', 'layout');
+async function revalidateBlog() {
+  // The blog's arrangement and design are global, so every market's blog is
+  // affected — not just the root market's.
+  await revalidateAllCountryBlogs();
   revalidatePath('/admin/blog/layout');
   revalidatePath('/admin/blog/design');
 }
@@ -61,7 +64,7 @@ export async function ensureBlogSurface(rawSurface: unknown): Promise<ActionResu
     const surface = surfaceSchema.parse(rawSurface);
     await authorizeAny(SURFACE_PERMISSIONS[surface]);
     await materialiseSurface(surface, null);
-    revalidateBlog();
+    await revalidateBlog();
     return success(undefined, 'Ready.');
   } catch (error) {
     return toActionError(error);
@@ -130,7 +133,7 @@ export async function addBlogSection(input: {
       summary: `Added a ${definition.label} to the blog ${surface.toLowerCase()}`,
     });
 
-    revalidateBlog();
+    await revalidateBlog();
     return success({ id: section.id }, `${definition.label} added.`);
   } catch (error) {
     return toActionError(error);
@@ -176,7 +179,7 @@ export async function updateBlogSection(
     if (payload.isVisible !== undefined) data.isVisible = payload.isVisible;
 
     await prisma.blogSection.update({ where: { id: sectionId }, data });
-    revalidateBlog();
+    await revalidateBlog();
     if (section.postId) revalidatePath(`/admin/blog/${section.postId}`);
     return success(undefined, 'Section saved.');
   } catch (error) {
@@ -215,7 +218,7 @@ export async function duplicateBlogSection(
     });
 
     await normaliseOrder(source.surface, source.postId);
-    revalidateBlog();
+    await revalidateBlog();
     return success({ id: copy.id }, 'Section duplicated.');
   } catch (error) {
     return toActionError(error);
@@ -229,7 +232,7 @@ export async function deleteBlogSection(sectionId: string): Promise<ActionResult
     await authorizeAny(SURFACE_PERMISSIONS[section.surface]);
 
     await prisma.blogSection.delete({ where: { id: sectionId } });
-    revalidateBlog();
+    await revalidateBlog();
     if (section.postId) revalidatePath(`/admin/blog/${section.postId}`);
     return success(undefined, 'Section removed.');
   } catch (error) {
@@ -262,7 +265,7 @@ export async function reorderBlogSections(input: unknown): Promise<ActionResult>
       ),
     );
 
-    revalidateBlog();
+    await revalidateBlog();
     if (postId) revalidatePath(`/admin/blog/${postId}`);
     return success(undefined, 'Order saved.');
   } catch (error) {
@@ -281,7 +284,7 @@ export async function toggleBlogSectionVisibility(sectionId: string): Promise<Ac
       data: { isVisible: !section.isVisible },
     });
 
-    revalidateBlog();
+    await revalidateBlog();
     return success(undefined, section.isVisible ? 'Section hidden.' : 'Section shown.');
   } catch (error) {
     return toActionError(error);
@@ -343,7 +346,7 @@ export async function copyGlobalSidebarToPost(postId: string): Promise<ActionRes
     });
 
     revalidatePath(`/admin/blog/${postId}`);
-    revalidateBlog();
+    await revalidateBlog();
     return success(undefined, 'Global sidebar copied. Edit it freely — the global one is untouched.');
   } catch (error) {
     return toActionError(error);
@@ -355,7 +358,7 @@ export async function clearPostSidebar(postId: string): Promise<ActionResult> {
     await authorizeAny(['blog.sidebar', 'blog.edit']);
     await prisma.blogSection.deleteMany({ where: { surface: 'SIDEBAR', postId } });
     revalidatePath(`/admin/blog/${postId}`);
-    revalidateBlog();
+    await revalidateBlog();
     return success(undefined, 'Custom sidebar removed. This article follows the global one again.');
   } catch (error) {
     return toActionError(error);
@@ -422,7 +425,7 @@ export async function saveBlogSettings(input: unknown): Promise<ActionResult> {
       summary: 'Updated blog design settings',
     });
 
-    revalidateBlog();
+    await revalidateBlog();
     return success(undefined, 'Blog design saved.');
   } catch (error) {
     return toActionError(error);

@@ -7,6 +7,7 @@ import { BrandStyle } from '@/components/public/brand-style';
 import { HeadTracking, BodyTracking } from '@/components/analytics/tracking-scripts';
 import { ConsentBanner } from '@/components/analytics/consent-banner';
 import { ToastProvider } from '@/components/ui/toast';
+import { getRequestCountry } from '@/lib/country/request';
 import { siteUrl } from '@/lib/env';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -27,11 +28,15 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const [site, tracking, scripts, cookieStore] = await Promise.all([
+  const [site, tracking, scripts, cookieStore, country] = await Promise.all([
     getWebsiteSettings(),
     getTrackingSettings(),
     prisma.trackingScript.findMany({ where: { isActive: true } }),
     cookies(),
+    // The market's own BCP-47 tag, so `<html lang>` agrees with the canonical
+    // and the hreflang annotations the page emits. Request-cached, so this
+    // shares the resolution the public layout already made.
+    getRequestCountry().catch(() => null),
   ]);
 
   const consentGranted =
@@ -39,7 +44,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const consentUndecided = tracking.consentRequired && !cookieStore.get('tracking_consent');
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={country?.locale || 'en'} suppressHydrationWarning>
       <head>
         <BrandStyle settings={site} />
         <HeadTracking settings={tracking} scripts={scripts} consentGranted={consentGranted} />

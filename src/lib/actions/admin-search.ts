@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/db/prisma';
 import { getCurrentUser, userCan } from '@/lib/auth/guards';
+import { listAccessibleCountries } from '@/lib/country/access';
 
 export type SearchHit = {
   id: string;
@@ -14,6 +15,10 @@ export type SearchHit = {
 /**
  * Global admin search. Every group is gated by the caller's permissions, so a
  * Sales user never sees pages or staff in their results.
+ *
+ * Market-scoped content is additionally limited to the markets the caller may
+ * work in, so search cannot hand someone a page from a storefront they cannot
+ * open. Where more than one market exists, each hit names its own.
  */
 export async function adminSearch(query: string): Promise<SearchHit[]> {
   const user = await getCurrentUser();
@@ -24,6 +29,12 @@ export async function adminSearch(query: string): Promise<SearchHit[]> {
   const contains = { contains: q, mode: 'insensitive' as const };
   const take = 5;
   const hits: SearchHit[] = [];
+
+  const countries = await listAccessibleCountries(user, { includeInactive: true });
+  const multiCountry = countries.length > 1;
+  // No restriction rows means every market, which needs no clause at all.
+  const countryScope =
+    user.role === 'super-admin' ? {} : { countryId: { in: countries.map((c) => c.id) } };
 
   const tasks: Array<Promise<void>> = [];
 
@@ -79,9 +90,19 @@ export async function adminSearch(query: string): Promise<SearchHit[]> {
     tasks.push(
       prisma.page
         .findMany({
-          where: { deletedAt: null, OR: [{ title: contains }, { slug: contains }] },
+          where: {
+            deletedAt: null,
+            ...countryScope,
+            OR: [{ title: contains }, { slug: contains }],
+          },
           take,
-          select: { id: true, title: true, slug: true, status: true },
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            status: true,
+            country: { select: { name: true, slug: true } },
+          },
         })
         .then((rows) => {
           for (const row of rows) {
@@ -89,7 +110,13 @@ export async function adminSearch(query: string): Promise<SearchHit[]> {
               id: row.id,
               type: 'Page',
               title: row.title,
-              subtitle: `/${row.slug} · ${row.status.toLowerCase()}`,
+              subtitle: [
+                `/${[row.country.slug, row.slug].filter(Boolean).join('/')}`,
+                row.status.toLowerCase(),
+                multiCountry ? row.country.name : null,
+              ]
+                .filter(Boolean)
+                .join(' · '),
               href: `/admin/pages/${row.id}`,
             });
           }
@@ -123,9 +150,13 @@ export async function adminSearch(query: string): Promise<SearchHit[]> {
     tasks.push(
       prisma.blogPost
         .findMany({
-          where: { deletedAt: null, OR: [{ title: contains }, { slug: contains }] },
+          where: {
+            deletedAt: null,
+            ...countryScope,
+            OR: [{ title: contains }, { slug: contains }],
+          },
           take,
-          select: { id: true, title: true, status: true },
+          select: { id: true, title: true, status: true, country: { select: { name: true } } },
         })
         .then((rows) => {
           for (const row of rows) {
@@ -133,7 +164,9 @@ export async function adminSearch(query: string): Promise<SearchHit[]> {
               id: row.id,
               type: 'Post',
               title: row.title,
-              subtitle: row.status.toLowerCase(),
+              subtitle: [row.status.toLowerCase(), multiCountry ? row.country.name : null]
+                .filter(Boolean)
+                .join(' · '),
               href: `/admin/blog/${row.id}`,
             });
           }

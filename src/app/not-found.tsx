@@ -1,7 +1,22 @@
 import Link from 'next/link';
 import { buttonClasses } from '@/components/ui/button';
+import { getRequestCountry } from '@/lib/country/request';
+import { countryPath } from '@/lib/country/routing';
 
-export default function NotFound() {
+/**
+ * The 404 page, in the market the visitor was browsing.
+ *
+ * A missing page in one market is never answered with another market's content
+ * — that would show the wrong prices and the wrong contact details — so this is
+ * where a wrong UAE URL lands, and both routes out of it stay inside the UAE.
+ */
+export default async function NotFound() {
+  // The market is a nicety here, not a requirement: a 404 must render even if
+  // the database is unreachable.
+  const country = await getRequestCountry().catch(() => null);
+  const home = country ? countryPath(country) : '/';
+  const contact = country ? countryPath(country, 'contact') : '/contact';
+
   return (
     <div className="flex min-h-[70vh] items-center justify-center px-4 py-20">
       <div className="max-w-md text-center">
@@ -12,10 +27,10 @@ export default function NotFound() {
           we will point you in the right direction.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <Link href="/" className={buttonClasses('primary', 'md')}>
+          <Link href={home} className={buttonClasses('primary', 'md')}>
             Back to homepage
           </Link>
-          <Link href="/contact" className={buttonClasses('outline', 'md')}>
+          <Link href={contact} className={buttonClasses('outline', 'md')}>
             Contact us
           </Link>
         </div>

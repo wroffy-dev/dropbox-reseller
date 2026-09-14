@@ -28,10 +28,20 @@ no redeploy.
 - [Adding a new CMS block](#adding-a-new-cms-block)
 - [Security notes](#security-notes)
 - [Troubleshooting](#troubleshooting)
+- [Countries](docs/MULTI-COUNTRY.md)
 
 ---
 
 ## What it does
+
+**Multiple countries, one application**
+- India is served from the site root and the UAE from `/ae/`, each with its own
+  pages, articles, menus, pricing, contact details, SEO and leads — sharing one
+  brand, one media library and one product catalogue.
+- Adding a country is a database row plus its content: routing, settings,
+  pricing and SEO all read the `Country` table, so no route, component or
+  deployment changes. Full reference:
+  **[docs/MULTI-COUNTRY.md](docs/MULTI-COUNTRY.md)**.
 
 **Public website**
 - Every page — the homepage included — is a database row built from ordered CMS

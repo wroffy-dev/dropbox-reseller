@@ -14,6 +14,8 @@ import { PageRowActions } from '@/components/admin/pages/page-list-actions';
 import { ContentStatusBadge } from '@/components/admin/status-badge';
 import { buttonClasses } from '@/components/ui/button';
 import type { FieldValues } from '@/components/cms/field-renderer';
+import { getCountryById, getDefaultCountry, listActiveCountries } from '@/lib/country/registry';
+import { countryPath } from '@/lib/country/routing';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +48,13 @@ export default async function EditPage({ params }: { params: Promise<{ id: strin
     include: { sections: { orderBy: { sortOrder: 'asc' } } },
   });
   if (!page) notFound();
+
+  // The market the page belongs to, named in the header so an editor can never
+  // be in doubt about which storefront they are changing.
+  const [country, countries] = await Promise.all([
+    getCountryById(page.countryId).then(async (row) => row ?? (await getDefaultCountry())),
+    listActiveCountries(),
+  ]);
 
   const canEdit = userCan(user, 'pages.edit');
 
@@ -82,14 +91,20 @@ export default async function EditPage({ params }: { params: Promise<{ id: strin
     settings: (section.settings ?? {}) as FieldValues,
   }));
 
-  const publicPath = `/${page.slug}`.replace(/\/+$/, '') || '/';
+  const publicPath = countryPath(country, page.slug);
   const visibleCount = sections.filter((section) => section.isVisible).length;
 
   return (
     <>
       <AdminPageHeader
         title={page.title}
-        description={page.isHomepage ? 'Your homepage' : `/${page.slug}`}
+        description={
+          countries.length > 1
+            ? `${country.name} · ${page.isHomepage ? 'homepage' : publicPath}`
+            : page.isHomepage
+              ? 'Your homepage'
+              : publicPath
+        }
         backHref="/admin/pages"
         backLabel="All pages"
         status={<ContentStatusBadge status={page.status} />}
@@ -122,6 +137,10 @@ export default async function EditPage({ params }: { params: Promise<{ id: strin
               slug={page.slug}
               status={page.status}
               isHomepage={page.isHomepage}
+              countrySlug={country.slug}
+              countries={countries
+                .filter((row) => row.id !== country.id)
+                .map((row) => ({ id: row.id, code: row.code, name: row.name }))}
               can={{
                 edit: canEdit,
                 publish: userCan(user, 'pages.publish'),

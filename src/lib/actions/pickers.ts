@@ -2,24 +2,35 @@
 
 import { prisma } from '@/lib/db/prisma';
 import { getCurrentUser, userCan } from '@/lib/auth/guards';
+import { scopeForUser } from '@/lib/country/admin';
 
 export type PickerOption = { value: string; label: string; hint?: string | null };
 
-/** Product options for CMS block pickers. Requires products.view. */
+/**
+ * Product options for CMS block pickers. Requires products.view.
+ *
+ * Scoped to the market the admin is working in: a block on a UAE page can only
+ * hand-pick products the UAE actually sells, because one it does not sell would
+ * render as nothing on the published page.
+ */
 export async function listProductOptions(): Promise<PickerOption[]> {
   const user = await getCurrentUser();
-  if (!userCan(user, 'products.view')) return [];
+  if (!user || !userCan(user, 'products.view')) return [];
+  const scope = await scopeForUser(user);
 
-  const rows = await prisma.product.findMany({
-    where: { deletedAt: null },
-    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+  const rows = await prisma.productCountry.findMany({
+    where: { countryId: scope.country.id, product: { deletedAt: null } },
+    orderBy: [{ sortOrder: 'asc' }, { product: { name: 'asc' } }],
     take: 200,
-    select: { id: true, name: true, status: true, sku: true },
+    select: {
+      status: true,
+      product: { select: { id: true, name: true, sku: true } },
+    },
   });
   return rows.map((row) => ({
-    value: row.id,
-    label: row.name,
-    hint: [row.sku, row.status.toLowerCase()].filter(Boolean).join(' · '),
+    value: row.product.id,
+    label: row.product.name,
+    hint: [row.product.sku, row.status.toLowerCase()].filter(Boolean).join(' · '),
   }));
 }
 
@@ -112,10 +123,13 @@ export async function listBlogTagOptions(): Promise<PickerOption[]> {
 
 export async function listBlogPostOptions(): Promise<PickerOption[]> {
   const user = await getCurrentUser();
-  if (!canPickBlog(user)) return [];
+  if (!user || !canPickBlog(user)) return [];
+  // The current market's articles only: a hand-picked article from another
+  // market would never appear on the published page.
+  const scope = await scopeForUser(user);
 
   const rows = await prisma.blogPost.findMany({
-    where: { deletedAt: null },
+    where: { deletedAt: null, countryId: scope.country.id },
     orderBy: [{ publishedAt: 'desc' }, { updatedAt: 'desc' }],
     take: 200,
     select: { id: true, title: true, status: true, category: { select: { name: true } } },

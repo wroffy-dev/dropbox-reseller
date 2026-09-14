@@ -3,10 +3,22 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FileText, Plus, Pencil, ExternalLink, Copy, Trash, Star, Eye, Archive } from 'lucide-react';
+import {
+  FileText,
+  Plus,
+  Pencil,
+  ExternalLink,
+  Copy,
+  Trash,
+  Star,
+  Eye,
+  Archive,
+  Globe,
+} from 'lucide-react';
 import {
   setBlogPostStatus,
   duplicateBlogPost,
+  duplicateBlogPostToCountry,
   deleteBlogPost,
   bulkBlogAction,
 } from '@/lib/actions/blog';
@@ -30,6 +42,8 @@ export type PostRow = {
   authorName: string | null;
   /** The market this article belongs to. */
   countryName: string;
+  countryCode: string;
+  countrySlug: string;
   readingTime: number;
   publishedAt: string | null;
   updatedAt: string;
@@ -40,21 +54,36 @@ export function PostsTable({
   can,
   filtered,
   showCountry = false,
+  countries = [],
 }: {
   rows: PostRow[];
   can: { edit: boolean; create: boolean; delete: boolean; publish: boolean };
   filtered: boolean;
   /** Adds the Country column. Hidden on a single-market installation. */
   showCountry?: boolean;
+  /** Markets an article can be copied into. */
+  countries?: Array<{ id: string; code: string; name: string }>;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const selection = useSelection(rows);
   const [busy, setBusy] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState<string | null>(null);
+  const [confirmCopy, setConfirmCopy] = React.useState<{
+    postId: string;
+    countryId: string;
+    name: string;
+  } | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = React.useState(false);
 
-  async function run(fn: () => Promise<{ ok: boolean; error?: string; message?: string }>) {
+  async function run(
+    fn: () => Promise<{
+      ok: boolean;
+      error?: string;
+      message?: string;
+      fieldErrors?: Record<string, string[]>;
+    }>,
+  ) {
     setBusy(true);
     const result = await fn();
     setBusy(false);
@@ -62,7 +91,9 @@ export function PostsTable({
       toast(result.error ?? 'Something went wrong.', 'error');
       return false;
     }
-    toast(result.message ?? 'Done.');
+    // An empty message means the action handed control to a confirmation
+    // dialog rather than completing, so there is nothing to announce yet.
+    if (result.message !== '') toast(result.message ?? 'Done.');
     router.refresh();
     return true;
   }
@@ -209,7 +240,8 @@ export function PostsTable({
                     {row.title}
                   </Link>
                   <code className="mt-0.5 block font-mono text-xs text-muted">
-                    /blog/{row.slug} · {row.readingTime} min
+                    /{[row.countrySlug, 'blog', row.slug].filter(Boolean).join('/')} ·{' '}
+                    {row.readingTime} min
                   </code>
                 </Td>
                 {showCountry ? (
@@ -260,7 +292,7 @@ export function PostsTable({
                     </Link>
                     {row.status === 'PUBLISHED' ? (
                       <Link
-                        href={`/blog/${row.slug}`}
+                        href={`/${[row.countrySlug, 'blog', row.slug].filter(Boolean).join('/')}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="rounded p-1.5 text-muted hover:bg-muted/10 hover:text-content"
@@ -311,6 +343,40 @@ export function PostsTable({
                           Duplicate
                         </RowMenuItem>
                       ) : null}
+                      {can.create
+                        ? countries
+                            .filter((country) => country.code !== row.countryCode)
+                            .map((country) => (
+                              <RowMenuItem
+                                key={country.id}
+                                disabled={busy}
+                                onClick={() =>
+                                  run(async () => {
+                                    const result = await duplicateBlogPostToCountry(
+                                      row.id,
+                                      country.id,
+                                    );
+                                    // Already there: ask before replacing it.
+                                    if (!result.ok && result.fieldErrors?._confirm) {
+                                      setConfirmCopy({
+                                        postId: row.id,
+                                        countryId: country.id,
+                                        name: country.name,
+                                      });
+                                      return { ok: true, message: '' };
+                                    }
+                                    if (result.ok && result.data) {
+                                      router.push(`/admin/blog/${result.data.id}`);
+                                    }
+                                    return result;
+                                  })
+                                }
+                              >
+                                <Globe className="h-3.5 w-3.5" aria-hidden="true" />
+                                Copy to {country.name}
+                              </RowMenuItem>
+                            ))
+                        : null}
                       {can.delete ? (
                         <RowMenuItem tone="danger" disabled={busy} onClick={() => setConfirmDelete(row.id)}>
                           <Trash className="h-3.5 w-3.5" aria-hidden="true" />
@@ -325,6 +391,26 @@ export function PostsTable({
           </tbody>
         </Table>
       </TableWrap>
+
+      <ConfirmDialog
+        open={confirmCopy !== null}
+        onClose={() => setConfirmCopy(null)}
+        onConfirm={async () => {
+          const target = confirmCopy;
+          setConfirmCopy(null);
+          if (!target) return;
+          await run(async () => {
+            const result = await duplicateBlogPostToCountry(target.postId, target.countryId, {
+              replaceExisting: true,
+            });
+            if (result.ok && result.data) router.push(`/admin/blog/${result.data.id}`);
+            return result;
+          });
+        }}
+        title={`Replace the existing ${confirmCopy?.name ?? ''} article?`}
+        message="That country already has an article at this URL. Its content, tags and SEO will be replaced by this one's, and it will be set back to draft."
+        pending={busy}
+      />
 
       <ConfirmDialog
         open={Boolean(confirmDelete)}

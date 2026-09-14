@@ -13,6 +13,8 @@ import type { PostFormValues } from '@/lib/cms/post-model';
 import type { BuilderSection } from '@/components/cms/section-builder';
 import { ContentStatusBadge } from '@/components/admin/lead-status-badge';
 import { buttonClasses } from '@/components/ui/button';
+import { getCountryById, getDefaultCountry, listActiveCountries } from '@/lib/country/registry';
+import { countryPath } from '@/lib/country/routing';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,6 +37,14 @@ export default async function EditPost({ params }: { params: Promise<{ id: strin
   const user = await requirePermission('blog.view');
   const { id } = await params;
 
+  // Loaded first so the related-article options can be scoped to this
+  // article's own market: a relation across markets would never render.
+  const owner = await prisma.blogPost.findFirst({
+    where: { id, deletedAt: null },
+    select: { countryId: true },
+  });
+  if (!owner) notFound();
+
   const [post, categories, authors, posts, sidebarRows] = await Promise.all([
     prisma.blogPost.findFirst({
       where: { id, deletedAt: null },
@@ -53,7 +63,7 @@ export default async function EditPost({ params }: { params: Promise<{ id: strin
       select: { id: true, name: true },
     }),
     prisma.blogPost.findMany({
-      where: { deletedAt: null },
+      where: { deletedAt: null, countryId: owner.countryId, id: { not: id } },
       orderBy: { publishedAt: 'desc' },
       take: 100,
       select: { id: true, title: true },
@@ -61,6 +71,14 @@ export default async function EditPost({ params }: { params: Promise<{ id: strin
     getBlogSectionRows('SIDEBAR', id),
   ]);
   if (!post) notFound();
+
+  // The market the article belongs to, named in the header so an editor is
+  // never in doubt about which storefront they are changing.
+  const [country, countries] = await Promise.all([
+    getCountryById(post.countryId).then(async (row) => row ?? (await getDefaultCountry())),
+    listActiveCountries(),
+  ]);
+  const publicPath = countryPath(country, `blog/${post.slug}`);
 
   const initial: PostFormValues = {
     id: post.id,
@@ -107,7 +125,7 @@ export default async function EditPost({ params }: { params: Promise<{ id: strin
     <>
       <AdminPageHeader
         title={post.title}
-        description={`/blog/${post.slug} · ${post.readingTime} min read`}
+        description={`${countries.length > 1 ? `${country.name} · ` : ''}${publicPath} · ${post.readingTime} min read`}
         crumbs={[{ label: 'Blog', href: '/admin/blog' }, { label: post.title }]}
         actions={
           <>
@@ -123,7 +141,7 @@ export default async function EditPost({ params }: { params: Promise<{ id: strin
             </Link>
             {post.status === 'PUBLISHED' ? (
               <Link
-                href={`/blog/${post.slug}`}
+                href={publicPath}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={buttonClasses('outline', 'sm')}

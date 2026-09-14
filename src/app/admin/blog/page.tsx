@@ -83,7 +83,7 @@ export default async function BlogAdmin({
         thumbnail: { select: { url: true } },
         category: { select: { name: true } },
         author: { select: { name: true } },
-        country: { select: { name: true } },
+        country: { select: { name: true, code: true, slug: true } },
       },
     }),
     prisma.blogPost.count({ where }),
@@ -120,6 +120,8 @@ export default async function BlogAdmin({
     categoryName: row.category?.name ?? null,
     authorName: row.author?.name ?? null,
     countryName: row.country.name,
+    countryCode: row.country.code,
+    countrySlug: row.country.slug,
     readingTime: row.readingTime,
     publishedAt: row.publishedAt?.toISOString() ?? null,
     updatedAt: row.updatedAt.toISOString(),
@@ -233,6 +235,9 @@ export default async function BlogAdmin({
           rows={tableRows}
           can={can}
           showCountry={country.multiCountry}
+          countries={country.countries
+            .filter((row) => row.isActive)
+            .map((row) => ({ id: row.id, code: row.code, name: row.name }))}
           filtered={Boolean(
             params.q ||
               params.status ||

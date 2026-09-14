@@ -1,0 +1,490 @@
+# Multi-country architecture
+
+One application, many storefronts. India is served from the site root and the
+UAE from `/ae/`, each with its own pages, articles, menus, pricing, contact
+details, SEO and leads — sharing one brand, one media library, one product
+catalogue and one CMS.
+
+Nothing in the code knows that India and the UAE are the two markets. Routing,
+settings, pricing and SEO all read the `Country` table, so **adding Qatar is a
+database row plus its content, not a deployment**. That property is the point of
+the design, and [How to add a country](#how-to-add-a-country) is the checklist
+that proves it.
+
+---
+
+## Contents
+
+- [The model](#the-model)
+- [How a URL resolves](#how-a-url-resolves)
+- [Why India keeps the root](#why-india-keeps-the-root)
+- [Database models](#database-models)
+- [Pages](#pages)
+- [Products](#products)
+- [Blog](#blog)
+- [Navigation](#navigation)
+- [Country settings](#country-settings)
+- [Forms, leads and popups](#forms-leads-and-popups)
+- [Duplicating content between countries](#duplicating-content-between-countries)
+- [SEO, canonicals and hreflang](#seo-canonicals-and-hreflang)
+- [Caching and revalidation](#caching-and-revalidation)
+- [Permissions](#permissions)
+- [The admin country selector](#the-admin-country-selector)
+- [Migration notes](#migration-notes)
+- [How to add a country](#how-to-add-a-country)
+
+---
+
+## The model
+
+A **country** is a storefront. It owns a URL prefix, a currency, a locale and a
+set of content. Exactly one country is the **default**, it holds the empty
+prefix, and it is served from `/`.
+
+| | India | United Arab Emirates |
+| --- | --- | --- |
+| Code | `IN` | `AE` |
+| URL prefix | *(empty)* | `ae` |
+| Home page | `/` | `/ae` |
+| A CMS page | `/dropbox-business` | `/ae/dropbox-business` |
+| The blog | `/blog` | `/ae/blog` |
+| An article | `/blog/guide` | `/ae/blog/guide` |
+| A product | `/products/dropbox-business` | `/ae/products/dropbox-business` |
+| Locale | `en-IN` | `en-AE` |
+| Currency | INR ₹ | AED |
+
+What is **per country**: pages and their sections, blog posts, navigation menus,
+product availability and pricing, company contact details, SEO defaults,
+organisation schema, leads and form submissions.
+
+What stays **global**: the brand (logo, palette, typography, layout), the media
+library, the product catalogue's identity (name, SKU, brand, category,
+specification, imagery), page categories, blog categories and tags, brands,
+staff accounts, roles and permissions.
+
+A country is not a language. Content is written per market, in whatever language
+that market uses; nothing is translated automatically and there is no i18n
+message layer.
+
+---
+
+## How a URL resolves
+
+Resolution is one pure function plus one database read, and lives in
+`src/lib/country/`:
+
+```
+src/lib/country/
+  types.ts       CountryContext, CountrySettingsView
+  routing.ts     pure: countryPath, countryHref, splitCountryPath, localiseContent
+  registry.ts    the Country rows, cached per request and for 60s in-process
+  request.ts     the market of the current request
+  settings.ts    country settings merged over the global ones
+  switch.ts      where the public market switcher should send a visitor
+  access.ts      which markets a staff account may work in
+  admin.ts       which market the admin is currently editing
+  revalidate.ts  cache invalidation for market-scoped content
+```
+
+For a request to `/ae/dropbox-business`:
+
+1. Middleware forwards the path as `x-pathname` — it already did this before
+   markets existed, so no new plumbing was needed and **no rewrite happens**.
+   The prefix stays in the URL, which keeps client navigation, canonical URLs
+   and the address bar honest.
+2. `splitCountryPath` takes the first segment, `ae`. It is not a reserved
+   segment, and an **active** country has that slug, so the UAE owns the request
+   and the remaining path is `/dropbox-business`.
+3. The route loads that market's page and renders it.
+
+For `/dropbox-business` the first segment matches no country, so the default
+market owns the whole path — which is why the original URLs are unchanged.
+
+Reserved first segments can never be read as a market: `admin`, `api`, `_next`,
+`auth`, `login`, `preview`, `uploads`, `media`, `static`, `assets`, `health`,
+`ready`, and anything containing a dot (so `robots.txt` and `sitemap.xml` are
+files, not markets). The country form validates a new prefix against the same
+list, so a market cannot be created that would shadow a system route.
+
+**An inactive country is not a storefront.** Its prefix stops resolving, the
+path falls through to the default market, and the page 404s. Its content is
+untouched and comes back the moment it is reactivated.
+
+### Routing, not route duplication
+
+There is one public catch-all, `src/app/(public)/[[...slug]]/page.tsx`. It
+resolves the market, classifies the remaining path (CMS page, blog archive,
+article, category, tag, product) and renders the matching surface from
+`src/app/(public)/_surfaces/`. The default market's own `/blog`, `/blog/[slug]`,
+`/blog/category/[slug]`, `/blog/tag/[slug]` and `/products/[slug]` routes are
+kept because Next matches them ahead of the catch-all — and they are thin
+delegations to the very same surfaces. There is one implementation of each page,
+not one per market.
+
+---
+
+## Why India keeps the root
+
+India is the live site. Moving it to `/in/` would have changed every indexed
+URL, every inbound link and every piece of lead attribution for a cosmetic gain.
+So the default market keeps the root and takes no prefix, and
+`countryHref(defaultCountry, href)` is the identity function — for India the
+multi-country layer is a no-op that produces byte-identical HTML.
+
+---
+
+## Database models
+
+```
+Country                 one storefront: code, slug, locale, currency, isDefault, isActive
+CountrySettings         per-market company identity, contact details, SEO defaults
+ProductCountry          a product as sold in one market
+ProductVariantCountry   a variant's price in one market (absent = the global price)
+BlogCategoryCountry     per-market archive copy and SEO for a global category
+UserCountry             which markets a staff account may work in (none = all)
+```
+
+Foreign keys added to existing models:
+
+| Model | Column | Null? | Meaning |
+| --- | --- | --- | --- |
+| `Page` | `countryId` | required | the market that owns the page |
+| `BlogPost` | `countryId` | required | the market that owns the article |
+| `Navigation` | `countryId` | required | the market whose menus these are |
+| `Lead` | `countryId` | required | the storefront that generated the lead |
+| `FormSubmission` | `countryId` | optional | the storefront the form was on |
+| `Form` | `countryId` | optional | **null = shared by every market** |
+| `Popup` | `countryId` | optional | **null = shown in every market** |
+
+Slug uniqueness moved from global to per market:
+
+```prisma
+// before                      // after
+slug String @unique            slug String
+                               @@unique([countryId, slug])
+```
+
+This applies to `Page`, `BlogPost` and `Navigation`, and is what lets India and
+the UAE each own a page at `dropbox-business`.
+
+`Product.slug` is still globally unique: the product is one product everywhere.
+
+Indexes added for the queries the public site actually runs:
+`(countryId)`, `(countryId, slug)` (as the unique), `(countryId, status,
+publishedAt)`, `(productId, countryId)`, `(countryId, sortOrder)`,
+`(countryId, isFeatured, featuredOrder)`, `(countryId, createdAt)` and
+`(countryId, status)` on leads.
+
+---
+
+## Pages
+
+A page belongs to exactly one country. Each country has its **own homepage**
+(`slug = ""`), and the "is homepage" flag is enforced per market, so setting the
+UAE homepage does not disturb India's.
+
+A page that does not exist in a market **404s in that market**. It never falls
+back to another market's content: that would serve the wrong prices, the wrong
+contact details and the wrong legal copy to the wrong customer.
+
+Redirects are tried against the full request path first (`/ae/old-plan`) and the
+market-relative path second (`/old-plan`), so a market can own a redirect
+outright while a redirect written once still applies wherever it is asked for.
+
+### Links inside block content
+
+Editors type plain paths into CTAs, buttons and rich text. Those are rewritten
+into the market being rendered **once, at the render boundary**
+(`localiseContent` in the section renderer), so no block component contains
+market logic. External URLs, anchors, `mailto:`/`tel:`, system routes and paths
+that already carry a prefix are left exactly as written — and for the default
+market the payload is not walked at all.
+
+---
+
+## Products
+
+The `Product` row is the **global master**: name, slug, SKU, brand, category,
+shared specification, images. "Dropbox Business" is the same product in every
+market.
+
+`ProductCountry` holds everything that is genuinely local:
+
+- `status` / `publishedAt` — whether it is sold there at all
+- `currency`, `monthlyPrice`, `annualPrice`, `compareAtPrice`, `discountPercent`
+- `priceSuffix`, `priceNote`, `shortDescription`, `description`
+- `ctaLabel`, `ctaUrl`, `ctaFormId`
+- `seoTitle`, `seoDescription`, `canonicalUrl`, `noIndex`, `ogImageId`
+- `isFeatured`, `sortOrder`, `featuredOrder` — ordering is per market
+
+Resolution rules, in `src/lib/services/products.ts`:
+
+- **Copy falls back** to the master record, so a market that has nothing to say
+  about a product still renders a complete page.
+- **Money never falls back.** An empty AED price shows that market's price note,
+  never India's rupee figure.
+- **No market has a row → the product is not sold there.** That is deliberately
+  different from being sold at no price.
+
+Prices are always `Decimal` and always entered by an administrator. **Nothing
+converts currency at render time** — a rate-derived price changes under the
+visitor and cannot be quoted.
+
+`ProductVariantCountry` overrides a variant's price in one market. No rows were
+created during migration: an absent row means the variant sells at its global
+price, which is exactly what it did before.
+
+---
+
+## Blog
+
+Articles are per market, and the same slug may exist once per market — so
+`/blog/dropbox-guide` and `/ae/blog/dropbox-guide` are two articles for two
+audiences, which is what lets hreflang pair them.
+
+Categories and tags stay **global**: one taxonomy tree, not one per market.
+Category counts and archives are filtered to the market being viewed, so a
+category holding only India articles does not advertise itself on the UAE
+archive. `BlogCategoryCountry` gives a market its own archive heading,
+description, canonical and robots directives when it wants them; with no row the
+category renders its global values.
+
+The blog's design, layout and sidebar (Blog → Design / Layout) are global — they
+are brand, not market.
+
+---
+
+## Navigation
+
+Menus belong to a market. The UAE header is not forced to mirror India's: each
+market has its own header, footer and legal menus, built in the same navigation
+manager, and the manager edits the market selected in the top bar.
+
+Menu items that point at a page, product, article or category resolve to that
+market's URL automatically; a hand-typed internal URL goes through
+`countryHref`, which leaves external links, anchors and system routes alone.
+
+---
+
+## Country settings
+
+`WebsiteSettings` stays **global** and keeps the brand: logo, favicon, colours,
+typography, container widths, button styles, social profiles, tracking.
+
+`CountrySettings` holds what is genuinely local: company and legal name, sales
+and support phone, WhatsApp, sales and support email, address, city, region,
+postal code, business hours, tax label and number, header CTA, sales CTA copy,
+footer description, copyright line, and the market's SEO defaults and
+organisation/LocalBusiness schema fields.
+
+Every country field is optional and **falls back to the global value**. A market
+nobody has configured renders exactly what the single-country site rendered,
+which is why India's footer and structured data did not change when this landed.
+
+Edit both under **Settings → Countries**.
+
+---
+
+## Forms, leads and popups
+
+**Forms** are shared by default (`countryId` null) — every form built before
+markets existed still works on every storefront. Setting a country restricts a
+form to one market, for a local enquiry form with local fields.
+
+**Leads and submissions** record the storefront they came from. The market is
+taken from the request the visitor actually made, never from the submitted
+payload, so country attribution cannot be forged and a form restricted to one
+market cannot be submitted from another. Landing-page and article attribution
+are resolved inside the submitting market, so a UAE lead is never attributed to
+India's page of the same name.
+
+Historical leads were backfilled to India by the migration.
+
+**Popups** are shown everywhere by default; setting a country targets one
+market. Page targeting is matched against market-relative slugs, so a popup
+pinned to "pricing" fires on `/pricing` and `/ae/pricing` — and a popup pinned
+to a specific *page* only fires on the page in its own market.
+
+The lead list, pipeline, CRM dashboard and CSV export all filter by country,
+defaulting to the market selected in the top bar with "All countries" one click
+away. The export is additionally narrowed to the markets the user may see.
+
+---
+
+## Duplicating content between countries
+
+**Pages → row menu → Duplicate to country**, and the same on a blog post.
+
+What comes across: every section in order with its block type, content, design
+settings and media references; the layout flags; the SEO fields as a starting
+point; and the same slug, so the two markets' URLs line up and hreflang can pair
+them.
+
+What deliberately does not:
+
+- **Publication.** The copy is always a `DRAFT`. A duplicate must be reviewed and
+  localised before it can appear in search results as a second copy of another
+  market's page.
+- **Homepage status.** That is a decision for the target market to make.
+- **The canonical URL.** A market canonicals to its own URL; inheriting the
+  source's would point the copy at the other market's page.
+
+An existing page or article at that URL in the target market is **never
+overwritten silently**. The action refuses, names the clash, and replaces the
+target only when the editor confirms it in a dialog that says what will be lost.
+
+---
+
+## SEO, canonicals and hreflang
+
+Two rules are absolute:
+
+1. **A market canonicals to its own URL.** `/ae/dropbox-business` canonicals to
+   `https://domain.com/ae/dropbox-business`, never to India's page. They are
+   different pages for different customers.
+2. **hreflang is emitted only where the content is genuinely live.** The
+   alternates come from a query for published, indexable content with that slug,
+   so an annotation can never point at a draft, a missing page or a 404. A page
+   that exists in one market alone gets no hreflang at all.
+
+`x-default` points at the default market, and only when that market has the
+content.
+
+Everything else follows from the same helpers:
+
+- `buildMetadata` takes the **market-relative** path and adds the prefix itself,
+  so no caller can build a canonical for the wrong market.
+- Structured data is per market: `Organization`/`LocalBusiness` uses that
+  market's name, contact points, address and `areaServed`; `WebSite` uses its
+  home page and locale; breadcrumbs, `Product` and `BlogPosting` all carry
+  market-prefixed URLs.
+- The **sitemap** covers every active market in one file, each URL with its own
+  prefix, listing only published, non-`noindex` content. A new market appears
+  automatically as soon as it has published content.
+- **robots.txt** is unchanged: the disallow list is path-based and already
+  covers `/admin`, `/api`, `/login` and `/preview` for every market.
+
+---
+
+## Caching and revalidation
+
+Public routes are `force-dynamic` (the root layout reads the visitor's
+tracking-consent cookie), so there is no static page cache to leak between
+markets — and every market's URL is a different path anyway, so one market's
+cached page cannot be served for another.
+
+What did need care is **invalidation**: revalidating `/products/x` would leave
+`/ae/products/x` stale. `src/lib/country/revalidate.ts` is the only place a path
+to revalidate is built, and product mutations revalidate the product's URL in
+every active market.
+
+The `Country` table itself is cached per request with React `cache()` and for
+60 seconds in-process; every mutation calls `invalidateCountryCache()`, so a new
+or deactivated market takes effect immediately on the instance that changed it
+and within a minute everywhere else.
+
+---
+
+## Permissions
+
+Country access **narrows** what a role already permits and never widens it. An
+India content editor still needs `pages.edit` to edit a page; country access
+only decides which market's pages they can reach.
+
+- No `UserCountry` rows means **every market** — which is what every account
+  created before this existed has, so nothing changed for anyone.
+- A super admin always has every market; the role exists so somebody can fix a
+  misconfigured restriction.
+- Every mutation validates the country it is about to write against the user's
+  access (`assertCountryAccess` / `resolveActionCountry`), so a country id in a
+  form body cannot reach a market the user cannot edit.
+
+Set it on **Staff → a person → Country access**.
+
+---
+
+## The admin country selector
+
+The top bar carries a country selector. CMS screens — pages, blog, navigation,
+leads, pipeline, forms, popups, dashboards — operate inside the selected market;
+truly global screens (media, users, roles, brands, product categories, website
+design) are unaffected.
+
+The selection is stored in a cookie, resolved **on the server** and handed to the
+selector as a prop, so there is nothing for hydration to disagree about. The
+cookie is a hint, never an authority: the resolved market is re-validated against
+the user's access on every screen.
+
+Lists that support it also accept `?country=<id>` or `?country=all` in the URL,
+so a filtered view stays shareable and back/forward behaves.
+
+---
+
+## Migration notes
+
+The migration is `prisma/migrations/20260914120000_multi_country`. It is written
+for a **populated production database** and is staged so nothing is ever
+enforced before the data exists:
+
+1. Create `Country` and insert India (default, empty prefix) and the UAE.
+2. Create `CountrySettings`, `UserCountry`, `ProductCountry`,
+   `ProductVariantCountry`, `BlogCategoryCountry`.
+3. Add every `countryId` column as **nullable**.
+4. Backfill: every existing page, article, menu, lead and submission becomes
+   India's. Every product gets a `ProductCountry` row for India carrying the
+   price, status, ordering, copy, CTA and SEO already on the product row, so the
+   public site renders identically the moment it starts reading
+   `ProductCountry`. India's `CountrySettings` is seeded from the existing
+   `WebsiteSettings` and `SeoSettings`.
+5. Only then set `NOT NULL`, add the foreign keys, swap the global slug indexes
+   for their `(countryId, slug)` equivalents and add the supporting indexes.
+
+Every statement is idempotent (`IF NOT EXISTS`, `ON CONFLICT DO NOTHING`,
+`EXCEPTION WHEN duplicate_object`), so a partial run can be repeated safely.
+
+No row is deleted, no slug changes, no SEO field is lost and no redirect is
+introduced. The only indexes dropped are the three global slug indexes that are
+replaced in the same migration.
+
+Content relations are `onDelete: Restrict`, so a country holding content cannot
+be deleted by accident — deactivate it instead, which takes the storefront
+offline without touching anything.
+
+Backups are unaffected: they are `pg_dump -Fc` of the whole database, so the new
+tables are included automatically.
+
+---
+
+## How to add a country
+
+Adding Qatar needs **no code change and no deployment**.
+
+1. **Settings → Countries → Add country.**
+   - Name: `Qatar`
+   - ISO code: `QA`
+   - URL prefix: `qa`
+   - Locale: `en-QA`
+   - Currency: `QAR`, symbol `QAR`
+   - Phone code: `+974`, time zone: `Asia/Qatar`
+   - Leave **Default country** off; leave **Serve publicly** on (or off until the
+     content is ready — an inactive market's prefix simply does not resolve).
+2. **Fill in its settings** on the same screen: company name, sales phone,
+   email, address, tax details, SEO defaults, organisation schema.
+3. **Switch the top-bar country to Qatar.**
+4. **Create its homepage** — a page with an empty slug — or use *Duplicate to
+   country* on India's homepage and localise the draft.
+5. **Build its menus** under Navigation: header, footer and legal.
+6. **Price the products** it sells: each product's edit screen has a Qatar tab
+   under Country pricing. A product with no Qatar row is simply not sold there.
+7. **Add its articles**, or copy existing ones with *Copy to Qatar* and localise
+   them.
+8. **Publish.** `/qa/` starts serving, the sitemap picks it up, hreflang appears
+   on pages that exist in more than one market, and the public market switcher
+   offers it.
+
+Checklist of what you should *not* have to do: write a route, add a redirect,
+edit a component, change the middleware, run a migration or deploy.
+
+Currencies are validated against `SUPPORTED_CURRENCIES` in
+`src/lib/utils/money.ts` — the only code change a genuinely new currency needs is
+adding its code and locale there.

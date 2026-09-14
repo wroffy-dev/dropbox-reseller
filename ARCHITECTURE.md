@@ -8,6 +8,7 @@ How this platform is put together, and why. For setup and operations, see
 ## Contents
 
 - [Shape of the system](#shape-of-the-system)
+- [Countries](#countries)
 - [Request flow](#request-flow)
 - [Directory layout](#directory-layout)
 - [Data model](#data-model)
@@ -60,6 +61,36 @@ drag-and-drop, dialogs, the form runtime — and they never touch Prisma.
 
 ---
 
+## Countries
+
+The platform serves several storefronts from one application. A **country** owns
+a URL prefix, a currency, a locale and a set of content; exactly one country is
+the default, holds the empty prefix and is served from `/`.
+
+```
+/dropbox-business        →  default market (India)
+/ae/dropbox-business     →  the market whose slug is "ae"
+/qa/dropbox-business     →  works the moment a Country row with slug "qa" exists
+```
+
+Resolution is one pure function over the configured markets, in
+`src/lib/country/routing.ts`, plus one cached read of the `Country` table. There
+is no rewrite: middleware forwards the request path, the prefix stays in the URL,
+and the public catch-all classifies what is left. System routes (`/admin`,
+`/api`, `/uploads`, …) are reserved and can never be read as a market.
+
+For the default market `countryHref()` is the identity function, so the original
+single-country URLs and HTML are unchanged.
+
+Per country: pages, articles, menus, product availability and pricing, company
+contact details, SEO defaults, organisation schema, leads. Global: the brand,
+the media library, product identity, taxonomies, staff, roles and permissions.
+
+Full reference, including the migration and how to add a market:
+[docs/MULTI-COUNTRY.md](docs/MULTI-COUNTRY.md).
+
+---
+
 ## Request flow
 
 Every write follows the same path:
@@ -83,6 +114,12 @@ Service layer / Prisma
       ▼
 ActionResult<T>  { ok: true, data } | { ok: false, error, fieldErrors }
 ```
+
+A market-scoped write also passes through `resolveActionCountry` or
+`assertCountryAccess`, which validate the country it is about to write against
+the markets the signed-in user may work in. Country access narrows what a role
+already permits and never widens it, and a country id in a form body is never
+trusted on its own.
 
 `toActionError` maps every thrown error to a safe `ActionResult`. Zod errors
 become per-field messages; authorisation errors become a generic refusal;

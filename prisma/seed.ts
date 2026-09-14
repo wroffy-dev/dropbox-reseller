@@ -232,7 +232,38 @@ async function seedSettings() {
       create: { key: template.key, name: template.name, subject: template.subject, body: template.body },
     });
   }
-  console.log('  settings + email templates');
+  /*
+   * The root market's settings start as a copy of the global ones, which is
+   * exactly what the multi-country migration does on an existing database — so
+   * a freshly seeded install and a migrated one end up in the same state.
+   */
+  const countryId = await defaultCountryId();
+  const site = await prisma.websiteSettings.findUnique({ where: { id: 'singleton' } });
+  const seo = await prisma.seoSettings.findUnique({ where: { id: 'singleton' } });
+
+  await prisma.countrySettings.upsert({
+    where: { countryId },
+    update: {},
+    create: {
+      countryId,
+      companyName: site?.siteName ?? null,
+      salesPhone: site?.contactPhone ?? null,
+      salesEmail: site?.contactEmail ?? null,
+      whatsappNumber: site?.whatsappNumber ?? null,
+      address: site?.address ?? null,
+      headerCtaLabel: site?.headerCtaLabel ?? null,
+      headerCtaUrl: site?.headerCtaUrl ?? null,
+      footerDescription: site?.footerDescription ?? null,
+      copyrightText: site?.copyrightText ?? null,
+      defaultTitle: seo?.defaultTitle ?? null,
+      titleTemplate: seo?.titleTemplate ?? null,
+      defaultDescription: seo?.defaultDescription ?? null,
+      organizationName: seo?.organizationName ?? null,
+      organizationType: seo?.organizationType ?? null,
+    },
+  });
+
+  console.log('  settings + email templates + country settings');
 }
 
 const PRODUCTS = [

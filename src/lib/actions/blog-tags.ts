@@ -9,6 +9,7 @@ import { blogTagSchema } from '@/lib/validation/blog';
 import { uniqueSlug, slugify } from '@/lib/utils/slug';
 import { sanitizeText } from '@/lib/utils/sanitize';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
+import { revalidateAllCountryBlogs } from '@/lib/country/revalidate';
 
 /**
  * Manual tag management.
@@ -83,7 +84,7 @@ export async function saveBlogTag(
     });
 
     revalidatePath('/admin/blog/tags');
-    revalidatePath('/blog');
+    await revalidateAllCountryBlogs();
     return success({ id: tag.id }, 'Tag saved.');
   } catch (error) {
     return toActionError(error);
@@ -118,7 +119,7 @@ export async function deleteBlogTag(tagId: string): Promise<ActionResult> {
     });
 
     revalidatePath('/admin/blog/tags');
-    revalidatePath('/blog');
+    await revalidateAllCountryBlogs();
     return success(
       undefined,
       tag._count.posts > 0
@@ -173,7 +174,7 @@ export async function bulkBlogTagAction(input: unknown): Promise<ActionResult> {
     });
 
     revalidatePath('/admin/blog/tags');
-    revalidatePath('/blog');
+    await revalidateAllCountryBlogs();
     return success(undefined, `${targetIds.length} tag(s) deleted.`);
   } catch (error) {
     return toActionError(error);

@@ -14,7 +14,7 @@ import { success, failure, toActionError, type ActionResult } from '@/lib/utils/
 import { resolveActionCountry } from '@/lib/country/admin';
 import { assertCountryAccess } from '@/lib/country/access';
 import { getCountryById, listActiveCountries } from '@/lib/country/registry';
-import { revalidateCountryBlog } from '@/lib/country/revalidate';
+import { revalidateCountryBlog, revalidateAllCountryBlogs } from '@/lib/country/revalidate';
 
 /** Revalidates a market's blog surfaces. */
 async function revalidatePost(countryId: string, slug?: string | null) {
@@ -283,6 +283,122 @@ export async function setBlogPostStatus(
   }
 }
 
+/**
+ * Copies an article into another market.
+ *
+ * The copy keeps the source's slug, so `/blog/x` and `/ae/blog/x` are the same
+ * article told for two audiences and hreflang can pair them. It is always a
+ * DRAFT and never featured: a duplicated article must be reviewed and localised
+ * before it can appear in search results next to the original.
+ *
+ * An article already at that URL in the target market is never overwritten
+ * silently — the action refuses and says so, and replaces it only when the
+ * caller comes back having confirmed it.
+ */
+export async function duplicateBlogPostToCountry(
+  postId: string,
+  targetCountryId: string,
+  options: { replaceExisting?: boolean } = {},
+): Promise<ActionResult<{ id: string; replaced: boolean }>> {
+  try {
+    const user = await authorize('blog.create');
+
+    const source = await prisma.blogPost.findUnique({
+      where: { id: postId },
+      include: { tags: true },
+    });
+    if (!source || source.deletedAt) return failure('That post no longer exists.');
+    await assertCountryAccess(user, source.countryId);
+
+    const target = await resolveActionCountry(user, targetCountryId);
+    if (target.id === source.countryId) {
+      return failure('That article already belongs to this country.');
+    }
+
+    const existing = await prisma.blogPost.findUnique({
+      where: { countryId_slug: { countryId: target.id, slug: source.slug } },
+      select: { id: true, title: true, deletedAt: true },
+    });
+
+    if (existing && !existing.deletedAt && !options.replaceExisting) {
+      return failure(
+        `${target.name} already has an article at /blog/${source.slug} (“${existing.title}”). Confirm to replace it.`,
+        { _confirm: ['exists'] },
+      );
+    }
+
+    const shared = {
+      title: source.title,
+      subtitle: source.subtitle,
+      status: 'DRAFT' as const,
+      publishedAt: null,
+      excerpt: source.excerpt,
+      content: source.content,
+      readingTime: source.readingTime,
+      isFeatured: false,
+      featuredPriority: source.featuredPriority,
+      featuredImageId: source.featuredImageId,
+      thumbnailId: source.thumbnailId,
+      categoryId: source.categoryId,
+      authorId: user.id,
+      options: source.options as object,
+      sidebarMode: source.sidebarMode,
+      seoTitle: source.seoTitle,
+      seoDescription: source.seoDescription,
+      focusKeyword: source.focusKeyword,
+      // Not copied on purpose: a market canonicals to its own URL.
+      canonicalUrl: null,
+      noIndex: source.noIndex,
+      noFollow: source.noFollow,
+      ogTitle: source.ogTitle,
+      ogDescription: source.ogDescription,
+      ogImageId: source.ogImageId,
+      twitterImageId: source.twitterImageId,
+    };
+
+    const copy = await prisma.$transaction(async (tx) => {
+      if (existing) {
+        await tx.blogPostTag.deleteMany({ where: { postId: existing.id } });
+        return tx.blogPost.update({
+          where: { id: existing.id },
+          data: {
+            ...shared,
+            slug: source.slug,
+            deletedAt: null,
+            tags: { create: source.tags.map((tag) => ({ tagId: tag.tagId })) },
+          },
+        });
+      }
+      return tx.blogPost.create({
+        data: {
+          ...shared,
+          countryId: target.id,
+          slug: source.slug,
+          tags: { create: source.tags.map((tag) => ({ tagId: tag.tagId })) },
+        },
+      });
+    });
+
+    await recordAudit({
+      actor: user,
+      action: existing ? 'duplicated.replaced' : 'duplicated.country',
+      entity: 'BlogPost',
+      entityId: copy.id,
+      summary: `Copied “${source.title}” to ${target.name} as a draft`,
+      after: { slug: copy.slug, country: target.code, status: copy.status },
+    });
+
+    revalidatePath('/admin/blog');
+    await revalidatePost(target.id, copy.slug);
+    return success(
+      { id: copy.id, replaced: Boolean(existing) },
+      `Copied to ${target.name} as a draft.`,
+    );
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
 export async function duplicateBlogPost(postId: string): Promise<ActionResult<{ id: string }>> {
   try {
     const user = await authorize('blog.create');
@@ -467,7 +583,8 @@ export async function saveBlogCategory(
     });
 
     revalidatePath('/admin/blog/categories');
-    revalidatePath('/blog');
+    // Categories are shared by every market, so every blog is affected.
+    await revalidateAllCountryBlogs();
     return success({ id: category.id }, 'Category saved.');
   } catch (error) {
     return toActionError(error);
@@ -504,7 +621,8 @@ export async function deleteBlogCategory(categoryId: string): Promise<ActionResu
     });
 
     revalidatePath('/admin/blog/categories');
-    revalidatePath('/blog');
+    // Categories are shared by every market, so every blog is affected.
+    await revalidateAllCountryBlogs();
     return success(
       undefined,
       category._count.posts > 0

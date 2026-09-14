@@ -28,6 +28,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       include: {
         product: { select: { id: true, name: true } },
         form: { select: { name: true } },
+        blogPost: { select: { title: true, slug: true } },
         notes: { orderBy: { createdAt: 'desc' }, include: { author: { select: { name: true } } } },
         activities: {
           orderBy: { createdAt: 'desc' },
@@ -73,6 +74,8 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
     assignedToId: lead.assignedToId,
     customerId: lead.customerId,
     formName: lead.form?.name ?? null,
+    blogPostTitle: lead.blogPost?.title ?? null,
+    blogPostUrl: lead.blogPost ? `/blog/${lead.blogPost.slug}` : null,
     landingUrl: lead.landingUrl,
     referrer: lead.referrer,
     utm: {

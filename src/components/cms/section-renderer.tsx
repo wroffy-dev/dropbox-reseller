@@ -1,4 +1,3 @@
-import type { PageSection } from '@prisma/client';
 import { parseBlockContent } from '@/lib/cms/blocks';
 import {
   parseSectionDesign,
@@ -32,6 +31,28 @@ import type {
   TextListImageContent,
   StatisticsContent,
 } from '@/lib/cms/blocks';
+import type {
+  BlogHeroContent,
+  BlogBreadcrumbContent,
+  BlogCategoryFilterContent,
+  BlogSearchContent,
+  BlogFeaturedContent,
+  BlogGridContent,
+  BlogPaginationContent,
+  BlogNewsletterContent,
+  DividerContent,
+  SpacerContent,
+  ArticleHeaderContent,
+  ArticleImageContent,
+  ArticleTocContent,
+  ArticleContentContent,
+  ArticleShareContent,
+  ArticleTagsContent,
+  ArticleAuthorContent,
+  ArticleRelatedContent,
+  ArticlePrevNextContent,
+} from '@/lib/cms/blog-blocks';
+import type { BlogRenderContext } from '@/lib/cms/blog-render';
 
 import type { BlockContext } from './blocks/shared';
 import { HeroBlock } from './blocks/hero-block';
@@ -56,6 +77,44 @@ import {
   TextListImageBlock,
   StatisticsBlock,
 } from './blocks/card-blocks';
+import {
+  BlogHeroBlock,
+  BlogBreadcrumbBlock,
+  BlogCategoryFilterBlock,
+  BlogSearchBlock,
+  BlogFeaturedBlock,
+  BlogGridBlock,
+  BlogPaginationBlock,
+  BlogNewsletterBlock,
+  DividerBlock,
+  SpacerBlock,
+  ArticleBreadcrumbBlock,
+  ArticleHeaderBlock,
+  ArticleImageBlock,
+  ArticleTocBlock,
+  ArticleContentBlock,
+  ArticleShareBlock,
+  ArticleTagsBlock,
+  ArticleAuthorBlock,
+  ArticleRelatedBlock,
+  ArticlePrevNextBlock,
+} from './blocks/blog-blocks';
+
+/**
+ * The minimum a row needs to be rendered.
+ *
+ * `PageSection` and `BlogSection` both satisfy it, which is what lets one
+ * renderer serve pages, the blog archive and the article page. A surface's
+ * fallback arrangement, which has no database row behind it, satisfies it too.
+ */
+export type RenderableSection = {
+  id: string;
+  blockType: string;
+  content: unknown;
+  settings: unknown;
+  isVisible: boolean;
+  sortOrder: number;
+};
 
 /**
  * Dispatches one stored section to its renderer.
@@ -65,7 +124,7 @@ import {
  * component, and one case here — never a new page-specific component tree.
  * Unknown block types render nothing rather than breaking the page.
  */
-async function BlockBody({ section, ctx }: { section: PageSection; ctx: BlockContext }) {
+async function BlockBody({ section, ctx }: { section: RenderableSection; ctx: BlockContext }) {
   const { blockType, content } = section;
   const parse = <T,>() => parseBlockContent<T>(blockType, content);
 
@@ -116,6 +175,51 @@ async function BlockBody({ section, ctx }: { section: PageSection; ctx: BlockCon
       return <TextListImageBlock content={parse<TextListImageContent>()} ctx={ctx} />;
     case 'statistics':
       return <StatisticsBlock content={parse<StatisticsContent>()} ctx={ctx} />;
+
+    // --- blog listing ---
+    case 'blogHero':
+      return <BlogHeroBlock content={parse<BlogHeroContent>()} ctx={ctx} />;
+    case 'blogBreadcrumb':
+      return <BlogBreadcrumbBlock content={parse<BlogBreadcrumbContent>()} ctx={ctx} />;
+    case 'blogCategoryFilter':
+      return <BlogCategoryFilterBlock content={parse<BlogCategoryFilterContent>()} ctx={ctx} />;
+    case 'blogSearch':
+      return <BlogSearchBlock content={parse<BlogSearchContent>()} ctx={ctx} />;
+    case 'blogFeatured':
+      return <BlogFeaturedBlock content={parse<BlogFeaturedContent>()} ctx={ctx} />;
+    case 'blogGrid':
+      return <BlogGridBlock content={parse<BlogGridContent>()} ctx={ctx} />;
+    case 'blogPagination':
+      return <BlogPaginationBlock content={parse<BlogPaginationContent>()} ctx={ctx} />;
+    case 'blogNewsletter':
+      return <BlogNewsletterBlock content={parse<BlogNewsletterContent>()} ctx={ctx} />;
+    case 'divider':
+      return <DividerBlock content={parse<DividerContent>()} ctx={ctx} />;
+    case 'spacer':
+      return <SpacerBlock content={parse<SpacerContent>()} ctx={ctx} />;
+
+    // --- blog article ---
+    case 'articleBreadcrumb':
+      return <ArticleBreadcrumbBlock content={parse<BlogBreadcrumbContent>()} ctx={ctx} />;
+    case 'articleHeader':
+      return <ArticleHeaderBlock content={parse<ArticleHeaderContent>()} ctx={ctx} />;
+    case 'articleImage':
+      return <ArticleImageBlock content={parse<ArticleImageContent>()} ctx={ctx} />;
+    case 'articleToc':
+      return <ArticleTocBlock content={parse<ArticleTocContent>()} ctx={ctx} />;
+    case 'articleContent':
+      return <ArticleContentBlock content={parse<ArticleContentContent>()} ctx={ctx} />;
+    case 'articleShare':
+      return <ArticleShareBlock content={parse<ArticleShareContent>()} ctx={ctx} />;
+    case 'articleTags':
+      return <ArticleTagsBlock content={parse<ArticleTagsContent>()} ctx={ctx} />;
+    case 'articleAuthor':
+      return <ArticleAuthorBlock content={parse<ArticleAuthorContent>()} ctx={ctx} />;
+    case 'articleRelated':
+      return <ArticleRelatedBlock content={parse<ArticleRelatedContent>()} ctx={ctx} />;
+    case 'articlePrevNext':
+      return <ArticlePrevNextBlock content={parse<ArticlePrevNextContent>()} ctx={ctx} />;
+
     default:
       if (process.env.NODE_ENV !== 'production') {
         console.warn(`[cms] no renderer registered for block type "${blockType}"`);
@@ -136,11 +240,20 @@ export async function SectionRenderer({
   isFirst = false,
   anchorId,
   design: providedDesign,
+  blog,
+  container = true,
 }: {
-  section: PageSection;
+  section: RenderableSection;
   isFirst?: boolean;
   anchorId?: string;
   design?: SectionDesign;
+  /** Blog surfaces pass their resolved context down to every block. */
+  blog?: BlogRenderContext;
+  /**
+   * Wrap the block in the standard centred container. The article column has
+   * its own width, so its sections opt out and fill the column instead.
+   */
+  container?: boolean;
 }) {
   const design = providedDesign ?? parseSectionDesign(section.settings);
 
@@ -150,7 +263,17 @@ export async function SectionRenderer({
       : null;
 
   const styles = buildSectionStyles(design, section.id, backgroundMedia?.url ?? null);
-  const ctx: BlockContext = { inverted: styles.inverted, isFirst, design };
+  const ctx: BlockContext = { inverted: styles.inverted, isFirst, design, blog };
+
+  /*
+   * A section that paints a background inside a column — the article's CTA, say
+   * — reads as a card rather than a full-bleed band, because the column it
+   * lives in is not the full width of the page.
+   */
+  const painted =
+    design.preset !== 'default' ||
+    design.background.type !== 'none' ||
+    Boolean(design.colors.background);
 
   return (
     <>
@@ -158,7 +281,7 @@ export async function SectionRenderer({
       <section
         id={anchorId || design.anchorId || undefined}
         data-block={section.blockType}
-        className={`cms-section ${styles.className}`}
+        className={`cms-section ${!container && painted ? 'cms-section--card ' : ''}${styles.className}`}
         style={styles.style as React.CSSProperties}
       >
         {styles.layer ? (
@@ -178,9 +301,13 @@ export async function SectionRenderer({
           <div className="cms-section-overlay" aria-hidden="true" style={{ backgroundColor: styles.overlay }} />
         ) : null}
 
-        <div className="cms-container">
+        {container ? (
+          <div className="cms-container">
+            <BlockBody section={section} ctx={ctx} />
+          </div>
+        ) : (
           <BlockBody section={section} ctx={ctx} />
-        </div>
+        )}
       </section>
     </>
   );
@@ -192,7 +319,24 @@ export async function SectionRenderer({
  * Anchor IDs are de-duplicated across the page here rather than per section, so
  * two sections that were both given `#pricing` cannot emit the same DOM id.
  */
-export async function SectionList({ sections }: { sections: PageSection[] }) {
+export async function SectionList({
+  sections,
+  blog,
+  container = true,
+  allowFirst = true,
+}: {
+  sections: RenderableSection[];
+  blog?: BlogRenderContext;
+  container?: boolean;
+  /**
+   * Whether the leading section may own the page's `<h1>`.
+   *
+   * False where the page already has one — the article page's title lives in
+   * the article header, so nothing after it, in either column, may claim a
+   * second `<h1>` just by being first in its list.
+   */
+  allowFirst?: boolean;
+}) {
   const visible = sections.filter((s) => s.isVisible).sort((a, b) => a.sortOrder - b.sortOrder);
   const anchors = resolveAnchors(visible);
 
@@ -202,8 +346,10 @@ export async function SectionList({ sections }: { sections: PageSection[] }) {
         <SectionRenderer
           key={section.id}
           section={section}
-          isFirst={index === 0}
+          isFirst={allowFirst && index === 0}
           anchorId={anchors.get(section.id)}
+          blog={blog}
+          container={container}
         />
       ))}
     </>

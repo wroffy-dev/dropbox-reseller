@@ -63,6 +63,18 @@ type FieldVariant =
   | { kind: 'products'; name: string; label: string; help?: string; width?: FieldWidth }
   | { kind: 'productCategory'; name: string; label: string; help?: string; width?: FieldWidth }
   | { kind: 'brand'; name: string; label: string; help?: string; width?: FieldWidth }
+  /** Single blog category, loaded from Blog → Categories. */
+  | { kind: 'blogCategory'; name: string; label: string; help?: string; width?: FieldWidth }
+  /** Single blog tag, loaded from Blog → Tags. */
+  | { kind: 'blogTag'; name: string; label: string; help?: string; width?: FieldWidth }
+  /** Single published post. */
+  | { kind: 'blogPost'; name: string; label: string; help?: string; width?: FieldWidth }
+  /** Ordered, hand-picked list of posts. */
+  | { kind: 'blogPosts'; name: string; label: string; help?: string; width?: FieldWidth }
+  /** Ordered, hand-picked list of categories. */
+  | { kind: 'blogCategories'; name: string; label: string; help?: string; width?: FieldWidth }
+  /** A staff member used as the post author. */
+  | { kind: 'blogAuthor'; name: string; label: string; help?: string; width?: FieldWidth }
   /** Searchable picker over the allow-listed CMS icon set. */
   | { kind: 'icon'; name: string; label: string; help?: string; width?: FieldWidth }
   /** Colour picker and hex input, kept in sync. */

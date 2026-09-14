@@ -1,94 +1,73 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { prisma } from '@/lib/db/prisma';
-import { listPosts } from '@/lib/services/blog';
+import { getCategoryBySlug } from '@/lib/services/blog';
+import { getBlogSettings } from '@/lib/services/blog-cms';
 import { buildMetadata } from '@/lib/seo/metadata';
-import { PostCard } from '@/components/blog/post-card';
-import { Pagination } from '@/components/blog/pagination';
-import { EmptyState } from '@/components/ui/states';
 import { JsonLd } from '@/components/seo/json-ld';
 import { breadcrumbSchema } from '@/lib/seo/structured-data';
+import { BlogArchive } from '@/components/blog/blog-archive';
 
-// The root layout reads the visitor's tracking-consent cookie, so nothing under
-// it can be rendered statically. Declaring `revalidate` here made Next try
-// anyway and every request failed with DYNAMIC_SERVER_USAGE.
 export const dynamic = 'force-dynamic';
+
+type Params = Promise<{ slug: string }>;
+type SearchParams = Promise<{ page?: string; q?: string; tag?: string }>;
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
-  params: Promise<{ slug: string }>;
+  params: Params;
+  searchParams: SearchParams;
 }): Promise<Metadata> {
-  const { slug } = await params;
-  const category = await prisma.blogCategory.findUnique({ where: { slug } });
+  const [{ slug }, query] = await Promise.all([params, searchParams]);
+  const category = await getCategoryBySlug(slug);
   if (!category) return { title: 'Category not found', robots: { index: false, follow: false } };
+
+  const page = Math.max(1, Number(query.page) || 1);
+
   return buildMetadata({
-    title: category.seoTitle || `${category.name} articles`,
-    description: category.seoDescription || category.description,
+    title: category.seoTitle || category.archiveTitle || `${category.name} articles`,
+    description: category.seoDescription || category.archiveDescription || category.description,
     path: `/blog/category/${slug}`,
+    canonicalUrl: category.canonicalUrl,
+    noIndex: category.noIndex || page > 1,
+    noFollow: category.noFollow,
+    ogTitle: category.ogTitle,
+    ogDescription: category.ogDescription,
+    ogImageUrl: category.ogImage?.url ?? category.bannerImage?.url ?? null,
   });
 }
 
-export default async function CategoryPage({
+export default async function CategoryArchive({
   params,
   searchParams,
 }: {
-  params: Promise<{ slug: string }>;
-  searchParams: Promise<{ page?: string }>;
+  params: Params;
+  searchParams: SearchParams;
 }) {
   const [{ slug }, query] = await Promise.all([params, searchParams]);
-  const category = await prisma.blogCategory.findUnique({ where: { slug } });
+  const category = await getCategoryBySlug(slug);
   if (!category) notFound();
 
-  const { posts, pages, page } = await listPosts({
-    page: Number(query.page) || 1,
-    categorySlug: slug,
-  });
+  // A hidden category keeps its URL working for anyone who has it bookmarked;
+  // it simply stops being advertised in the filters.
+  await getBlogSettings();
 
   return (
     <>
-      <div className="border-b border-hairline bg-muted/[0.04]">
-        <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
-          <Link href="/blog" className="text-sm text-muted hover:text-brand">
-            ← All articles
-          </Link>
-          <h1 className="mt-3 font-heading text-3xl tracking-tight text-content sm:text-4xl">
-            {category.name}
-          </h1>
-          {category.description ? (
-            <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">{category.description}</p>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-        {posts.length === 0 ? (
-          <EmptyState
-            title="No articles in this category yet"
-            description="Browse all articles instead."
-            action={
-              <Link href="/blog" className="text-sm font-medium text-brand hover:underline">
-                View all articles
-              </Link>
-            }
-          />
-        ) : (
-          <>
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {posts.map((post, index) => (
-                <PostCard key={post.id} post={post} priority={index < 3} />
-              ))}
-            </div>
-            <Pagination page={page} pages={pages} basePath={`/blog/category/${slug}`} />
-          </>
-        )}
-      </div>
-
+      <BlogArchive
+        basePath={`/blog/category/${slug}`}
+        categorySlug={slug}
+        categoryId={category.id}
+        searchParams={query}
+      />
       <JsonLd
         data={breadcrumbSchema([
           { name: 'Home', path: '/' },
           { name: 'Blog', path: '/blog' },
+          ...(category.parent
+            ? [{ name: category.parent.name, path: `/blog/category/${category.parent.slug}` }]
+            : []),
           { name: category.name, path: `/blog/category/${slug}` },
         ])}
       />

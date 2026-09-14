@@ -139,3 +139,63 @@ export function faqSchema(items: Array<{ question: string; answer: string }>): J
     })),
   };
 }
+
+/**
+ * BlogPosting for an article.
+ *
+ * Richer than the generic `articleSchema` above, which is kept for anything
+ * else that needs it. Every optional property is emitted only when the post
+ * actually carries the data — an article with no author, no category and no
+ * tags produces no author, articleSection or keywords, rather than placeholders
+ * that would be fabricated structured data.
+ */
+export function blogPostingSchema(input: {
+  title: string;
+  description: string | null;
+  slug: string;
+  imageUrl: string | null;
+  publishedAt: Date | null;
+  updatedAt: Date;
+  wordCount?: number;
+  keywords?: string[];
+  section?: string | null;
+  author: { name: string; jobTitle: string | null; url: string | null } | null;
+  organizationName: string;
+  logoUrl: string | null;
+}): Json {
+  const url = absoluteUrl(`/blog/${input.slug}`);
+  const keywords = (input.keywords ?? []).filter(Boolean);
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BlogPosting',
+    headline: input.title.slice(0, 110),
+    ...(input.description ? { description: input.description } : {}),
+    ...(input.imageUrl ? { image: [absoluteUrl(input.imageUrl)] } : {}),
+    datePublished: (input.publishedAt ?? input.updatedAt).toISOString(),
+    dateModified: input.updatedAt.toISOString(),
+    ...(input.author
+      ? {
+          author: {
+            '@type': 'Person',
+            name: input.author.name,
+            ...(input.author.jobTitle ? { jobTitle: input.author.jobTitle } : {}),
+            ...(input.author.url ? { url: input.author.url } : {}),
+          },
+        }
+      : {}),
+    publisher: {
+      '@type': 'Organization',
+      name: input.organizationName,
+      ...(input.logoUrl
+        ? { logo: { '@type': 'ImageObject', url: absoluteUrl(input.logoUrl) } }
+        : {}),
+    },
+    ...(input.section ? { articleSection: input.section } : {}),
+    ...(keywords.length > 0 ? { keywords: keywords.join(', ') } : {}),
+    ...(input.wordCount && input.wordCount > 0 ? { wordCount: input.wordCount } : {}),
+    inLanguage: 'en',
+    url,
+    mainEntityOfPage: { '@type': 'WebPage', '@id': url },
+  };
+}

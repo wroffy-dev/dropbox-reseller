@@ -1,11 +1,16 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Eye } from 'lucide-react';
 import { prisma } from '@/lib/db/prisma';
-import { requirePermission, userCan } from '@/lib/auth/guards';
+import { requirePermission, userCan, userCanAny } from '@/lib/auth/guards';
+import { getBlogSectionRows } from '@/lib/services/blog-cms';
+import { parsePostOptions } from '@/lib/cms/blog-settings';
 import { AdminPageHeader } from '@/components/admin/page-header';
-import { PostForm, type PostFormValues } from '@/components/admin/blog/post-form';
+import { PostForm } from '@/components/admin/blog/post-form';
+import { PostSidebarBuilder } from '@/components/admin/blog/post-sidebar-builder';
+import type { PostFormValues } from '@/lib/cms/post-model';
+import type { BuilderSection } from '@/components/cms/section-builder';
 import { ContentStatusBadge } from '@/components/admin/lead-status-badge';
 import { buttonClasses } from '@/components/ui/button';
 
@@ -30,7 +35,7 @@ export default async function EditPost({ params }: { params: Promise<{ id: strin
   const user = await requirePermission('blog.view');
   const { id } = await params;
 
-  const [post, categories, authors, posts] = await Promise.all([
+  const [post, categories, authors, posts, sidebarRows] = await Promise.all([
     prisma.blogPost.findFirst({
       where: { id, deletedAt: null },
       include: {
@@ -38,7 +43,10 @@ export default async function EditPost({ params }: { params: Promise<{ id: strin
         relatedTo: { orderBy: { sortOrder: 'asc' }, select: { targetId: true } },
       },
     }),
-    prisma.blogCategory.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true } }),
+    prisma.blogCategory.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, parent: { select: { name: true } } },
+    }),
     prisma.user.findMany({
       where: { deletedAt: null, status: 'ACTIVE' },
       orderBy: { name: 'asc' },
@@ -50,6 +58,7 @@ export default async function EditPost({ params }: { params: Promise<{ id: strin
       take: 100,
       select: { id: true, title: true },
     }),
+    getBlogSectionRows('SIDEBAR', id),
   ]);
   if (!post) notFound();
 
@@ -57,24 +66,42 @@ export default async function EditPost({ params }: { params: Promise<{ id: strin
     id: post.id,
     title: post.title,
     slug: post.slug,
+    subtitle: post.subtitle ?? '',
     status: post.status,
     publishedAt: toLocalInput(post.publishedAt),
     excerpt: post.excerpt ?? '',
     content: post.content,
     isFeatured: post.isFeatured,
+    featuredPriority: post.featuredPriority,
     featuredImageId: post.featuredImageId,
+    thumbnailId: post.thumbnailId,
     categoryId: post.categoryId ?? '',
     authorId: post.authorId ?? '',
     tags: post.tags.map((t) => t.tag.name),
     relatedIds: post.relatedTo.map((r) => r.targetId),
+    options: parsePostOptions(post.options),
+    sidebarMode: post.sidebarMode,
     seoTitle: post.seoTitle ?? '',
     seoDescription: post.seoDescription ?? '',
+    focusKeyword: post.focusKeyword ?? '',
     canonicalUrl: post.canonicalUrl ?? '',
     noIndex: post.noIndex,
+    noFollow: post.noFollow,
     ogTitle: post.ogTitle ?? '',
     ogDescription: post.ogDescription ?? '',
     ogImageId: post.ogImageId,
+    twitterImageId: post.twitterImageId,
   };
+
+  const sidebarSections: BuilderSection[] = sidebarRows.map((row) => ({
+    id: row.id,
+    blockType: row.blockType,
+    name: row.name,
+    isVisible: row.isVisible,
+    sortOrder: row.sortOrder,
+    content: (row.content ?? {}) as Record<string, unknown>,
+    settings: (row.settings ?? {}) as Record<string, unknown>,
+  }));
 
   return (
     <>
@@ -85,6 +112,15 @@ export default async function EditPost({ params }: { params: Promise<{ id: strin
         actions={
           <>
             <ContentStatusBadge status={post.status} />
+            <Link
+              href={`/admin/blog/${post.id}/preview`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonClasses('outline', 'sm')}
+            >
+              <Eye className="h-4 w-4" aria-hidden="true" />
+              Preview
+            </Link>
             {post.status === 'PUBLISHED' ? (
               <Link
                 href={`/blog/${post.slug}`}
@@ -101,12 +137,25 @@ export default async function EditPost({ params }: { params: Promise<{ id: strin
       />
       <PostForm
         initial={initial}
-        categories={categories}
+        categories={categories.map((category) => ({
+          id: category.id,
+          name: category.name,
+          parentName: category.parent?.name ?? null,
+        }))}
         authors={authors}
         posts={posts}
         canPublish={userCan(user, 'blog.publish')}
         canEdit={userCan(user, 'blog.edit')}
         mode="edit"
+        sidebarSlot={
+          post.sidebarMode === 'CUSTOM' ? (
+            <PostSidebarBuilder
+              postId={post.id}
+              initialSections={sidebarSections}
+              canEdit={userCanAny(user, ['blog.sidebar', 'blog.edit'])}
+            />
+          ) : null
+        }
       />
     </>
   );

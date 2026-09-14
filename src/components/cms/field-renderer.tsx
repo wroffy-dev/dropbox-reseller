@@ -12,6 +12,14 @@ import { ProductMultiSelect } from './product-select';
 import { FormSelect } from './form-select';
 import { IconSelect } from './icon-select';
 import { CategorySelect, BrandSelect } from './taxonomy-select';
+import {
+  BlogCategorySelect,
+  BlogTagSelect,
+  BlogPostSelect,
+  BlogAuthorSelect,
+  BlogPostMultiSelect,
+  BlogCategoryMultiSelect,
+} from './blog-select';
 import { UnitInput, ColorInput } from './design-controls';
 import { cn } from '@/lib/utils/cn';
 
@@ -219,6 +227,70 @@ function FieldControl({
         </Field>
       );
 
+    case 'blogCategory':
+      return (
+        <Field label={field.label} htmlFor={id} hint={field.help}>
+          <BlogCategorySelect
+            id={id}
+            value={typeof value === 'string' ? value : ''}
+            onChange={(next) => onChange(next || null)}
+          />
+        </Field>
+      );
+
+    case 'blogTag':
+      return (
+        <Field label={field.label} htmlFor={id} hint={field.help}>
+          <BlogTagSelect
+            id={id}
+            value={typeof value === 'string' ? value : ''}
+            onChange={(next) => onChange(next || null)}
+          />
+        </Field>
+      );
+
+    case 'blogPost':
+      return (
+        <Field label={field.label} htmlFor={id} hint={field.help}>
+          <BlogPostSelect
+            id={id}
+            value={typeof value === 'string' ? value : ''}
+            onChange={(next) => onChange(next || null)}
+          />
+        </Field>
+      );
+
+    case 'blogAuthor':
+      return (
+        <Field label={field.label} htmlFor={id} hint={field.help}>
+          <BlogAuthorSelect
+            id={id}
+            value={typeof value === 'string' ? value : ''}
+            onChange={(next) => onChange(next || null)}
+          />
+        </Field>
+      );
+
+    case 'blogPosts':
+      return (
+        <Field label={field.label} hint={field.help}>
+          <BlogPostMultiSelect
+            value={Array.isArray(value) ? (value as string[]) : []}
+            onChange={onChange}
+          />
+        </Field>
+      );
+
+    case 'blogCategories':
+      return (
+        <Field label={field.label} hint={field.help}>
+          <BlogCategoryMultiSelect
+            value={Array.isArray(value) ? (value as string[]) : []}
+            onChange={onChange}
+          />
+        </Field>
+      );
+
     case 'icon':
       return (
         <Field label={field.label} hint={field.help}>
@@ -295,9 +367,18 @@ function Repeater({
       blank[sub.name] =
         sub.kind === 'boolean'
           ? false
-          : sub.kind === 'media' || sub.kind === 'productCategory' || sub.kind === 'brand'
+          : sub.kind === 'media' ||
+              sub.kind === 'productCategory' ||
+              sub.kind === 'brand' ||
+              sub.kind === 'blogCategory' ||
+              sub.kind === 'blogTag' ||
+              sub.kind === 'blogPost' ||
+              sub.kind === 'blogAuthor'
             ? null
-            : sub.kind === 'repeater' || sub.kind === 'products'
+            : sub.kind === 'repeater' ||
+                sub.kind === 'products' ||
+                sub.kind === 'blogPosts' ||
+                sub.kind === 'blogCategories'
               ? []
               : '';
     }

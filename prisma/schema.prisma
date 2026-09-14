@@ -199,6 +199,24 @@ enum LeadMagnetKind {
 // AUTH / STAFF / RBAC
 // ---------------------------------------------------------------------------
 
+enum BlogSurface {
+  /// Sections composing the /blog archive (and category/tag archives).
+  LISTING
+  /// Ordered parts of a single article page.
+  ARTICLE
+  /// Widgets in the article sidebar.
+  SIDEBAR
+}
+
+enum BlogSidebarMode {
+  /// Use the sidebar configured under Blog → Layout.
+  GLOBAL
+  /// Use this post's own widget list.
+  CUSTOM
+  /// No sidebar; the article runs full width.
+  NONE
+}
+
 model User {
   id            String     @id @default(cuid())
   email         String     @unique
@@ -226,22 +244,27 @@ model User {
   alternatePhone String?
   bio            String? @db.Text
 
+  /// Public author profile links, surfaced by the blog author box.
+  linkedinUrl String?
+  twitterUrl  String?
+  websiteUrl  String?
+
   // --- Security ---
   /// Two-factor is mandatory for every role. The column exists so a future
   /// break-glass procedure has somewhere to record an exemption deliberately;
   /// nothing in the application ever sets it to false.
-  twoFactorRequired Boolean @default(true)
-  twoFactorEnabled  Boolean @default(false)
+  twoFactorRequired   Boolean   @default(true)
+  twoFactorEnabled    Boolean   @default(false)
   /// AES-256-GCM ciphertext, never the raw TOTP secret.
-  twoFactorSecret   String?
+  twoFactorSecret     String?
   /// Enrollment secret, held only until the first valid code proves it works.
-  twoFactorPending  String?
+  twoFactorPending    String?
   twoFactorVerifiedAt DateTime?
   twoFactorLastUsedAt DateTime?
   /// Highest TOTP time step already accepted, so a code cannot be replayed
   /// inside its own 30-second window.
-  twoFactorLastStep BigInt?
-  passwordChangedAt DateTime?
+  twoFactorLastStep   BigInt?
+  passwordChangedAt   DateTime?
 
   roles  UserRole @relation(fields: [roleId], references: [id], onDelete: Restrict)
   roleId String
@@ -365,10 +388,10 @@ model AuthSession {
   /// How the second factor was satisfied: TOTP, RECOVERY_CODE or SETUP.
   mfaMethod     String?
 
-  createdAt  DateTime  @default(now())
-  lastSeenAt DateTime  @default(now())
-  expiresAt  DateTime
-  revokedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
   /// Why the session ended, for the Activity tab: PASSWORD_CHANGED,
   /// MFA_RESET, SIGNED_OUT, REVOKED_BY_USER, REVOKED_BY_ADMIN.
   revokedReason String?
@@ -655,11 +678,31 @@ model BlogCategory {
   /// category stays a valid top-level one and current URLs keep working.
   parentId String?
 
+  /// Hidden categories keep their posts and URLs but drop out of the
+  /// category filter. Defaults to true so every existing category stays live.
+  isActive Boolean @default(true)
+
+  imageId       String?
+  bannerImageId String?
+
+  archiveTitle       String?
+  archiveDescription String? @db.Text
+
   seoTitle       String?
   seoDescription String? @db.Text
+  canonicalUrl   String?
+  ogTitle        String?
+  ogDescription  String? @db.Text
+  ogImageId      String?
+  noIndex        Boolean @default(false)
+  noFollow       Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  image       Media? @relation("BlogCategoryImage", fields: [imageId], references: [id], onDelete: SetNull)
+  bannerImage Media? @relation("BlogCategoryBanner", fields: [bannerImageId], references: [id], onDelete: SetNull)
+  ogImage     Media? @relation("BlogCategoryOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
 
   parent   BlogCategory?    @relation("BlogCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children BlogCategory[]   @relation("BlogCategoryTree")
@@ -671,11 +714,21 @@ model BlogCategory {
 }
 
 model BlogTag {
-  id   String @id @default(cuid())
-  name String
-  slug String @unique
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String? @db.Text
+  /// Hidden tags keep their posts; they simply stop being offered publicly.
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
 
-  createdAt DateTime @default(now())
+  seoTitle       String?
+  seoDescription String? @db.Text
+  canonicalUrl   String?
+  noIndex        Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
 
   posts BlogPostTag[]
 
@@ -683,34 +736,55 @@ model BlogTag {
 }
 
 model BlogPost {
-  id          String        @id @default(cuid())
-  title       String
-  slug        String        @unique
-  status      ContentStatus @default(DRAFT)
-  publishedAt DateTime?
-  excerpt     String?       @db.Text
-  content     String        @default("") @db.Text
-  readingTime Int           @default(1) // minutes
-  isFeatured  Boolean       @default(false)
+  id               String        @id @default(cuid())
+  title            String
+  slug             String        @unique
+  subtitle         String?
+  status           ContentStatus @default(DRAFT)
+  publishedAt      DateTime?
+  excerpt          String?       @db.Text
+  content          String        @default("") @db.Text
+  readingTime      Int           @default(1) // minutes
+  isFeatured       Boolean       @default(false)
+  /// Lower sorts first among featured posts. Only read when isFeatured.
+  featuredPriority Int           @default(0)
+  /// Counter behind the "Popular posts" sources. Never used for anything else.
+  viewCount        Int           @default(0)
 
   featuredImageId String?
+  thumbnailId     String?
   categoryId      String?
   authorId        String?
 
+  /// Per-post overrides for the parts of the article page an admin can toggle
+  /// (breadcrumb, author box, share, TOC, related, forms...). Empty means
+  /// "inherit everything from Blog → Design", which is what every existing
+  /// post does.
+  options Json @default("{}")
+
+  /// Which sidebar this post renders: the global one, its own widget list, or
+  /// none at all.
+  sidebarMode BlogSidebarMode @default(GLOBAL)
+
   seoTitle       String?
   seoDescription String? @db.Text
+  focusKeyword   String?
   canonicalUrl   String?
   noIndex        Boolean @default(false)
+  noFollow       Boolean @default(false)
   ogTitle        String?
   ogDescription  String? @db.Text
   ogImageId      String?
+  twitterImageId String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   featuredImage Media?        @relation("PostFeaturedImage", fields: [featuredImageId], references: [id], onDelete: SetNull)
+  thumbnail     Media?        @relation("PostThumbnail", fields: [thumbnailId], references: [id], onDelete: SetNull)
   ogImage       Media?        @relation("PostOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
+  twitterImage  Media?        @relation("PostTwitterImage", fields: [twitterImageId], references: [id], onDelete: SetNull)
   category      BlogCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   author        User?         @relation("PostAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   tags          BlogPostTag[]
@@ -718,11 +792,76 @@ model BlogPost {
   relatedTo   BlogPostRelation[] @relation("RelationSource")
   relatedFrom BlogPostRelation[] @relation("RelationTarget")
   navItems    NavigationItem[]
+  sections    BlogSection[]
+  leads       Lead[]             @relation("LeadBlogPost")
 
   @@index([slug])
   @@index([status, publishedAt])
   @@index([categoryId])
   @@index([deletedAt])
+  @@index([isFeatured, featuredPriority])
+}
+
+/// One reorderable part of a blog surface.
+///
+/// Deliberately the same shape as `PageSection` — a block-registry key, a
+/// validated `content` payload and a universal `settings` design record — so
+/// the blog reuses the page builder's registry, design panel and renderer
+/// rather than growing a second one. `postId` is null for the global sets and
+/// set only for a post that overrides its own sidebar.
+model BlogSection {
+  id        String      @id @default(cuid())
+  surface   BlogSurface
+  postId    String?
+  blockType String
+  name      String?
+  sortOrder Int         @default(0)
+  isVisible Boolean     @default(true)
+
+  content  Json @default("{}")
+  settings Json @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post BlogPost? @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([surface, postId, sortOrder])
+  @@index([postId])
+}
+
+/// Blog-wide design, layout and archive SEO (singleton).
+///
+/// Presentation groups are stored as validated JSON rather than as columns so
+/// the controls can grow without a migration per control — the same approach
+/// `PageSection.settings` and `Form.design` already use.
+model BlogSettings {
+  id String @id @default("singleton")
+
+  postsPerPage Int @default(9)
+
+  /// Card appearance and per-item visibility for every blog grid.
+  cardSettings   Json @default("{}")
+  /// Article/sidebar widths, gaps, sticky behaviour and colour overrides.
+  layoutSettings Json @default("{}")
+  /// Social sharing: master switch, per-network switches, placement.
+  shareSettings  Json @default("{}")
+  /// Blog-specific typography overrides layered on the global font settings.
+  typography     Json @default("{}")
+
+  // Archive SEO — overrides the global defaults for /blog.
+  seoTitle       String?
+  seoDescription String? @db.Text
+  canonicalUrl   String?
+  ogTitle        String?
+  ogDescription  String? @db.Text
+  ogImageId      String?
+  noIndex        Boolean @default(false)
+  noFollow       Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
+
+  ogImage Media? @relation("BlogSettingsOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
 }
 
 model BlogPostTag {
@@ -799,17 +938,23 @@ model Media {
   uploadedBy  User?        @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   mediaFolder MediaFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
-  pageOgImages       Page[]            @relation("PageOgImage")
-  pageTwitterImages  Page[]            @relation("PageTwitterImage")
-  productImages      Product[]         @relation("ProductImage")
-  productOgImages    Product[]         @relation("ProductOgImage")
-  categoryImages     ProductCategory[] @relation("CategoryImage")
-  brandLogos         Brand[]           @relation("BrandLogo")
-  postFeaturedImages BlogPost[]        @relation("PostFeaturedImage")
-  postOgImages       BlogPost[]        @relation("PostOgImage")
-  leadMagnetImages   LeadMagnet[]      @relation("LeadMagnetImage")
-  leadMagnetFiles    LeadMagnet[]      @relation("LeadMagnetFile")
-  popupImages        Popup[]           @relation("PopupImage")
+  pageOgImages         Page[]            @relation("PageOgImage")
+  pageTwitterImages    Page[]            @relation("PageTwitterImage")
+  productImages        Product[]         @relation("ProductImage")
+  productOgImages      Product[]         @relation("ProductOgImage")
+  categoryImages       ProductCategory[] @relation("CategoryImage")
+  brandLogos           Brand[]           @relation("BrandLogo")
+  postFeaturedImages   BlogPost[]        @relation("PostFeaturedImage")
+  postThumbnails       BlogPost[]        @relation("PostThumbnail")
+  postOgImages         BlogPost[]        @relation("PostOgImage")
+  postTwitterImages    BlogPost[]        @relation("PostTwitterImage")
+  blogCategoryImages   BlogCategory[]    @relation("BlogCategoryImage")
+  blogCategoryBanners  BlogCategory[]    @relation("BlogCategoryBanner")
+  blogCategoryOgImages BlogCategory[]    @relation("BlogCategoryOgImage")
+  blogSettingsOgImages BlogSettings[]    @relation("BlogSettingsOgImage")
+  leadMagnetImages     LeadMagnet[]      @relation("LeadMagnetImage")
+  leadMagnetFiles      LeadMagnet[]      @relation("LeadMagnetFile")
+  popupImages          Popup[]           @relation("PopupImage")
 
   @@index([kind])
   @@index([createdAt])
@@ -979,6 +1124,9 @@ model Lead {
 
   productId     String?
   landingPageId String?
+  /// Set when the lead was captured on a blog article, so the article that
+  /// converted them is recorded alongside the page attribution.
+  blogPostId    String?
   formId        String?
   leadMagnetId  String?
   assignedToId  String?
@@ -994,6 +1142,7 @@ model Lead {
 
   product     Product?    @relation("LeadProduct", fields: [productId], references: [id], onDelete: SetNull)
   landingPage Page?       @relation("LeadLandingPage", fields: [landingPageId], references: [id], onDelete: SetNull)
+  blogPost    BlogPost?   @relation("LeadBlogPost", fields: [blogPostId], references: [id], onDelete: SetNull)
   form        Form?       @relation("LeadForm", fields: [formId], references: [id], onDelete: SetNull)
   leadMagnet  LeadMagnet? @relation(fields: [leadMagnetId], references: [id], onDelete: SetNull)
   assignedTo  User?       @relation("LeadAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
@@ -1011,6 +1160,7 @@ model Lead {
   @@index([utmSource])
   @@index([deletedAt])
   @@index([customerId])
+  @@index([blogPostId])
 }
 
 model LeadNote {

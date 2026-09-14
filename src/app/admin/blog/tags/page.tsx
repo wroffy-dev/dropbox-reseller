@@ -28,12 +28,18 @@ export default async function BlogTags({
           ],
         }
       : undefined,
-    orderBy: { name: 'asc' },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     take: 500,
     select: {
       id: true,
       name: true,
       slug: true,
+      description: true,
+      isActive: true,
+      seoTitle: true,
+      seoDescription: true,
+      canonicalUrl: true,
+      noIndex: true,
       _count: { select: { posts: true } },
     },
   });
@@ -43,6 +49,12 @@ export default async function BlogTags({
     name: row.name,
     slug: row.slug,
     postCount: row._count.posts,
+    description: row.description,
+    isActive: row.isActive,
+    seoTitle: row.seoTitle,
+    seoDescription: row.seoDescription,
+    canonicalUrl: row.canonicalUrl,
+    noIndex: row.noIndex,
   }));
 
   return (

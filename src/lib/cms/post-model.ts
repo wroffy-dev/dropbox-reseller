@@ -1,3 +1,5 @@
+import { DEFAULT_POST_OPTIONS, type BlogPostOptions } from './blog-settings';
+
 /**
  * Blog post shape shared by the editor and the routes that render it.
  *
@@ -12,43 +14,60 @@ export type PostFormValues = {
   id?: string;
   title: string;
   slug: string;
+  subtitle: string;
   status: string;
   publishedAt: string;
   excerpt: string;
   content: string;
   isFeatured: boolean;
+  featuredPriority: number;
   featuredImageId: string | null;
+  thumbnailId: string | null;
   categoryId: string;
   authorId: string;
   tags: string[];
   relatedIds: string[];
+  /** Per-post display overrides, sidebar choice and form selections. */
+  options: BlogPostOptions;
+  sidebarMode: 'GLOBAL' | 'CUSTOM' | 'NONE';
   seoTitle: string;
   seoDescription: string;
+  focusKeyword: string;
   canonicalUrl: string;
   noIndex: boolean;
+  noFollow: boolean;
   ogTitle: string;
   ogDescription: string;
   ogImageId: string | null;
+  twitterImageId: string | null;
 };
 
 export const EMPTY_POST: PostFormValues = {
   title: '',
   slug: '',
+  subtitle: '',
   status: 'DRAFT',
   publishedAt: '',
   excerpt: '',
   content: '',
   isFeatured: false,
+  featuredPriority: 0,
   featuredImageId: null,
+  thumbnailId: null,
   categoryId: '',
   authorId: '',
   tags: [],
   relatedIds: [],
+  options: DEFAULT_POST_OPTIONS,
+  sidebarMode: 'GLOBAL',
   seoTitle: '',
   seoDescription: '',
+  focusKeyword: '',
   canonicalUrl: '',
   noIndex: false,
+  noFollow: false,
   ogTitle: '',
   ogDescription: '',
   ogImageId: null,
+  twitterImageId: null,
 };

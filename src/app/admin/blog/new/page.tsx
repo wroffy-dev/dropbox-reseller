@@ -13,8 +13,8 @@ export default async function NewPost() {
 
   const [categories, authors, posts] = await Promise.all([
     prisma.blogCategory.findMany({
-      orderBy: { sortOrder: 'asc' },
-      select: { id: true, name: true },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, parent: { select: { name: true } } },
     }),
     prisma.user.findMany({
       where: { deletedAt: null, status: 'ACTIVE' },
@@ -38,7 +38,11 @@ export default async function NewPost() {
       />
       <PostForm
         initial={{ ...EMPTY_POST, authorId: user.id }}
-        categories={categories}
+        categories={categories.map((category) => ({
+          id: category.id,
+          name: category.name,
+          parentName: category.parent?.name ?? null,
+        }))}
         authors={authors}
         posts={posts}
         canPublish={userCan(user, 'blog.publish')}

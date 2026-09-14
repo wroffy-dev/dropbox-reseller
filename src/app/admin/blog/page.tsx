@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Plus, Tag } from 'lucide-react';
+import { Plus, Tag, Layers, Palette } from 'lucide-react';
 import { prisma } from '@/lib/db/prisma';
-import { requirePermission, userCan } from '@/lib/auth/guards';
+import { requirePermission, userCan, userCanAny } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { FilterBar } from '@/components/admin/filter-bar';
 import type { FilterDefinition, FilterPreset } from '@/lib/admin/filters';
@@ -24,6 +24,11 @@ export default async function BlogAdmin({
     q?: string;
     status?: string;
     category?: string;
+    tag?: string;
+    author?: string;
+    featured?: string;
+    from?: string;
+    to?: string;
     page?: string;
   }>;
 }) {
@@ -41,8 +46,19 @@ export default async function BlogAdmin({
   }
   if (params.status) where.status = params.status as Prisma.BlogPostWhereInput['status'];
   if (params.category) where.categoryId = params.category;
+  if (params.tag) where.tags = { some: { tagId: params.tag } };
+  if (params.author) where.authorId = params.author;
+  if (params.featured === 'yes') where.isFeatured = true;
+  if (params.featured === 'no') where.isFeatured = false;
+  if (params.from || params.to) {
+    where.publishedAt = {
+      ...(params.from ? { gte: new Date(params.from) } : {}),
+      // `to` is a date, so the range has to reach the end of that day.
+      ...(params.to ? { lte: new Date(`${params.to}T23:59:59.999Z`) } : {}),
+    };
+  }
 
-  const [rows, total, categories] = await Promise.all([
+  const [rows, total, categories, tags, authors] = await Promise.all([
     prisma.blogPost.findMany({
       where,
       orderBy: [{ publishedAt: 'desc' }, { updatedAt: 'desc' }],
@@ -57,13 +73,25 @@ export default async function BlogAdmin({
         readingTime: true,
         publishedAt: true,
         updatedAt: true,
+        featuredImage: { select: { url: true } },
+        thumbnail: { select: { url: true } },
         category: { select: { name: true } },
         author: { select: { name: true } },
       },
     }),
     prisma.blogPost.count({ where }),
     prisma.blogCategory.findMany({
-      orderBy: { sortOrder: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, parent: { select: { name: true } } },
+    }),
+    prisma.blogTag.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      take: 200,
+      select: { id: true, name: true },
+    }),
+    prisma.user.findMany({
+      where: { deletedAt: null, authoredPosts: { some: { deletedAt: null } } },
+      orderBy: { name: 'asc' },
       select: { id: true, name: true },
     }),
   ]);
@@ -81,6 +109,7 @@ export default async function BlogAdmin({
     slug: row.slug,
     status: row.status,
     isFeatured: row.isFeatured,
+    imageUrl: row.featuredImage?.url ?? row.thumbnail?.url ?? null,
     categoryName: row.category?.name ?? null,
     authorName: row.author?.name ?? null,
     readingTime: row.readingTime,
@@ -105,10 +134,35 @@ export default async function BlogAdmin({
       label: 'Category',
       allLabel: 'Any category',
       options: categories.map((category) => ({
-        label: category.name,
+        label: category.parent ? `${category.parent.name} → ${category.name}` : category.name,
         value: category.id,
       })),
     },
+    {
+      name: 'author',
+      label: 'Author',
+      allLabel: 'Any author',
+      options: authors.map((author) => ({ label: author.name, value: author.id })),
+    },
+    // The rest live behind "More filters" so the bar stays readable.
+    {
+      name: 'tag',
+      label: 'Tag',
+      allLabel: 'Any tag',
+      advanced: true,
+      options: tags.map((tag) => ({ label: tag.name, value: tag.id })),
+    },
+    {
+      name: 'featured',
+      label: 'Featured',
+      allLabel: 'Any',
+      advanced: true,
+      options: [
+        { label: 'Featured only', value: 'yes' },
+        { label: 'Not featured', value: 'no' },
+      ],
+    },
+    { name: 'date', label: 'Published', kind: 'date', advanced: true },
   ];
 
   const presets: FilterPreset[] = [
@@ -116,6 +170,7 @@ export default async function BlogAdmin({
     { id: 'published', label: 'Published', params: { status: 'PUBLISHED' } },
     { id: 'drafts', label: 'Drafts', params: { status: 'DRAFT' } },
     { id: 'scheduled', label: 'Scheduled', params: { status: 'SCHEDULED' } },
+    { id: 'featured', label: 'Featured', params: { featured: 'yes' } },
   ];
 
   return (
@@ -126,6 +181,18 @@ export default async function BlogAdmin({
         crumbs={[{ label: 'Blog' }]}
         actions={
           <>
+            {userCanAny(user, ['blog.sections', 'blog.sidebar', 'blog.edit']) ? (
+              <Link href="/admin/blog/layout" className={buttonClasses('outline', 'md')}>
+                <Layers className="h-4 w-4" aria-hidden="true" />
+                Layout
+              </Link>
+            ) : null}
+            {userCanAny(user, ['blog.design', 'blog.edit']) ? (
+              <Link href="/admin/blog/design" className={buttonClasses('outline', 'md')}>
+                <Palette className="h-4 w-4" aria-hidden="true" />
+                Design
+              </Link>
+            ) : null}
             {can.edit ? (
               <Link href="/admin/blog/categories" className={buttonClasses('outline', 'md')}>
                 <Tag className="h-4 w-4" aria-hidden="true" />
@@ -152,7 +219,16 @@ export default async function BlogAdmin({
         <PostsTable
           rows={tableRows}
           can={can}
-          filtered={Boolean(params.q || params.status || params.category)}
+          filtered={Boolean(
+            params.q ||
+              params.status ||
+              params.category ||
+              params.tag ||
+              params.author ||
+              params.featured ||
+              params.from ||
+              params.to,
+          )}
         />
         {tableRows.length > 0 ? (
           <AdminPagination

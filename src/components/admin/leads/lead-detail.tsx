@@ -47,6 +47,8 @@ export type LeadDetailData = {
   assignedToId: string | null;
   customerId: string | null;
   formName: string | null;
+  blogPostTitle: string | null;
+  blogPostUrl: string | null;
   landingUrl: string | null;
   referrer: string | null;
   utm: {
@@ -268,7 +270,27 @@ export function LeadDetail({
             <Row label="Source" value={lead.source ?? '—'} />
             <Row label="Form" value={lead.formName ?? '—'} />
             <Row label="Product" value={lead.productName ?? '—'} />
+            {lead.blogPostTitle ? (
+              <Row
+                label="Article"
+                value={
+                  lead.blogPostUrl ? (
+                    <Link
+                      href={lead.blogPostUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-brand hover:underline"
+                    >
+                      {lead.blogPostTitle}
+                    </Link>
+                  ) : (
+                    lead.blogPostTitle
+                  )
+                }
+              />
+            ) : null}
             <Row label="Button" value={lead.ctaLabel ?? '—'} />
+            <Row label="Placement" value={lead.ctaLocation ?? '—'} />
             <Row label="Landing page" value={lead.landingUrl ?? '—'} />
             <Row label="Referrer" value={lead.referrer ?? '—'} />
           </CardBody>

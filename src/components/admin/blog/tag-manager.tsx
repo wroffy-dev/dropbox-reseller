@@ -5,7 +5,7 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { Plus, Pencil, Trash, Tags, Search } from 'lucide-react';
 import { saveBlogTag, deleteBlogTag, bulkBlogTagAction } from '@/lib/actions/blog-tags';
 import { Dialog, ConfirmDialog } from '@/components/ui/dialog';
-import { Field, Input } from '@/components/ui/field';
+import { Field, Input, Textarea, Switch } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { Table, TableWrap, Th, Td, Tr } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/states';
@@ -19,9 +19,49 @@ export type TagRow = {
   name: string;
   slug: string;
   postCount: number;
+  description: string | null;
+  isActive: boolean;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  canonicalUrl: string | null;
+  noIndex: boolean;
 };
 
-const BLANK = { id: '', name: '', slug: '' };
+type TagDraft = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  isActive: boolean;
+  seoTitle: string;
+  seoDescription: string;
+  canonicalUrl: string;
+  noIndex: boolean;
+};
+
+const BLANK: TagDraft = {
+  id: '',
+  name: '',
+  slug: '',
+  description: '',
+  isActive: true,
+  seoTitle: '',
+  seoDescription: '',
+  canonicalUrl: '',
+  noIndex: false,
+};
+
+const draftFrom = (row: TagRow): TagDraft => ({
+  id: row.id,
+  name: row.name,
+  slug: row.slug,
+  description: row.description ?? '',
+  isActive: row.isActive,
+  seoTitle: row.seoTitle ?? '',
+  seoDescription: row.seoDescription ?? '',
+  canonicalUrl: row.canonicalUrl ?? '',
+  noIndex: row.noIndex,
+});
 
 /**
  * Tag management.
@@ -47,7 +87,7 @@ export function TagManager({
   const { toast } = useToast();
 
   const selection = useSelection(rows);
-  const [editing, setEditing] = React.useState<typeof BLANK | null>(null);
+  const [editing, setEditing] = React.useState<TagDraft | null>(null);
   const [confirmDelete, setConfirmDelete] = React.useState<TagRow | null>(null);
   const [confirmBulk, setConfirmBulk] = React.useState<'delete' | 'deleteUnused' | null>(null);
   const [pending, setPending] = React.useState(false);
@@ -95,6 +135,12 @@ export function TagManager({
     const data = new FormData();
     data.set('name', editing.name);
     data.set('slug', editing.slug);
+    data.set('description', editing.description);
+    data.set('isActive', String(editing.isActive));
+    data.set('seoTitle', editing.seoTitle);
+    data.set('seoDescription', editing.seoDescription);
+    data.set('canonicalUrl', editing.canonicalUrl);
+    data.set('noIndex', String(editing.noIndex));
     if (await run(() => saveBlogTag(editing.id || null, data))) setEditing(null);
   }
 
@@ -200,7 +246,17 @@ export function TagManager({
                       />
                     </Td>
                   ) : null}
-                  <Td className="font-medium text-content">{row.name}</Td>
+                  <Td>
+                    <span className="font-medium text-content">{row.name}</span>
+                    {row.isActive ? null : (
+                      <span className="ml-2 text-xs text-muted">Hidden</span>
+                    )}
+                    {row.description ? (
+                      <span className="mt-0.5 block truncate text-xs text-muted">
+                        {row.description}
+                      </span>
+                    ) : null}
+                  </Td>
                   <Td>
                     <code className="rounded bg-muted/10 px-1.5 py-0.5 font-mono text-xs text-muted">
                       /blog/tag/{row.slug}
@@ -218,7 +274,7 @@ export function TagManager({
                       {canEdit ? (
                         <button
                           type="button"
-                          onClick={() => setEditing({ id: row.id, name: row.name, slug: row.slug })}
+                          onClick={() => setEditing(draftFrom(row))}
                           aria-label={`Edit ${row.name}`}
                           className="rounded p-1.5 text-muted hover:bg-muted/10 hover:text-content"
                         >
@@ -290,6 +346,57 @@ export function TagManager({
                 onChange={(event) => setEditing({ ...editing, slug: event.target.value })}
               />
             </Field>
+            <Field label="Description" htmlFor="tag-description" error={errors.description}>
+              <Textarea
+                id="tag-description"
+                rows={2}
+                value={editing.description}
+                onChange={(event) => setEditing({ ...editing, description: event.target.value })}
+              />
+            </Field>
+            <div className="rounded-lg border border-hairline p-3">
+              <Switch
+                checked={editing.isActive}
+                onChange={(next) => setEditing({ ...editing, isActive: next })}
+                label="Offer this tag publicly"
+                hint="A hidden tag keeps its archive URL working; it just stops being listed."
+              />
+            </div>
+            <Field label="SEO title" htmlFor="tag-seo-title" error={errors.seoTitle}>
+              <Input
+                id="tag-seo-title"
+                value={editing.seoTitle}
+                onChange={(event) => setEditing({ ...editing, seoTitle: event.target.value })}
+              />
+            </Field>
+            <Field
+              label="Meta description"
+              htmlFor="tag-seo-description"
+              error={errors.seoDescription}
+            >
+              <Textarea
+                id="tag-seo-description"
+                rows={2}
+                value={editing.seoDescription}
+                onChange={(event) =>
+                  setEditing({ ...editing, seoDescription: event.target.value })
+                }
+              />
+            </Field>
+            <Field label="Canonical URL" htmlFor="tag-canonical" error={errors.canonicalUrl}>
+              <Input
+                id="tag-canonical"
+                value={editing.canonicalUrl}
+                onChange={(event) => setEditing({ ...editing, canonicalUrl: event.target.value })}
+              />
+            </Field>
+            <div className="rounded-lg border border-hairline p-3">
+              <Switch
+                checked={editing.noIndex}
+                onChange={(next) => setEditing({ ...editing, noIndex: next })}
+                label="Hide this archive from search engines (noindex)"
+              />
+            </div>
           </div>
         ) : null}
       </Dialog>

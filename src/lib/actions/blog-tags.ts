@@ -30,6 +30,12 @@ export async function saveBlogTag(
     const input = blogTagSchema.parse({
       name: formData.get('name'),
       slug: formData.get('slug') || String(formData.get('name') ?? ''),
+      description: formData.get('description'),
+      isActive: formData.get('isActive') !== 'false',
+      seoTitle: formData.get('seoTitle'),
+      seoDescription: formData.get('seoDescription'),
+      canonicalUrl: formData.get('canonicalUrl'),
+      noIndex: formData.get('noIndex') === 'true',
     });
 
     let slug = input.slug || slugify(input.name);
@@ -53,7 +59,16 @@ export async function saveBlogTag(
       if (clash) return failure('Another tag already uses that URL slug.');
     }
 
-    const data = { name: sanitizeText(input.name), slug };
+    const data = {
+      name: sanitizeText(input.name),
+      slug,
+      description: input.description ? sanitizeText(input.description) : null,
+      isActive: input.isActive,
+      seoTitle: input.seoTitle,
+      seoDescription: input.seoDescription,
+      canonicalUrl: input.canonicalUrl,
+      noIndex: input.noIndex,
+    };
 
     const tag = tagId
       ? await prisma.blogTag.update({ where: { id: tagId }, data })

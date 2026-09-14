@@ -7,6 +7,7 @@ import { buttonClasses, type ButtonVariant } from '@/components/ui/button';
 import type { ResolvedMedia } from '@/lib/services/media';
 import type { SectionDesign } from '@/lib/cms/design';
 import { resolveColumns, gridStyle } from '@/lib/cms/design';
+import type { BlogRenderContext } from '@/lib/cms/blog-render';
 
 /**
  * Context every block receives from the section renderer.
@@ -20,6 +21,12 @@ export type BlockContext = {
   /** First section on the page — its heading becomes the <h1>. */
   isFirst: boolean;
   design: SectionDesign;
+  /**
+   * Present only on blog surfaces. It carries the blog's settings and the
+   * archive or article being rendered, so a blog block never has to query for
+   * the page it happens to be on.
+   */
+  blog?: BlogRenderContext;
 };
 
 /** CSS variables for a responsive card grid, design panel taking precedence. */

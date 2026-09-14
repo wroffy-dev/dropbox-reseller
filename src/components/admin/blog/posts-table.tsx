@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FileText, Plus, Pencil, ExternalLink, Copy, Trash, Star } from 'lucide-react';
+import { FileText, Plus, Pencil, ExternalLink, Copy, Trash, Star, Eye, Archive } from 'lucide-react';
 import {
   setBlogPostStatus,
   duplicateBlogPost,
@@ -25,6 +25,7 @@ export type PostRow = {
   slug: string;
   status: string;
   isFeatured: boolean;
+  imageUrl: string | null;
   categoryName: string | null;
   authorName: string | null;
   readingTime: number;
@@ -116,6 +117,20 @@ export function PostsTable({
                 Unpublish
               </Button>
             ) : null}
+            {can.edit ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() =>
+                  run(() => bulkBlogAction({ ids: selection.selected, action: 'archive' })).then(
+                    (ok) => ok && selection.clear(),
+                  )
+                }
+              >
+                Archive
+              </Button>
+            ) : null}
             {can.delete ? (
               <Button size="sm" variant="danger" disabled={busy} onClick={() => setConfirmBulkDelete(true)}>
                 Delete
@@ -126,7 +141,7 @@ export function PostsTable({
       ) : null}
 
       <TableWrap>
-        <Table className="min-w-[48rem]">
+        <Table className="min-w-[60rem]">
           <caption className="sr-only">Blog posts</caption>
           <thead>
             <tr>
@@ -141,12 +156,16 @@ export function PostsTable({
                   />
                 </Th>
               ) : null}
+              <Th className="w-14">
+                <span className="sr-only">Image</span>
+              </Th>
               <Th>Title</Th>
               <Th>Category</Th>
               <Th>Author</Th>
-              <Th align="center">Read</Th>
+              <Th align="center">Featured</Th>
               <Th>Status</Th>
               <Th>Published</Th>
+              <Th>Updated</Th>
               <Th align="right">Actions</Th>
             </tr>
           </thead>
@@ -165,20 +184,41 @@ export function PostsTable({
                   </Td>
                 ) : null}
                 <Td>
-                  <span className="flex items-center gap-2">
-                    <Link href={`/admin/blog/${row.id}`} className="font-medium text-content hover:text-brand">
-                      {row.title}
-                    </Link>
-                    {row.isFeatured ? (
-                      <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-label="Featured" />
-                    ) : null}
-                  </span>
-                  <code className="mt-0.5 block font-mono text-xs text-muted">/blog/{row.slug}</code>
+                  {row.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={row.imageUrl}
+                      alt=""
+                      className="h-10 w-14 rounded-md border border-hairline object-cover"
+                    />
+                  ) : (
+                    <span
+                      className="block h-10 w-14 rounded-md border border-dashed border-hairline bg-muted/5"
+                      aria-hidden="true"
+                    />
+                  )}
+                </Td>
+                <Td>
+                  <Link href={`/admin/blog/${row.id}`} className="font-medium text-content hover:text-brand">
+                    {row.title}
+                  </Link>
+                  <code className="mt-0.5 block font-mono text-xs text-muted">
+                    /blog/{row.slug} · {row.readingTime} min
+                  </code>
                 </Td>
                 <Td className="text-sm text-muted">{row.categoryName ?? '—'}</Td>
                 <Td className="text-sm text-muted">{row.authorName ?? '—'}</Td>
-                <Td align="center" className="whitespace-nowrap text-sm text-muted">
-                  {row.readingTime} min
+                <Td align="center">
+                  {row.isFeatured ? (
+                    <Star
+                      className="mx-auto h-4 w-4 fill-amber-400 text-amber-400"
+                      aria-label="Featured"
+                    />
+                  ) : (
+                    <span className="text-muted" aria-hidden="true">
+                      —
+                    </span>
+                  )}
                 </Td>
                 <Td>
                   <ContentStatusBadge status={row.status} />
@@ -186,6 +226,7 @@ export function PostsTable({
                 <Td className="whitespace-nowrap text-sm text-muted">
                   {row.publishedAt ? formatDate(row.publishedAt) : '—'}
                 </Td>
+                <Td className="whitespace-nowrap text-sm text-muted">{formatDate(row.updatedAt)}</Td>
                 <Td align="right">
                   <div className="flex items-center justify-end gap-1">
                     {can.edit ? (
@@ -198,6 +239,16 @@ export function PostsTable({
                         <Pencil className="h-4 w-4" />
                       </Link>
                     ) : null}
+                    <Link
+                      href={`/admin/blog/${row.id}/preview`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded p-1.5 text-muted hover:bg-muted/10 hover:text-content"
+                      aria-label={`Preview ${row.title}`}
+                      title="Preview"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Link>
                     {row.status === 'PUBLISHED' ? (
                       <Link
                         href={`/blog/${row.slug}`}
@@ -225,6 +276,15 @@ export function PostsTable({
                           onClick={() => run(() => setBlogPostStatus(row.id, 'DRAFT'))}
                         >
                           Unpublish
+                        </RowMenuItem>
+                      ) : null}
+                      {can.edit && row.status !== 'ARCHIVED' ? (
+                        <RowMenuItem
+                          disabled={busy}
+                          onClick={() => run(() => setBlogPostStatus(row.id, 'ARCHIVED'))}
+                        >
+                          <Archive className="h-3.5 w-3.5" aria-hidden="true" />
+                          Archive
                         </RowMenuItem>
                       ) : null}
                       {can.create ? (

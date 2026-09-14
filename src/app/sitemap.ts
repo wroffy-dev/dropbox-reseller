@@ -16,7 +16,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   if (seo && !seo.sitemapEnabled) return [];
 
   try {
-    const [pages, products, posts, categories] = await Promise.all([
+    const [pages, products, posts, categories, tags, blogSettings] = await Promise.all([
       prisma.page.findMany({
         where: { ...publishedPageWhere(), noIndex: false },
         select: { slug: true, updatedAt: true, isHomepage: true },
@@ -30,8 +30,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         select: { slug: true, updatedAt: true },
       }),
       prisma.blogCategory.findMany({
-        where: { posts: { some: publishedPostWhere() } },
+        where: { isActive: true, noIndex: false, posts: { some: publishedPostWhere() } },
         select: { slug: true, updatedAt: true },
+      }),
+      prisma.blogTag.findMany({
+        where: { isActive: true, noIndex: false, posts: { some: { post: publishedPostWhere() } } },
+        select: { slug: true, updatedAt: true, createdAt: true },
+      }),
+      prisma.blogSettings.findUnique({
+        where: { id: 'singleton' },
+        select: { noIndex: true },
       }),
     ]);
 
@@ -42,12 +50,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         changeFrequency: 'weekly' as const,
         priority: page.isHomepage || page.slug === '' ? 1 : 0.8,
       })),
-      {
-        url: `${base}/blog`,
-        lastModified: posts[0]?.updatedAt ?? new Date(),
-        changeFrequency: 'daily' as const,
-        priority: 0.7,
-      },
+      // The archive drops out of the sitemap when it is set to noindex.
+      ...(blogSettings?.noIndex
+        ? []
+        : [
+            {
+              url: `${base}/blog`,
+              lastModified: posts[0]?.updatedAt ?? new Date(),
+              changeFrequency: 'daily' as const,
+              priority: 0.7,
+            },
+          ]),
       ...products.map((product) => ({
         url: `${base}/products/${product.slug}`,
         lastModified: product.updatedAt,
@@ -59,6 +72,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         lastModified: category.updatedAt,
         changeFrequency: 'weekly' as const,
         priority: 0.5,
+      })),
+      ...tags.map((tag) => ({
+        url: `${base}/blog/tag/${tag.slug}`,
+        lastModified: tag.updatedAt ?? tag.createdAt,
+        changeFrequency: 'weekly' as const,
+        priority: 0.4,
       })),
       ...posts.map((post) => ({
         url: `${base}/blog/${post.slug}`,

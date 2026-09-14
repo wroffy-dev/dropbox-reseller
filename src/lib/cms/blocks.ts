@@ -1,6 +1,16 @@
 import { z } from 'zod';
 import { panelDesignSchema } from '@/lib/cms/design';
 import type { FieldDescriptor } from './fields';
+import {
+  BLOCK_GROUPS,
+  BLOCK_SURFACES,
+  BLOCK_SURFACE_LABELS,
+  linkFields,
+  type BlockDefinition,
+  type BlockGroup,
+  type BlockSurface,
+} from './block-types';
+import { BLOG_BLOCKS } from './blog-blocks';
 
 /**
  * Block registry.
@@ -8,18 +18,20 @@ import type { FieldDescriptor } from './fields';
  * Each entry pairs a Zod schema (validation + defaults) with a declarative field
  * list (drives the generated admin editor). Adding a block here plus a renderer
  * in components/cms/blocks makes it immediately available in the page builder.
+ *
+ * Blog blocks live in `blog-blocks.ts` but land in the same registry, so the
+ * page builder and the blog builder share one lookup, one editor and one
+ * renderer dispatch rather than growing a competing system.
  */
 
-const linkFields = (prefix: string, label: string): FieldDescriptor[] => [
-  { kind: 'text', name: `${prefix}Label`, label: `${label} label`, width: 'half' },
-  {
-    kind: 'url',
-    name: `${prefix}Url`,
-    label: `${label} link`,
-    width: 'half',
-    placeholder: '/contact',
-  },
-];
+export {
+  BLOCK_GROUPS,
+  BLOCK_SURFACES,
+  BLOCK_SURFACE_LABELS,
+  type BlockGroup,
+  type BlockSurface,
+  type BlockDefinition,
+};
 
 // --- shared content fragments ----------------------------------------------
 const objectFit = z.enum(['cover', 'contain', 'fill', 'none']).catch('cover').default('cover');
@@ -573,33 +585,7 @@ const productSourceFields: FieldDescriptor[] = [
   },
 ];
 
-export const BLOCK_GROUPS = [
-  'Content',
-  'Cards & media',
-  'Products',
-  'Conversion',
-  'Social proof',
-] as const;
-
-export type BlockGroup = (typeof BLOCK_GROUPS)[number];
-
-export type BlockDefinition = {
-  type: string;
-  label: string;
-  description: string;
-  group: BlockGroup;
-  icon: string;
-  schema: z.ZodTypeAny;
-  fields: FieldDescriptor[];
-  /**
-   * Superseded by a richer block. Still rendered and still editable so existing
-   * pages keep working — just hidden from the "Add section" picker.
-   */
-  deprecated?: boolean;
-  supersededBy?: string;
-};
-
-export const BLOCKS: Record<string, BlockDefinition> = {
+const PAGE_BLOCKS: Record<string, BlockDefinition> = {
   hero: {
     type: 'hero',
     label: 'Hero',
@@ -682,6 +668,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'A heading with formatted body copy.',
     group: 'Content',
     icon: 'text',
+    surfaces: ['page', 'blogListing', 'blogArticle'],
     schema: richTextSchema,
     fields: [
       { kind: 'text', name: 'heading', label: 'Heading' },
@@ -715,6 +702,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'A grid of benefits or features with optional icons.',
     group: 'Content',
     icon: 'grid-3x3',
+    surfaces: ['page', 'blogListing'],
     schema: featureGridSchema,
     fields: [
       { kind: 'text', name: 'heading', label: 'Heading' },
@@ -758,6 +746,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'An image beside a block of copy and an optional button.',
     group: 'Content',
     icon: 'image',
+    surfaces: ['page', 'blogListing', 'blogArticle'],
     schema: imageContentSchema,
     fields: [
       { kind: 'text', name: 'eyebrow', label: 'Eyebrow', width: 'half' },
@@ -784,6 +773,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'Product plans displayed as pricing cards.',
     group: 'Products',
     icon: 'package',
+    surfaces: ['page', 'blogListing', 'blogArticle'],
     schema: productCardsSchema,
     fields: [
       { kind: 'text', name: 'heading', label: 'Heading' },
@@ -855,6 +845,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'Expandable questions and answers. Emits FAQ structured data.',
     group: 'Content',
     icon: 'circle-help',
+    surfaces: ['page', 'blogListing', 'blogArticle'],
     schema: faqSchema,
     fields: [
       { kind: 'text', name: 'heading', label: 'Heading' },
@@ -889,6 +880,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'Customer quotes with name, role and company.',
     group: 'Social proof',
     icon: 'quote',
+    surfaces: ['page', 'blogListing'],
     schema: testimonialsSchema,
     fields: [
       { kind: 'text', name: 'heading', label: 'Heading' },
@@ -917,6 +909,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'A conversion panel with buttons or an inline form.',
     group: 'Conversion',
     icon: 'megaphone',
+    surfaces: ['page', 'blogListing', 'blogArticle'],
     schema: ctaSchema,
     fields: [
       {
@@ -1106,6 +1099,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'Offer a download or consultation in exchange for contact details.',
     group: 'Conversion',
     icon: 'gift',
+    surfaces: ['page', 'blogListing', 'blogArticle'],
     schema: leadMagnetSchema,
     fields: [
       {
@@ -1135,6 +1129,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'Embed any form built in Forms. Every submission creates a lead.',
     group: 'Conversion',
     icon: 'clipboard-list',
+    surfaces: ['page', 'blogListing', 'blogArticle'],
     schema: formBlockSchema,
     fields: [
       { kind: 'text', name: 'heading', label: 'Heading' },
@@ -1175,6 +1170,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'Partner or customer logos. Falls back to text when no image is set.',
     group: 'Social proof',
     icon: 'building-2',
+    surfaces: ['page', 'blogListing'],
     schema: logoWallSchema,
     fields: [
       { kind: 'text', name: 'heading', label: 'Heading' },
@@ -1201,6 +1197,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     icon: 'trending-up',
     deprecated: true,
     supersededBy: 'statistics',
+    surfaces: ['page', 'blogListing'],
     schema: statsSchema,
     fields: [
       { kind: 'text', name: 'heading', label: 'Heading' },
@@ -1384,6 +1381,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'One image paired with a heading, copy and a button.',
     group: 'Cards & media',
     icon: 'layout-template',
+    surfaces: ['page', 'blogListing', 'blogArticle'],
     schema: imageBoxSchema,
     fields: [
       {
@@ -1508,6 +1506,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'A heading, subheading and formatted copy with an optional button.',
     group: 'Content',
     icon: 'text',
+    surfaces: ['page', 'blogListing', 'blogArticle'],
     schema: headingTextSchema,
     fields: [
       { kind: 'text', name: 'eyebrow', label: 'Eyebrow', width: 'half' },
@@ -1586,6 +1585,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'Headline numbers such as “500+ Customers” or “99.9% Support SLA”.',
     group: 'Social proof',
     icon: 'trending-up',
+    surfaces: ['page', 'blogListing'],
     schema: statisticsSchema,
     fields: [
       { kind: 'text', name: 'eyebrow', label: 'Eyebrow', width: 'half' },
@@ -1635,6 +1635,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     description: 'Drop products onto any page — all, featured, hand-picked, by category or brand.',
     group: 'Products',
     icon: 'package',
+    surfaces: ['page', 'blogListing', 'blogArticle'],
     schema: productGridSchema,
     fields: [
       { kind: 'text', name: 'eyebrow', label: 'Eyebrow', width: 'half' },
@@ -1734,12 +1735,29 @@ export const BLOCKS: Record<string, BlockDefinition> = {
   },
 };
 
+export const BLOCKS: Record<string, BlockDefinition> = { ...PAGE_BLOCKS, ...BLOG_BLOCKS };
+
 export type BlockType = keyof typeof BLOCKS;
 
 export const BLOCK_LIST = Object.values(BLOCKS);
 
 /** What the "Add section" dialog offers — superseded blocks stay editable but hidden. */
-export const BLOCK_PICKER_LIST = BLOCK_LIST.filter((block) => !block.deprecated);
+export const BLOCK_PICKER_LIST = BLOCK_LIST.filter(
+  (block) => !block.deprecated && (block.surfaces ?? ['page']).includes('page'),
+);
+
+/**
+ * Blocks a given surface may add.
+ *
+ * The page picker is unchanged — a block without `surfaces` is a page block —
+ * and each blog surface gets exactly the blocks written for it plus the generic
+ * ones that opted in.
+ */
+export function blocksForSurface(surface: BlockSurface): BlockDefinition[] {
+  return BLOCK_LIST.filter(
+    (block) => !block.deprecated && (block.surfaces ?? ['page']).includes(surface),
+  );
+}
 
 export function getBlock(type: string): BlockDefinition | null {
   return BLOCKS[type] ?? null;

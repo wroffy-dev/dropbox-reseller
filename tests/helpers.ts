@@ -43,6 +43,13 @@ export function mockAuth(permissions: string[] = [...ALL_PERMISSIONS], role = 's
         if (!can(user, permission)) throw new AuthorizationError(permission);
         return user;
       },
+      authorizeAny: async (permissions: string[]) => {
+        if (!permissions.some((permission) => can(user, permission))) {
+          throw new AuthorizationError(permissions.join(' | '));
+        }
+        return user;
+      },
+      requireAnyPermission: async () => user,
       authorizeSelf: async () => user,
       authorizePartial: async () => ({ user, status: 'authenticated' as const }),
       requirePartialUser: async () => ({ user, status: 'authenticated' as const }),

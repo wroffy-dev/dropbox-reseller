@@ -13,7 +13,7 @@ import { readingTimeMinutes, plainExcerpt } from '@/lib/utils/format';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
 
 function revalidatePost(slug: string) {
-  revalidatePath('/blog');
+  revalidatePath('/blog', 'layout');
   revalidatePath(`/blog/${slug}`);
   revalidatePath('/sitemap.xml');
 }
@@ -32,23 +32,31 @@ function readPostForm(formData: FormData) {
   return blogPostSchema.parse({
     title: formData.get('title'),
     slug: formData.get('slug') || String(formData.get('title') ?? ''),
+    subtitle: formData.get('subtitle'),
     status: formData.get('status') || 'DRAFT',
     publishedAt: formData.get('publishedAt') || null,
     excerpt: formData.get('excerpt'),
     content: formData.get('content') ?? '',
     isFeatured: formData.get('isFeatured') === 'true',
+    featuredPriority: formData.get('featuredPriority') || 0,
     featuredImageId: formData.get('featuredImageId'),
+    thumbnailId: formData.get('thumbnailId'),
     categoryId: formData.get('categoryId'),
     authorId: formData.get('authorId'),
     tags: parseJson<string[]>('tags', []),
     relatedIds: parseJson<string[]>('relatedIds', []),
+    options: parseJson<Record<string, unknown>>('options', {}),
+    sidebarMode: formData.get('sidebarMode') || 'GLOBAL',
     seoTitle: formData.get('seoTitle'),
     seoDescription: formData.get('seoDescription'),
+    focusKeyword: formData.get('focusKeyword'),
     canonicalUrl: formData.get('canonicalUrl'),
     noIndex: formData.get('noIndex') === 'true',
+    noFollow: formData.get('noFollow') === 'true',
     ogTitle: formData.get('ogTitle'),
     ogDescription: formData.get('ogDescription'),
     ogImageId: formData.get('ogImageId'),
+    twitterImageId: formData.get('twitterImageId'),
   });
 }
 
@@ -96,20 +104,28 @@ export async function createBlogPost(formData: FormData): Promise<ActionResult<{
         status: input.status,
         publishedAt:
           input.status === 'PUBLISHED' ? (input.publishedAt ?? new Date()) : input.publishedAt,
+        subtitle: input.subtitle ? sanitizeText(input.subtitle) : null,
         excerpt: input.excerpt ? sanitizeText(input.excerpt) : plainExcerpt(content, 200) || null,
         content,
         readingTime: readingTimeMinutes(content),
         isFeatured: input.isFeatured,
+        featuredPriority: input.featuredPriority,
         featuredImageId: input.featuredImageId,
+        thumbnailId: input.thumbnailId,
         categoryId: input.categoryId,
         authorId: input.authorId ?? user.id,
+        options: input.options as unknown as object,
+        sidebarMode: input.sidebarMode,
         seoTitle: input.seoTitle,
         seoDescription: input.seoDescription,
+        focusKeyword: input.focusKeyword,
         canonicalUrl: input.canonicalUrl,
         noIndex: input.noIndex,
+        noFollow: input.noFollow,
         ogTitle: input.ogTitle,
         ogDescription: input.ogDescription,
         ogImageId: input.ogImageId,
+        twitterImageId: input.twitterImageId,
         tags: { create: tagIds.map((tagId) => ({ tagId })) },
         relatedTo: {
           create: input.relatedIds.map((targetId, index) => ({ targetId, sortOrder: index * 10 })),
@@ -172,20 +188,28 @@ export async function updateBlogPost(postId: string, formData: FormData): Promis
             input.status === 'PUBLISHED'
               ? (input.publishedAt ?? before.publishedAt ?? new Date())
               : input.publishedAt,
+          subtitle: input.subtitle ? sanitizeText(input.subtitle) : null,
           excerpt: input.excerpt ? sanitizeText(input.excerpt) : plainExcerpt(content, 200) || null,
           content,
           readingTime: readingTimeMinutes(content),
           isFeatured: input.isFeatured,
+          featuredPriority: input.featuredPriority,
           featuredImageId: input.featuredImageId,
+          thumbnailId: input.thumbnailId,
           categoryId: input.categoryId,
           authorId: input.authorId,
+          options: input.options as unknown as object,
+          sidebarMode: input.sidebarMode,
           seoTitle: input.seoTitle,
           seoDescription: input.seoDescription,
+          focusKeyword: input.focusKeyword,
           canonicalUrl: input.canonicalUrl,
           noIndex: input.noIndex,
+          noFollow: input.noFollow,
           ogTitle: input.ogTitle,
           ogDescription: input.ogDescription,
           ogImageId: input.ogImageId,
+          twitterImageId: input.twitterImageId,
           tags: { create: tagIds.map((tagId) => ({ tagId })) },
           relatedTo: {
             create: relatedIds.map((targetId, index) => ({ targetId, sortOrder: index * 10 })),
@@ -270,18 +294,29 @@ export async function duplicateBlogPost(postId: string): Promise<ActionResult<{ 
         title: `${source.title} (copy)`,
         slug,
         status: 'DRAFT',
+        subtitle: source.subtitle,
         excerpt: source.excerpt,
         content: source.content,
         readingTime: source.readingTime,
+        // A copy is never featured: two articles sharing the featured slot is
+        // never what duplicating was for.
         isFeatured: false,
+        featuredPriority: source.featuredPriority,
         featuredImageId: source.featuredImageId,
+        thumbnailId: source.thumbnailId,
         categoryId: source.categoryId,
         authorId: user.id,
+        options: source.options as object,
+        sidebarMode: source.sidebarMode,
         seoTitle: source.seoTitle,
         seoDescription: source.seoDescription,
+        focusKeyword: source.focusKeyword,
+        noIndex: source.noIndex,
+        noFollow: source.noFollow,
         ogTitle: source.ogTitle,
         ogDescription: source.ogDescription,
         ogImageId: source.ogImageId,
+        twitterImageId: source.twitterImageId,
         tags: { create: source.tags.map((t) => ({ tagId: t.tagId })) },
       },
     });
@@ -345,8 +380,19 @@ export async function saveBlogCategory(
       description: formData.get('description'),
       parentId: formData.get('parentId'),
       sortOrder: formData.get('sortOrder') || 0,
+      isActive: formData.get('isActive') !== 'false',
+      imageId: formData.get('imageId'),
+      bannerImageId: formData.get('bannerImageId'),
+      archiveTitle: formData.get('archiveTitle'),
+      archiveDescription: formData.get('archiveDescription'),
       seoTitle: formData.get('seoTitle'),
       seoDescription: formData.get('seoDescription'),
+      canonicalUrl: formData.get('canonicalUrl'),
+      ogTitle: formData.get('ogTitle'),
+      ogDescription: formData.get('ogDescription'),
+      ogImageId: formData.get('ogImageId'),
+      noIndex: formData.get('noIndex') === 'true',
+      noFollow: formData.get('noFollow') === 'true',
     });
 
     // A category may not sit inside itself or inside one of its own children;
@@ -380,8 +426,19 @@ export async function saveBlogCategory(
       description: input.description ? sanitizeText(input.description) : null,
       parentId: input.parentId,
       sortOrder: input.sortOrder,
+      isActive: input.isActive,
+      imageId: input.imageId,
+      bannerImageId: input.bannerImageId,
+      archiveTitle: input.archiveTitle,
+      archiveDescription: input.archiveDescription,
       seoTitle: input.seoTitle,
       seoDescription: input.seoDescription,
+      canonicalUrl: input.canonicalUrl,
+      ogTitle: input.ogTitle,
+      ogDescription: input.ogDescription,
+      ogImageId: input.ogImageId,
+      noIndex: input.noIndex,
+      noFollow: input.noFollow,
     };
 
     const category = categoryId

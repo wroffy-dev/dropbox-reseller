@@ -180,7 +180,24 @@ export const ADMIN_NAV: AdminNavModule[] = [
         href: '/admin/blog',
         permission: 'blog.view',
         description: 'Write and publish articles',
-        notMatches: ['/admin/blog/categories'],
+        notMatches: [
+          '/admin/blog/categories',
+          '/admin/blog/tags',
+          '/admin/blog/layout',
+          '/admin/blog/design',
+        ],
+      },
+      {
+        label: 'Blog Layout',
+        href: '/admin/blog/layout',
+        permission: 'blog.view',
+        description: 'Order the archive, article and sidebar',
+      },
+      {
+        label: 'Blog Design',
+        href: '/admin/blog/design',
+        permission: 'blog.view',
+        description: 'Cards, colours, typography and widths',
       },
       {
         label: 'Blog Categories',

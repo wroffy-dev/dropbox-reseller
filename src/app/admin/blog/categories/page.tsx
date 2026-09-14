@@ -23,6 +23,17 @@ export default async function BlogCategories() {
       sortOrder: true,
       seoTitle: true,
       seoDescription: true,
+      isActive: true,
+      imageId: true,
+      bannerImageId: true,
+      archiveTitle: true,
+      archiveDescription: true,
+      canonicalUrl: true,
+      ogTitle: true,
+      ogDescription: true,
+      ogImageId: true,
+      noIndex: true,
+      noFollow: true,
       _count: { select: { posts: { where: { deletedAt: null } } } },
     },
   });
@@ -37,6 +48,19 @@ export default async function BlogCategories() {
     seoTitle: row.seoTitle,
     seoDescription: row.seoDescription,
     itemCount: row._count.posts,
+    extra: {
+      isActive: row.isActive,
+      imageId: row.imageId,
+      bannerImageId: row.bannerImageId,
+      archiveTitle: row.archiveTitle,
+      archiveDescription: row.archiveDescription,
+      canonicalUrl: row.canonicalUrl,
+      ogTitle: row.ogTitle,
+      ogDescription: row.ogDescription,
+      ogImageId: row.ogImageId,
+      noIndex: row.noIndex,
+      noFollow: row.noFollow,
+    },
   }));
 
   return (

@@ -155,6 +155,22 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
       })
     : null;
 
+  /**
+   * The article a blog lead came from.
+   *
+   * Resolved from the path the same way the landing page is, so a form in the
+   * sidebar, mid-article or in a blog CTA all record which article converted
+   * the visitor — without the form itself having to know where it was placed.
+   */
+  const blogSlug = /^\/blog\/([^/?#]+)/.exec(landingPath ?? '')?.[1];
+  const blogPost =
+    blogSlug && !['category', 'tag'].includes(blogSlug)
+      ? await prisma.blogPost.findFirst({
+          where: { slug: blogSlug, deletedAt: null },
+          select: { id: true, title: true },
+        })
+      : null;
+
   let leadId: string | null = null;
 
   if (formRecord?.createsLead !== false && core.email) {
@@ -168,7 +184,10 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
         company: sanitizeText(core.company) || null,
         jobTitle: sanitizeText(core.jobTitle) || null,
         message: sanitizeText(core.message) || null,
-        source: formRecord?.leadSource || form.name,
+        // A form's configured lead source always wins; "Blog" is only the
+        // fallback for a form that has not set one and was submitted from an
+        // article, which is what makes blog leads findable in the CRM.
+        source: formRecord?.leadSource || (blogPost ? 'Blog' : form.name),
         campaign: attribution.utmCampaign ?? null,
         ctaLabel: attribution.ctaLabel ?? null,
         ctaLocation: attribution.ctaLocation ?? null,
@@ -191,6 +210,7 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
         ipHash: hashIp(ip),
         productId,
         landingPageId: landingPage?.id ?? null,
+        blogPostId: blogPost?.id ?? null,
         formId: form.id,
         leadMagnetId: envelope.leadMagnetId || null,
       },

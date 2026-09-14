@@ -4,7 +4,8 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Pencil, Trash, Tag, ArrowUp, ArrowDown, CornerDownRight } from 'lucide-react';
 import { Dialog, ConfirmDialog } from '@/components/ui/dialog';
-import { Field, Input, Textarea, Select } from '@/components/ui/field';
+import { Field, Input, Textarea, Select, Switch } from '@/components/ui/field';
+import { MediaPicker } from '@/components/admin/media-picker';
 import { Button } from '@/components/ui/button';
 import { Table, TableWrap, Th, Td, Tr } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/states';
@@ -26,6 +27,20 @@ export type CategoryRow = {
   /** Extra fields some taxonomies carry; ignored when the caller omits them. */
   seoTitle?: string | null;
   seoDescription?: string | null;
+  /**
+   * Values for the caller's `extraFields`. Keeping them in one bag is what
+   * lets blog categories carry banners, archive copy and full SEO without page
+   * categories growing any of it.
+   */
+  extra?: Record<string, string | boolean | null>;
+};
+
+/** One additional control a taxonomy contributes to the edit dialog. */
+export type CategoryExtraField = {
+  name: string;
+  label: string;
+  kind: 'text' | 'textarea' | 'media' | 'switch';
+  hint?: string;
 };
 
 type Draft = {
@@ -37,6 +52,7 @@ type Draft = {
   sortOrder: string;
   seoTitle: string;
   seoDescription: string;
+  extra: Record<string, string | boolean | null>;
 };
 
 const BLANK: Draft = {
@@ -48,6 +64,7 @@ const BLANK: Draft = {
   sortOrder: '0',
   seoTitle: '',
   seoDescription: '',
+  extra: {},
 };
 
 type ActionResultish = {
@@ -73,6 +90,8 @@ export function CategoryTreeManager({
   urlPrefix,
   itemLabel,
   withSeo = false,
+  extraFields = [],
+  extraDefaults = {},
   onSave,
   onDelete,
   onReorder,
@@ -86,6 +105,10 @@ export function CategoryTreeManager({
   /** What the count counts: "post" or "page". */
   itemLabel: string;
   withSeo?: boolean;
+  /** Taxonomy-specific controls appended to the edit dialog. */
+  extraFields?: CategoryExtraField[];
+  /** Values a brand-new category starts with for those controls. */
+  extraDefaults?: Record<string, string | boolean | null>;
   onSave: (id: string | null, data: FormData) => Promise<ActionResultish>;
   onDelete: (id: string, movePagesTo: string | null) => Promise<ActionResultish>;
   onReorder?: (ids: string[]) => Promise<ActionResultish>;
@@ -141,6 +164,10 @@ export function CategoryTreeManager({
       data.set('seoTitle', editing.seoTitle);
       data.set('seoDescription', editing.seoDescription);
     }
+    for (const field of extraFields) {
+      const value = editing.extra[field.name];
+      data.set(field.name, value === null || value === undefined ? '' : String(value));
+    }
 
     if (await run(() => onSave(editing.id || null, data))) setEditing(null);
   }
@@ -177,6 +204,7 @@ export function CategoryTreeManager({
       sortOrder: String(row.sortOrder),
       seoTitle: row.seoTitle ?? '',
       seoDescription: row.seoDescription ?? '',
+      extra: { ...extraDefaults, ...(row.extra ?? {}) },
     });
 
   const deleteTargets = confirmDelete
@@ -191,7 +219,7 @@ export function CategoryTreeManager({
     <>
       {canEdit ? (
         <div className="mb-4">
-          <Button onClick={() => setEditing({ ...BLANK })}>
+          <Button onClick={() => setEditing({ ...BLANK, extra: { ...extraDefaults } })}>
             <Plus className="h-4 w-4" aria-hidden="true" />
             New category
           </Button>
@@ -205,7 +233,9 @@ export function CategoryTreeManager({
           description={emptyDescription}
           action={
             canEdit ? (
-              <Button onClick={() => setEditing({ ...BLANK })}>New category</Button>
+              <Button onClick={() => setEditing({ ...BLANK, extra: { ...extraDefaults } })}>
+                New category
+              </Button>
             ) : undefined
           }
         />
@@ -419,6 +449,68 @@ export function CategoryTreeManager({
                 </Field>
               </>
             ) : null}
+
+            {extraFields.map((field) => {
+              const id = `cat-x-${field.name}`;
+              const value = editing.extra[field.name];
+
+              if (field.kind === 'switch') {
+                return (
+                  <div key={field.name} className="rounded-lg border border-hairline p-3">
+                    <Switch
+                      checked={value === true || value === 'true'}
+                      onChange={(next) =>
+                        setEditing({ ...editing, extra: { ...editing.extra, [field.name]: next } })
+                      }
+                      label={field.label}
+                      hint={field.hint}
+                    />
+                  </div>
+                );
+              }
+
+              if (field.kind === 'media') {
+                return (
+                  <Field key={field.name} label={field.label} hint={field.hint}>
+                    <MediaPicker
+                      value={typeof value === 'string' && value ? value : null}
+                      onChange={(next) =>
+                        setEditing({
+                          ...editing,
+                          extra: { ...editing.extra, [field.name]: next },
+                        })
+                      }
+                      label={field.label}
+                    />
+                  </Field>
+                );
+              }
+
+              const Control = field.kind === 'textarea' ? Textarea : Input;
+              return (
+                <Field
+                  key={field.name}
+                  label={field.label}
+                  htmlFor={id}
+                  hint={field.hint}
+                  error={errors[field.name]}
+                >
+                  <Control
+                    id={id}
+                    {...(field.kind === 'textarea' ? { rows: 2 } : {})}
+                    value={typeof value === 'string' ? value : ''}
+                    onChange={(
+                      event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+                    ) =>
+                      setEditing({
+                        ...editing,
+                        extra: { ...editing.extra, [field.name]: event.target.value },
+                      })
+                    }
+                  />
+                </Field>
+              );
+            })}
           </div>
         ) : null}
       </Dialog>

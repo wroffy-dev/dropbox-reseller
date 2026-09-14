@@ -40,6 +40,17 @@ export function SectionListPanel({
   selectedId,
   canEdit,
   busy,
+  label = 'Sections',
+  /**
+   * Stable identity for the drag context.
+   *
+   * dnd-kit otherwise derives one from a module-level counter, which the server
+   * and the browser do not advance in step — so the generated `aria-describedby`
+   * differs between the two renders and React reports a hydration mismatch.
+   */
+  dndId = 'sections',
+  emptyTitle = 'No sections yet',
+  emptyDescription = 'Start with a hero, then build the page up section by section.',
   onSelect,
   onReorder,
   onToggleVisibility,
@@ -51,6 +62,10 @@ export function SectionListPanel({
   selectedId: string | null;
   canEdit: boolean;
   busy: boolean;
+  label?: string;
+  dndId?: string;
+  emptyTitle?: string;
+  emptyDescription?: string;
   onSelect: (id: string) => void;
   onReorder: (ordered: BuilderSection[]) => void;
   onToggleVisibility: (id: string) => void;
@@ -85,7 +100,7 @@ export function SectionListPanel({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline px-3 py-2.5">
         <h2 className="text-sm font-semibold text-content">
-          Sections
+          {label}
           <span className="ml-1.5 text-xs font-normal text-muted">{sections.length}</span>
         </h2>
         {canEdit ? (
@@ -100,13 +115,18 @@ export function SectionListPanel({
         {sections.length === 0 ? (
           <EmptyState
             icon={<Plus className="h-5 w-5" />}
-            title="No sections yet"
-            description="Start with a hero, then build the page up section by section."
-            action={canEdit ? <Button onClick={onAdd}>Add your first section</Button> : undefined}
+            title={emptyTitle}
+            description={emptyDescription}
+            action={canEdit ? <Button onClick={onAdd}>Add your first one</Button> : undefined}
             className="py-10"
           />
         ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <DndContext
+            id={`section-outline-${dndId}`}
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={onDragEnd}
+          >
             <SortableContext
               items={sections.map((section) => section.id)}
               strategy={verticalListSortingStrategy}
@@ -172,6 +192,9 @@ function SortableRow({
 
   const definition = getBlock(section.blockType);
   const label = section.name || definition?.label || section.blockType;
+  // A one-per-surface block is part of the layout's anatomy: it can be
+  // reordered, hidden and styled, but not copied or thrown away.
+  const fixed = Boolean(definition?.singleton);
 
   return (
     <li
@@ -241,10 +264,12 @@ function SortableRow({
                 </>
               )}
             </RowMenuItem>
-            <RowMenuItem onClick={onDuplicate}>
-              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-              Duplicate
-            </RowMenuItem>
+            {fixed ? null : (
+              <RowMenuItem onClick={onDuplicate}>
+                <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                Duplicate
+              </RowMenuItem>
+            )}
             <RowMenuItem onClick={onMoveUp} disabled={!canMoveUp}>
               <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
               Move up
@@ -253,10 +278,12 @@ function SortableRow({
               <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
               Move down
             </RowMenuItem>
-            <RowMenuItem tone="danger" onClick={onDelete}>
-              <Trash className="h-3.5 w-3.5" aria-hidden="true" />
-              Delete
-            </RowMenuItem>
+            {fixed ? null : (
+              <RowMenuItem tone="danger" onClick={onDelete}>
+                <Trash className="h-3.5 w-3.5" aria-hidden="true" />
+                Delete
+              </RowMenuItem>
+            )}
           </RowMenu>
         ) : null}
       </div>

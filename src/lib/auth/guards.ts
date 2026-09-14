@@ -148,6 +148,31 @@ export async function requirePermission(permission: PermissionKey): Promise<Sess
   return user;
 }
 
+/**
+ * Action-level guard accepting any one of several permissions.
+ *
+ * Used where a capability was split out of a broader one: the blog's design,
+ * sidebar and section permissions are new, so they are checked alongside the
+ * `blog.edit` that already granted this work. A role configured before the
+ * split keeps working, and a role granted only the narrow permission works too
+ * — without either needing a reseed.
+ */
+export async function authorizeAny(permissions: PermissionKey[]): Promise<SessionUser> {
+  const user = await getCurrentUser();
+  if (!user) throw new AuthorizationError('authentication');
+  if (!userCanAny(user, permissions)) throw new AuthorizationError(permissions.join(' | '));
+  return user;
+}
+
+/** Page-level guard accepting any one of several permissions. */
+export async function requireAnyPermission(permissions: PermissionKey[]): Promise<SessionUser> {
+  const user = await requireUser();
+  if (!userCanAny(user, permissions)) {
+    redirect('/admin?denied=' + encodeURIComponent(permissions[0] ?? 'permission'));
+  }
+  return user;
+}
+
 export class AuthorizationError extends Error {
   constructor(permission: string) {
     super(`Missing permission: ${permission}`);

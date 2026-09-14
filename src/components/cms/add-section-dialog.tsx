@@ -2,7 +2,12 @@
 
 import * as React from 'react';
 import { Search } from 'lucide-react';
-import { BLOCK_PICKER_LIST, BLOCK_GROUPS, type BlockDefinition } from '@/lib/cms/blocks';
+import {
+  BLOCK_GROUPS,
+  blocksForSurface,
+  type BlockDefinition,
+  type BlockSurface,
+} from '@/lib/cms/blocks';
 import { NavIcon } from '@/components/admin/nav-icon';
 import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/field';
@@ -20,11 +25,20 @@ export function AddSectionDialog({
   busy,
   onClose,
   onAdd,
+  surface = 'page',
+  title = 'Add a section',
+  description = 'Pick a block. You can reorder and configure it after adding.',
+  /** Types already present that may only appear once. */
+  usedSingletons = [],
 }: {
   open: boolean;
   busy: boolean;
   onClose: () => void;
   onAdd: (blockType: string) => void;
+  surface?: BlockSurface;
+  title?: string;
+  description?: string;
+  usedSingletons?: string[];
 }) {
   const [query, setQuery] = React.useState('');
 
@@ -40,14 +54,17 @@ export function AddSectionDialog({
       block.description.toLowerCase().includes(term) ||
       block.group.toLowerCase().includes(term);
 
+    // A block that can only exist once disappears from the picker after it has
+    // been added, rather than offering an action that would be refused.
+    const available = blocksForSurface(surface).filter(
+      (block) => !(block.singleton && usedSingletons.includes(block.type)),
+    );
+
     return BLOCK_GROUPS.map(
       (group) =>
-        [
-          group,
-          BLOCK_PICKER_LIST.filter((block) => block.group === group && matches(block)),
-        ] as const,
+        [group, available.filter((block) => block.group === group && matches(block))] as const,
     ).filter(([, blocks]) => blocks.length > 0);
-  }, [query]);
+  }, [query, surface, usedSingletons]);
 
   const totalMatches = grouped.reduce((sum, [, blocks]) => sum + blocks.length, 0);
 
@@ -55,8 +72,8 @@ export function AddSectionDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title="Add a section"
-      description="Pick a block. You can reorder and configure it after adding."
+      title={title}
+      description={description}
       size="lg"
     >
       {busy ? (

@@ -66,3 +66,79 @@ export async function listBrandOptions(): Promise<PickerOption[]> {
     hint: `${row._count.products} product${row._count.products === 1 ? '' : 's'}`,
   }));
 }
+
+/**
+ * Blog pickers.
+ *
+ * Same contract as the product ones: a viewer without blog access gets an
+ * empty list rather than a leak, and a page editor gets the options they need
+ * to configure a blog section without being handed blog-editing rights.
+ */
+function canPickBlog(user: Awaited<ReturnType<typeof getCurrentUser>>): boolean {
+  return userCan(user, 'blog.view') || userCan(user, 'pages.edit');
+}
+
+export async function listBlogCategoryOptions(): Promise<PickerOption[]> {
+  const user = await getCurrentUser();
+  if (!canPickBlog(user)) return [];
+
+  const rows = await prisma.blogCategory.findMany({
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    take: 200,
+    select: { id: true, name: true, isActive: true, parent: { select: { name: true } } },
+  });
+  return rows.map((row) => ({
+    value: row.id,
+    label: row.parent ? `${row.parent.name} → ${row.name}` : row.name,
+    hint: row.isActive ? null : 'hidden',
+  }));
+}
+
+export async function listBlogTagOptions(): Promise<PickerOption[]> {
+  const user = await getCurrentUser();
+  if (!canPickBlog(user)) return [];
+
+  const rows = await prisma.blogTag.findMany({
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    take: 300,
+    select: { id: true, name: true, isActive: true, _count: { select: { posts: true } } },
+  });
+  return rows.map((row) => ({
+    value: row.id,
+    label: row.name,
+    hint: row.isActive ? `${row._count.posts} post${row._count.posts === 1 ? '' : 's'}` : 'hidden',
+  }));
+}
+
+export async function listBlogPostOptions(): Promise<PickerOption[]> {
+  const user = await getCurrentUser();
+  if (!canPickBlog(user)) return [];
+
+  const rows = await prisma.blogPost.findMany({
+    where: { deletedAt: null },
+    orderBy: [{ publishedAt: 'desc' }, { updatedAt: 'desc' }],
+    take: 200,
+    select: { id: true, title: true, status: true, category: { select: { name: true } } },
+  });
+  return rows.map((row) => ({
+    value: row.id,
+    label: row.title,
+    hint: [row.category?.name, row.status === 'PUBLISHED' ? null : row.status.toLowerCase()]
+      .filter(Boolean)
+      .join(' · ') || null,
+  }));
+}
+
+/** Staff who can be credited as an author. */
+export async function listAuthorOptions(): Promise<PickerOption[]> {
+  const user = await getCurrentUser();
+  if (!canPickBlog(user)) return [];
+
+  const rows = await prisma.user.findMany({
+    where: { deletedAt: null, status: 'ACTIVE' },
+    orderBy: { name: 'asc' },
+    take: 200,
+    select: { id: true, name: true, jobTitle: true },
+  });
+  return rows.map((row) => ({ value: row.id, label: row.name, hint: row.jobTitle }));
+}

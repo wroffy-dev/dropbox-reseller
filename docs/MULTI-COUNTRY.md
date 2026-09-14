@@ -33,6 +33,7 @@ that proves it.
 - [Migration notes](#migration-notes)
 - [Rehearsing the migration](#rehearsing-the-migration)
 - [How to add a country](#how-to-add-a-country)
+- [Opening a market from an existing one](#opening-a-market-from-an-existing-one)
 
 ---
 
@@ -569,3 +570,51 @@ edit a component, change the middleware, run a migration or deploy.
 Currencies are validated against `SUPPORTED_CURRENCIES` in
 `src/lib/utils/money.ts` — the only code change a genuinely new currency needs is
 adding its code and locale there.
+
+---
+
+## Opening a market from an existing one
+
+Steps 4 to 7 above are the slow part, and a market is useless until they are
+done: no home page means the prefix 404s, and the public switcher will not offer
+a market a visitor cannot land in. `scripts/clone-market.mjs` does that filling
+in one pass.
+
+```bash
+# See exactly what would be written. Nothing is.
+node scripts/clone-market.mjs --from IN --to QA --dry-run
+
+# Do it, with a starting price and the market switched on.
+node scripts/clone-market.mjs --from IN --to QA --publish --rate 0.044 --activate
+```
+
+Every line of the plan says `create` or `replace`, so a market that already has
+hand-written content cannot be overwritten without it showing in the dry run
+first. Re-running is safe: writes are keyed on (country, slug), so a second run
+updates the rows the first one made rather than adding a second copy.
+
+It copies pages (with their sections and the home page flag), articles with
+their tags, menus, product listings and the marketing and SEO copy. Internal
+menu links are repointed at the new market's own pages — a copied menu that
+still pointed at the source market's rows would walk every visitor straight out
+of the market they are in.
+
+Three things it will not do:
+
+- **Invent a price.** `--rate` multiplies the source's prices as a starting
+  point for someone to edit, and the run says so on every line. Without it, a
+  listing that has a price is copied without one and held back as a draft rather
+  than shown at nothing. A listing that is deliberately price-less — a "contact
+  us" tier — copies across exactly as it stands, published. No exchange rate is
+  ever fetched, and nothing converts at render time.
+- **Copy contact details.** Phone numbers, addresses and tax identifiers belong
+  to the market they were written for; a wrong number on a live storefront is
+  worse than a blank one, which falls back to the global settings.
+- **Inherit canonicals.** A market canonicals to its own URL.
+
+`--activate` switches the market on, and refuses to when there is no published
+home page to switch on to.
+
+Afterwards the run prints what still needs a human: the contact details, the
+prices, and the copy itself — text written for one market rarely fits another.
+

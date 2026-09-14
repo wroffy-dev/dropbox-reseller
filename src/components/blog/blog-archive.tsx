@@ -10,6 +10,7 @@ import { parseBlockContent } from '@/lib/cms/blocks';
 import type { BlogGridContent } from '@/lib/cms/blog-blocks';
 import type { BlogRenderContext } from '@/lib/cms/blog-render';
 import { SectionList } from '@/components/cms/section-renderer';
+import type { CountryContext } from '@/lib/country/types';
 import { BlogRoot } from './blog-root';
 
 /**
@@ -25,12 +26,15 @@ import { BlogRoot } from './blog-root';
  * and both need the same answer.
  */
 export async function BlogArchive({
+  country,
   basePath,
   categorySlug = null,
   categoryId = null,
   tagSlug = null,
   searchParams,
 }: {
+  /** The market whose articles this archive lists. */
+  country: CountryContext;
   basePath: string;
   categorySlug?: string | null;
   categoryId?: string | null;
@@ -40,8 +44,8 @@ export async function BlogArchive({
   const [sections, settings, categories, tags, site] = await Promise.all([
     getBlogSections('LISTING'),
     getBlogSettings(),
-    getBlogCategories(),
-    getBlogTags(60),
+    getBlogCategories(country.id),
+    getBlogTags(country.id, 60),
     getWebsiteSettings(),
   ]);
 
@@ -64,6 +68,7 @@ export async function BlogArchive({
   const categoryIds = categoryId ? await categoryIdsWithChildren(categoryId) : undefined;
 
   const result = await listPosts({
+    countryId: country.id,
     page,
     perPage,
     categoryIds,
@@ -83,6 +88,7 @@ export async function BlogArchive({
   });
 
   const blog: BlogRenderContext = {
+    country,
     settings,
     archive: {
       basePath,
@@ -114,7 +120,7 @@ export async function BlogArchive({
 
   return (
     <BlogRoot settings={settings}>
-      <SectionList sections={sections} blog={blog} />
+      <SectionList sections={sections} blog={blog} country={country} />
     </BlogRoot>
   );
 }

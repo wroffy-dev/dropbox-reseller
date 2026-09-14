@@ -33,6 +33,8 @@ export type ProductRow = {
   currency: string;
   monthlyPrice: string | null;
   annualPrice: string | null;
+  /** The markets that publish this product, by code. */
+  liveIn: string[];
   leadCount: number;
 };
 
@@ -42,10 +44,13 @@ export function ProductsTable({
   rows,
   can,
   filtered,
+  showCountries = false,
 }: {
   rows: ProductRow[];
   can: ProductPermissions;
   filtered: boolean;
+  /** Adds the "Sold in" column. Hidden on a single-market installation. */
+  showCountries?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -162,6 +167,7 @@ export function ProductsTable({
               <Th>Product</Th>
               <Th>Category</Th>
               <Th>Storage</Th>
+              {showCountries ? <Th>Sold in</Th> : null}
               <Th align="right">Monthly</Th>
               <Th align="right">Annual</Th>
               <Th align="center">Leads</Th>
@@ -199,6 +205,11 @@ export function ProductsTable({
                 </Td>
                 <Td className="text-sm text-muted">{row.categoryName ?? '—'}</Td>
                 <Td className="text-sm text-muted">{row.storage ?? '—'}</Td>
+                {showCountries ? (
+                  <Td className="whitespace-nowrap text-sm text-muted">
+                    {row.liveIn.length > 0 ? row.liveIn.join(', ') : '—'}
+                  </Td>
+                ) : null}
                 <Td align="right" className="whitespace-nowrap text-sm">
                   {row.monthlyPrice ? formatMoney(row.monthlyPrice, row.currency) : '—'}
                 </Td>

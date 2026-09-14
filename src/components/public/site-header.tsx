@@ -7,10 +7,14 @@ import { ChevronDown, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { buttonClasses } from '@/components/ui/button';
 import type { ResolvedNavItem } from '@/lib/services/navigation';
+import type { MarketOption } from '@/lib/country/switch';
+import { MarketSwitcher } from './market-switcher';
 
 export type HeaderBrand = {
   siteName: string;
   logoUrl: string | null;
+  /** The current market's home page. `/` for the root market. */
+  homeUrl: string;
   ctaLabel: string | null;
   ctaUrl: string | null;
   secondaryCtaLabel: string | null;
@@ -18,7 +22,16 @@ export type HeaderBrand = {
   announcement: { text: string; url: string | null } | null;
 };
 
-export function SiteHeader({ nav, brand }: { nav: ResolvedNavItem[]; brand: HeaderBrand }) {
+export function SiteHeader({
+  nav,
+  brand,
+  markets = [],
+}: {
+  nav: ResolvedNavItem[];
+  brand: HeaderBrand;
+  /** Every market a visitor can switch to. Fewer than two renders nothing. */
+  markets?: MarketOption[];
+}) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [openDropdown, setOpenDropdown] = React.useState<string | null>(null);
   const pathname = usePathname();
@@ -65,7 +78,11 @@ export function SiteHeader({ nav, brand }: { nav: ResolvedNavItem[]; brand: Head
 
       <div className="border-b border-hairline bg-surface/90 backdrop-blur supports-[backdrop-filter]:bg-surface/75">
         <nav className="mx-auto flex h-16 max-w-7xl items-center gap-6 px-4 sm:px-6" aria-label="Main">
-          <Link href="/" className="flex shrink-0 items-center gap-2" aria-label={`${brand.siteName} home`}>
+          <Link
+            href={brand.homeUrl}
+            className="flex shrink-0 items-center gap-2"
+            aria-label={`${brand.siteName} home`}
+          >
             {brand.logoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={brand.logoUrl} alt={brand.siteName} className="h-8 w-auto max-w-[10rem] object-contain" />
@@ -145,6 +162,7 @@ export function SiteHeader({ nav, brand }: { nav: ResolvedNavItem[]; brand: Head
           </ul>
 
           <div className="ml-auto hidden items-center gap-2 lg:flex">
+            <MarketSwitcher markets={markets} />
             {brand.secondaryCtaLabel && brand.secondaryCtaUrl ? (
               <Link href={brand.secondaryCtaUrl} className={buttonClasses('ghost', 'sm', 'btn-tokens')}>
                 {brand.secondaryCtaLabel}
@@ -203,6 +221,29 @@ export function SiteHeader({ nav, brand }: { nav: ResolvedNavItem[]; brand: Head
             ))}
           </ul>
           <div className="space-y-2 border-t border-hairline px-4 py-4">
+            {markets.length > 1 ? (
+              <nav aria-label="Country" className="pb-2">
+                <ul className="flex flex-wrap gap-2">
+                  {markets.map((market) => (
+                    <li key={market.code}>
+                      <Link
+                        href={market.href}
+                        hrefLang={market.locale}
+                        aria-current={market.isCurrent ? 'true' : undefined}
+                        className={cn(
+                          'inline-flex items-center rounded-lg border border-hairline px-3 py-2 text-sm transition-colors',
+                          market.isCurrent
+                            ? 'border-brand text-brand'
+                            : 'text-content hover:text-brand',
+                        )}
+                      >
+                        {market.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            ) : null}
             {brand.ctaLabel && brand.ctaUrl ? (
               <Link href={brand.ctaUrl} className={buttonClasses('primary', 'lg', 'w-full btn-tokens')}>
                 {brand.ctaLabel}

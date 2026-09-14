@@ -6,7 +6,7 @@
  * flows compose, not to re-test each action in isolation.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mockAuth, formData, uniqueSuffix, TEST_ACTOR } from '../helpers';
+import { mockAuth, formData, uniqueSuffix, TEST_ACTOR, ensureTestCountry, testCountryContext } from '../helpers';
 
 mockAuth();
 
@@ -87,13 +87,13 @@ describe('Flow B — create a product', () => {
     cleanup.products.push(productId);
 
     // A draft is invisible publicly…
-    expect(await getPublicProduct(`acceptance-plan-${suffix}`)).toBeNull();
+    expect(await getPublicProduct(testCountryContext(), `acceptance-plan-${suffix}`)).toBeNull();
 
     // …until it is published.
     expect((await setProductStatus(productId, 'PUBLISHED')).ok).toBe(true);
     await toggleProductFeatured(productId);
 
-    const product = await getPublicProduct(`acceptance-plan-${suffix}`);
+    const product = await getPublicProduct(testCountryContext(), `acceptance-plan-${suffix}`);
     expect(product?.monthlyPrice).toBe('1999');
     expect(product?.isFeatured).toBe(true);
     expect(product?.features).toContain('5 TB shared storage');
@@ -188,11 +188,11 @@ describe('Flow A — build and publish a page', () => {
     expect((await reorderSections({ pageId, order: reordered })).ok).toBe(true);
 
     // A draft page stays off the public site.
-    expect(await getPublishedPage(`acceptance-page-${suffix}`)).toBeNull();
+    expect(await getPublishedPage(await ensureTestCountry(), `acceptance-page-${suffix}`)).toBeNull();
 
     expect((await setPageStatus(pageId, 'PUBLISHED')).ok).toBe(true);
 
-    const page = await getPublishedPage(`acceptance-page-${suffix}`);
+    const page = await getPublishedPage(await ensureTestCountry(), `acceptance-page-${suffix}`);
     expect(page).not.toBeNull();
     expect(page!.sections.map((s) => s.blockType)).toEqual([
       'hero',
@@ -206,7 +206,7 @@ describe('Flow A — build and publish a page', () => {
     expect(heroContent.heading).toBe(`Welcome to ${suffix}`);
 
     // The product table block resolves real published products.
-    const tableProducts = await selectProducts({ source: 'featured', limit: 6 });
+    const tableProducts = await selectProducts(testCountryContext(), { source: 'featured', limit: 6 });
     expect(tableProducts.some((p) => p.slug === `acceptance-plan-${suffix}`)).toBe(true);
   });
 });
@@ -319,11 +319,11 @@ describe('Flow D — publish a blog post', () => {
     const postId = (postResult as { data: { id: string } }).data.id;
     cleanup.posts.push(postId);
 
-    expect(await getPublishedPost(`acceptance-article-${suffix}`)).toBeNull();
+    expect(await getPublishedPost(await ensureTestCountry(), `acceptance-article-${suffix}`)).toBeNull();
 
     expect((await setBlogPostStatus(postId, 'PUBLISHED')).ok).toBe(true);
 
-    const post = await getPublishedPost(`acceptance-article-${suffix}`);
+    const post = await getPublishedPost(await ensureTestCountry(), `acceptance-article-${suffix}`);
     expect(post).not.toBeNull();
     expect(post!.category?.id).toBe(categoryId);
     expect(post!.author?.name).toBe(TEST_ACTOR.name);

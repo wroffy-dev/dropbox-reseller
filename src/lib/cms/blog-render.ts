@@ -1,4 +1,6 @@
 import type { BlogListItem, BlogPostDetail, BlogCategoryItem, BlogTagItem } from '@/lib/services/blog';
+import { countryPath } from '@/lib/country/routing';
+import type { CountryContext } from '@/lib/country/types';
 import type { ResolvedBlogSettings, BlogCardSettings } from './blog-settings';
 import type { TocItem } from './blog-toc';
 import type { CardOverrides } from './blog-blocks';
@@ -50,6 +52,8 @@ export type SiteSocials = {
 };
 
 export type BlogRenderContext = {
+  /** The market this blog surface is being rendered for. */
+  country: CountryContext;
   settings: ResolvedBlogSettings;
   archive: BlogArchiveContext | null;
   article: BlogArticleContext | null;
@@ -84,7 +88,17 @@ export function resolveCard(
   };
 }
 
-/** Where a category archive lives. Kept in one place so links never drift. */
-export const categoryPath = (slug: string) => `/blog/category/${slug}`;
-export const tagPath = (slug: string) => `/blog/tag/${slug}`;
-export const postPath = (slug: string) => `/blog/${slug}`;
+/**
+ * Where the blog's URLs live, per market.
+ *
+ * Kept in one place so links never drift, and market-aware so the same blog
+ * block renders `/blog/x` on the root market and `/ae/blog/x` on the UAE one
+ * without knowing which market it is in.
+ */
+export const blogPath = (country: CountryContext) => countryPath(country, 'blog');
+export const categoryPath = (country: CountryContext, slug: string) =>
+  countryPath(country, `blog/category/${slug}`);
+export const tagPath = (country: CountryContext, slug: string) =>
+  countryPath(country, `blog/tag/${slug}`);
+export const postPath = (country: CountryContext, slug: string) =>
+  countryPath(country, `blog/${slug}`);

@@ -1,89 +1,133 @@
-import { notFound, permanentRedirect, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { prisma } from '@/lib/db/prisma';
-import { getPublishedPage, findRedirect } from '@/lib/services/pages';
-import { getWebsiteSettings } from '@/lib/services/settings';
-import { SectionList } from '@/components/cms/section-renderer';
-import { JsonLd } from '@/components/seo/json-ld';
-import { buildMetadata } from '@/lib/seo/metadata';
-import { breadcrumbSchema, faqSchema } from '@/lib/seo/structured-data';
-import { parseBlockContent, type FaqContent } from '@/lib/cms/blocks';
+import { resolveCountryPath } from '@/lib/country/registry';
+import { contentSlug } from '@/lib/country/routing';
+import type { CountryContext } from '@/lib/country/types';
+import { cmsPageMetadata, CmsPageSurface } from '../_surfaces/cms-page';
+import {
+  blogArchiveMetadata,
+  BlogArchiveSurface,
+  blogPostMetadata,
+  BlogPostSurface,
+  blogCategoryMetadata,
+  BlogCategorySurface,
+  blogTagMetadata,
+  BlogTagSurface,
+  type BlogSearchParams,
+} from '../_surfaces/blog';
+import { productMetadata, ProductSurface } from '../_surfaces/product';
 
 type Params = { slug?: string[] };
+type SearchParams = Promise<BlogSearchParams>;
 
 // The root layout reads the visitor's tracking-consent cookie, so nothing under
 // it can be rendered statically. Declaring `revalidate` here made Next try
 // anyway and every request failed with DYNAMIC_SERVER_USAGE.
 export const dynamic = 'force-dynamic';
 
-function slugFrom(params: Params): string {
-  return (params.slug ?? []).join('/');
-}
+/**
+ * The public catch-all, for every market.
+ *
+ * The first path segment is matched against the configured market prefixes.
+ * When it names an active market, that market owns the request and the rest of
+ * the path is the content path; otherwise the whole path belongs to the root
+ * market, which is what keeps the original single-country URLs working
+ * untouched. The root market's own `/blog` and `/products` routes are more
+ * specific than this catch-all and still win, so India's rendering path is
+ * exactly what it always was.
+ *
+ * Adding Qatar needs nothing here: a `Country` row with slug `qa` is enough for
+ * `/qa/…` to resolve.
+ */
 
-export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
-  const slug = slugFrom(await params);
-  const page = await getPublishedPage(slug);
-  if (!page) return { title: 'Page not found', robots: { index: false, follow: false } };
+/** What a resolved public path actually is. */
+type Surface =
+  | { kind: 'page'; slug: string }
+  | { kind: 'blog' }
+  | { kind: 'post'; slug: string }
+  | { kind: 'category'; slug: string }
+  | { kind: 'tag'; slug: string }
+  | { kind: 'product'; slug: string }
+  | { kind: 'missing' };
 
-  const [ogImage, twitterImage] = await Promise.all([
-    page.ogImageId
-      ? prisma.media.findUnique({ where: { id: page.ogImageId }, select: { url: true } })
-      : null,
-    page.twitterImageId
-      ? prisma.media.findUnique({ where: { id: page.twitterImageId }, select: { url: true } })
-      : null,
-  ]);
-
-  return buildMetadata({
-    title: page.seoTitle || page.title,
-    description: page.seoDescription,
-    path: `/${slug}`,
-    canonicalUrl: page.canonicalUrl,
-    noIndex: page.noIndex,
-    noFollow: page.noFollow,
-    ogTitle: page.ogTitle,
-    ogDescription: page.ogDescription,
-    ogImageUrl: ogImage?.url ?? null,
-    twitterTitle: page.twitterTitle,
-    twitterDescription: page.twitterDescription,
-    twitterImageUrl: twitterImage?.url ?? null,
-  });
-}
-
-export default async function CmsPage({ params }: { params: Promise<Params> }) {
-  const slug = slugFrom(await params);
-  const page = await getPublishedPage(slug);
-
-  if (!page) {
-    const target = await findRedirect(`/${slug}`);
-    if (target) {
-      if (target.permanent) permanentRedirect(target.destination);
-      redirect(target.destination);
+function classify(segments: string[]): Surface {
+  if (segments[0] === 'blog') {
+    const [, second, third] = segments;
+    if (segments.length === 1) return { kind: 'blog' };
+    if (second === 'category') {
+      return third && segments.length === 3 ? { kind: 'category', slug: third } : { kind: 'missing' };
     }
-    notFound();
+    if (second === 'tag') {
+      return third && segments.length === 3 ? { kind: 'tag', slug: third } : { kind: 'missing' };
+    }
+    return second && segments.length === 2 ? { kind: 'post', slug: second } : { kind: 'missing' };
   }
 
-  const site = await getWebsiteSettings();
+  if (segments[0] === 'products') {
+    const [, second] = segments;
+    return second && segments.length === 2 ? { kind: 'product', slug: second } : { kind: 'missing' };
+  }
 
-  // FAQ structured data is derived from any FAQ sections on the page.
-  const faqItems = page.sections
-    .filter((s) => s.blockType === 'faq' && s.isVisible)
-    .flatMap((s) => parseBlockContent<FaqContent>('faq', s.content).items);
-  const faq = faqSchema(faqItems);
+  return { kind: 'page', slug: segments.join('/') };
+}
 
-  const crumbs =
-    slug === ''
-      ? null
-      : breadcrumbSchema([
-          { name: site.siteName, path: '/' },
-          { name: page.title, path: `/${slug}` },
-        ]);
+async function resolve(params: Params): Promise<{ country: CountryContext; surface: Surface }> {
+  const requested = (params.slug ?? []).join('/');
+  const { country, path } = await resolveCountryPath(`/${requested}`);
+  const slug = contentSlug(path);
+  return { country, surface: classify(slug ? slug.split('/') : []) };
+}
 
-  return (
-    <>
-      <SectionList sections={page.sections} />
-      {faq ? <JsonLd data={faq} /> : null}
-      {crumbs ? <JsonLd data={crumbs} /> : null}
-    </>
-  );
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: Promise<Params>;
+  searchParams: SearchParams;
+}): Promise<Metadata> {
+  const [{ country, surface }, query] = await Promise.all([resolve(await params), searchParams]);
+
+  switch (surface.kind) {
+    case 'blog':
+      return blogArchiveMetadata(country, query);
+    case 'post':
+      return blogPostMetadata(country, surface.slug);
+    case 'category':
+      return blogCategoryMetadata(country, surface.slug, query);
+    case 'tag':
+      return blogTagMetadata(country, surface.slug, query);
+    case 'product':
+      return productMetadata(country, surface.slug);
+    case 'page':
+      return cmsPageMetadata(country, surface.slug);
+    default:
+      return { title: 'Page not found', robots: { index: false, follow: false } };
+  }
+}
+
+export default async function PublicCatchAll({
+  params,
+  searchParams,
+}: {
+  params: Promise<Params>;
+  searchParams: SearchParams;
+}) {
+  const [{ country, surface }, query] = await Promise.all([resolve(await params), searchParams]);
+
+  switch (surface.kind) {
+    case 'blog':
+      return <BlogArchiveSurface country={country} searchParams={query} />;
+    case 'post':
+      return <BlogPostSurface country={country} slug={surface.slug} />;
+    case 'category':
+      return <BlogCategorySurface country={country} slug={surface.slug} searchParams={query} />;
+    case 'tag':
+      return <BlogTagSurface country={country} slug={surface.slug} searchParams={query} />;
+    case 'product':
+      return <ProductSurface country={country} slug={surface.slug} />;
+    case 'page':
+      return <CmsPageSurface country={country} slug={surface.slug} />;
+    default:
+      notFound();
+  }
 }

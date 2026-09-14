@@ -10,6 +10,7 @@ import { uniqueSlug, slugify } from '@/lib/utils/slug';
 import { sanitizeText } from '@/lib/utils/sanitize';
 import { toCsv } from '@/lib/utils/csv';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
+import { resolveActionCountry } from '@/lib/country/admin';
 import { Prisma } from '@prisma/client';
 
 export async function saveForm(
@@ -54,9 +55,19 @@ export async function saveForm(
         return failure('Another form already uses that slug.', { slug: ['This slug is taken'] });
     }
 
+    /*
+     * A form is either shared by every market (null) or bound to one. The id
+     * is validated against the markets the user may work in, so a crafted
+     * payload cannot bind a form to a market they cannot reach.
+     */
+    const countryId = input.countryId
+      ? (await resolveActionCountry(user, input.countryId)).id
+      : null;
+
     const data = {
       name: sanitizeText(input.name),
       slug,
+      countryId,
       description: input.description ? sanitizeText(input.description) : null,
       isActive: input.isActive,
       submitLabel: sanitizeText(input.submitLabel),

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mockAuth, formData, uniqueSuffix, TEST_ACTOR } from '../helpers';
+import { mockAuth, formData, uniqueSuffix, TEST_ACTOR, ensureTestCountry, testCountryContext } from '../helpers';
 
 mockAuth();
 
@@ -316,7 +316,7 @@ describe('product ordering and featured products', () => {
     // Stored in the database, so the order survives a restart.
     expect(rows.every((r) => r.featuredOrder > 0)).toBe(true);
 
-    const selected = await selectProducts({ source: 'featured', limit: 10 });
+    const selected = await selectProducts(testCountryContext(), { source: 'featured', limit: 10 });
     const ours = selected.filter((p) => productIds.includes(p.id)).map((p) => p.id);
     expect(ours).toEqual(reversed);
   });
@@ -365,14 +365,14 @@ describe('product ordering and featured products', () => {
   });
 
   it('selects products by brand', async () => {
-    const byBrand = await selectProducts({ source: 'brand', brandId, limit: 10 });
+    const byBrand = await selectProducts(testCountryContext(), { source: 'brand', brandId, limit: 10 });
     expect(byBrand.map((p) => p.id).sort()).toEqual([...productIds].sort());
     expect(byBrand[0]!.brandName).toContain('Acme');
   });
 
   it('keeps hand-picked order exactly as the admin arranged it', async () => {
     const picked = [productIds[2]!, productIds[0]!];
-    const result = await selectProducts({ source: 'selected', productIds: picked, limit: 10 });
+    const result = await selectProducts(testCountryContext(), { source: 'selected', productIds: picked, limit: 10 });
     expect(result.map((p) => p.id)).toEqual(picked);
   });
 

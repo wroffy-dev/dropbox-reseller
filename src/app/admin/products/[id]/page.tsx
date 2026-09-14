@@ -3,9 +3,15 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { ExternalLink } from 'lucide-react';
 import { prisma } from '@/lib/db/prisma';
-import { requirePermission } from '@/lib/auth/guards';
+import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { ProductForm, type ProductFormValues } from '@/components/admin/products/product-form';
+import {
+  ProductCountryPricing,
+  type ProductCountryValues,
+} from '@/components/admin/products/product-country-pricing';
+import { listAccessibleCountries } from '@/lib/country/access';
+import { countryPath } from '@/lib/country/routing';
 import { ContentStatusBadge } from '@/components/admin/lead-status-badge';
 import { buttonClasses } from '@/components/ui/button';
 import { decimalToString } from '@/lib/utils/money';
@@ -40,20 +46,29 @@ function asSpecs(raw: unknown): SpecItem[] {
 }
 
 export default async function EditProduct({ params }: { params: Promise<{ id: string }> }) {
-  await requirePermission('products.view');
+  const user = await requirePermission('products.view');
   const { id } = await params;
 
-  const [product, categories, brands, forms] = await Promise.all([
+  const [product, categories, brands, forms, countries] = await Promise.all([
     prisma.product.findFirst({
       where: { id, deletedAt: null },
-      include: { ctaForm: { select: { slug: true } }, _count: { select: { leads: true } } },
+      include: {
+        ctaForm: { select: { slug: true } },
+        countries: true,
+        _count: { select: { leads: true } },
+      },
     }),
     prisma.productCategory.findMany({
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       select: { id: true, name: true },
     }),
     prisma.brand.findMany({ orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: { id: true, name: true } }),
-    prisma.form.findMany({ where: { deletedAt: null }, select: { id: true, slug: true } }),
+    prisma.form.findMany({
+      where: { deletedAt: null },
+      orderBy: { name: 'asc' },
+      select: { id: true, slug: true, name: true },
+    }),
+    listAccessibleCountries(user),
   ]);
   if (!product) notFound();
 
@@ -97,6 +112,51 @@ export default async function EditProduct({ params }: { params: Promise<{ id: st
     noIndex: product.noIndex,
   };
 
+  /*
+   * One row per market the editor can reach, whether or not the product is
+   * already sold there. A market with no stored row starts from the shared
+   * product's values as a sensible draft, but is saved only when somebody
+   * deliberately puts the product on sale there.
+   */
+  const countryRows: ProductCountryValues[] = countries.map((country) => {
+    const row = product.countries.find((entry) => entry.countryId === country.id);
+    return {
+      countryId: country.id,
+      countryName: country.name,
+      countryCode: country.code,
+      defaultCurrency: country.currency,
+      exists: Boolean(row),
+      status: row?.status ?? 'DRAFT',
+      isFeatured: row?.isFeatured ?? false,
+      sortOrder: String(row?.sortOrder ?? product.sortOrder),
+      featuredOrder: String(row?.featuredOrder ?? product.featuredOrder),
+      currency: row?.currency ?? country.currency,
+      monthlyPrice: decimalToString(row?.monthlyPrice) ?? '',
+      annualPrice: decimalToString(row?.annualPrice) ?? '',
+      compareAtPrice: decimalToString(row?.compareAtPrice) ?? '',
+      discountPercent: row?.discountPercent === null || row?.discountPercent === undefined
+        ? ''
+        : String(row.discountPercent),
+      priceSuffix: row?.priceSuffix ?? '',
+      priceNote: row?.priceNote ?? '',
+      shortDescription: row?.shortDescription ?? '',
+      ctaLabel: row?.ctaLabel ?? '',
+      ctaUrl: row?.ctaUrl ?? '',
+      ctaFormId: row?.ctaFormId ?? '',
+      seoTitle: row?.seoTitle ?? '',
+      seoDescription: row?.seoDescription ?? '',
+      canonicalUrl: row?.canonicalUrl ?? '',
+      noIndex: row?.noIndex ?? false,
+    };
+  });
+
+  // "View live" points at a market that actually publishes the product.
+  const liveIn = countries.find((country) =>
+    product.countries.some(
+      (entry) => entry.countryId === country.id && entry.status === 'PUBLISHED',
+    ),
+  );
+
   return (
     <div className="mx-auto max-w-3xl">
       <AdminPageHeader
@@ -106,9 +166,9 @@ export default async function EditProduct({ params }: { params: Promise<{ id: st
         actions={
           <>
             <ContentStatusBadge status={product.status} />
-            {product.status === 'PUBLISHED' ? (
+            {liveIn ? (
               <Link
-                href={`/products/${product.slug}`}
+                href={countryPath(liveIn, `products/${product.slug}`)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={buttonClasses('outline', 'sm')}
@@ -126,6 +186,13 @@ export default async function EditProduct({ params }: { params: Promise<{ id: st
         brands={brands}
         formIdBySlug={Object.fromEntries(forms.map((f) => [f.slug, f.id]))}
         mode="edit"
+      />
+
+      <ProductCountryPricing
+        productId={product.id}
+        rows={countryRows}
+        forms={forms.map((form) => ({ id: form.id, name: form.name }))}
+        canEdit={userCan(user, 'products.edit')}
       />
     </div>
   );

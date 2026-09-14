@@ -87,7 +87,7 @@ export function ProductCard({
       {showName ? (
         <h3 className="font-heading text-lg font-bold text-content">
           {linkName ? (
-            <Link href={`/products/${product.slug}`} className="hover:text-brand">
+            <Link href={product.href} className="hover:text-brand">
               {product.name}
             </Link>
           ) : (
@@ -159,7 +159,7 @@ export function ProductCard({
           ) : null}
           {withDetails ? (
             <Link
-              href={`/products/${product.slug}`}
+              href={product.href}
               className={cn(
                 'block text-center text-xs font-medium text-muted underline-offset-4 hover:text-brand hover:underline',
                 withCta && 'mt-3',

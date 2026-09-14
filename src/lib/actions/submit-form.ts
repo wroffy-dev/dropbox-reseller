@@ -17,6 +17,7 @@ import { requestContext } from '@/lib/utils/request';
 import { hashIp } from '@/lib/utils/crypto';
 import { sanitizeText } from '@/lib/utils/sanitize';
 import { productContext, isSystemFieldKey } from '@/lib/forms/system-context';
+import { getRequestCountry } from '@/lib/country/request';
 import { success, failure, type ActionResult } from '@/lib/utils/result';
 import type { Prisma } from '@prisma/client';
 
@@ -50,7 +51,15 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
     return failure(`Too many submissions. Please try again in ${limit.retryAfterSeconds} seconds.`);
   }
 
-  const form = await getPublicForm(envelope.formSlug);
+  /*
+   * The market comes from the request the visitor actually made, never from the
+   * payload. That is what makes country attribution trustworthy: a crafted
+   * submission cannot claim to be a UAE lead, and a form restricted to one
+   * market cannot be submitted from another.
+   */
+  const country = await getRequestCountry();
+
+  const form = await getPublicForm(envelope.formSlug, country.id);
   if (!form) return failure('This form is no longer available.');
 
   // Math CAPTCHA, when the admin switched it on for this form. Verified here
@@ -148,9 +157,14 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
   const core = extractLeadCore(values, form.fields);
 
   const landingPath = attribution.pagePath ?? attribution.landingUrl ?? null;
-  const landingPage = landingPath
+  // The landing page is resolved inside the submitting market, so a UAE lead is
+  // never attributed to India's page of the same name.
+  const landingSlug = landingPath
+    ? stripCountryPrefix(landingPath, country.slug).replace(/^\/+|\/+$/g, '')
+    : null;
+  const landingPage = landingSlug !== null
     ? await prisma.page.findFirst({
-        where: { slug: landingPath.replace(/^\/+|\/+$/g, ''), deletedAt: null },
+        where: { slug: landingSlug, countryId: country.id, deletedAt: null },
         select: { id: true },
       })
     : null;
@@ -162,11 +176,13 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
    * sidebar, mid-article or in a blog CTA all record which article converted
    * the visitor — without the form itself having to know where it was placed.
    */
-  const blogSlug = /^\/blog\/([^/?#]+)/.exec(landingPath ?? '')?.[1];
+  const blogSlug = /^\/blog\/([^/?#]+)/.exec(
+    landingSlug === null ? '' : `/${landingSlug}`,
+  )?.[1];
   const blogPost =
     blogSlug && !['category', 'tag'].includes(blogSlug)
       ? await prisma.blogPost.findFirst({
-          where: { slug: blogSlug, deletedAt: null },
+          where: { slug: blogSlug, countryId: country.id, deletedAt: null },
           select: { id: true, title: true },
         })
       : null;
@@ -178,6 +194,7 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
 
     const lead = await prisma.lead.create({
       data: {
+        countryId: country.id,
         name: sanitizeText(core.name) || core.email.split('@')[0] || 'Unknown',
         email: core.email.toLowerCase(),
         phone: sanitizeText(core.phone) || null,
@@ -233,6 +250,7 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
   await prisma.formSubmission.create({
     data: {
       formId: form.id,
+      countryId: country.id,
       data: values as Prisma.InputJsonValue,
       ipHash: hashIp(ip),
       userAgent,
@@ -251,6 +269,20 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
   );
 
   return success({ message: form.successMessage, redirectUrl: form.redirectUrl });
+}
+
+/**
+ * Removes a market prefix from a submitted path.
+ *
+ * The browser sends the URL it was on ("/ae/contact"); attribution is stored
+ * against market-relative slugs ("contact"), so both markets' contact pages
+ * record their own leads rather than one shadowing the other.
+ */
+function stripCountryPrefix(path: string, slug: string): string {
+  if (!slug) return path;
+  const prefix = `/${slug}`;
+  if (path === prefix) return '/';
+  return path.startsWith(`${prefix}/`) ? path.slice(prefix.length) : path;
 }
 
 function splitEmails(raw: string | null | undefined): string[] {

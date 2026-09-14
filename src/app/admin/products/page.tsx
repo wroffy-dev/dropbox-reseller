@@ -11,6 +11,7 @@ import { ProductsTable, type ProductRow } from '@/components/admin/products/prod
 import { Card } from '@/components/ui/card';
 import { ButtonLink, buttonClasses } from '@/components/ui/button';
 import { decimalToString } from '@/lib/utils/money';
+import { getAdminCountryScope } from '@/lib/country/admin';
 import type { Prisma } from '@prisma/client';
 
 export const metadata: Metadata = { title: 'Products' };
@@ -31,6 +32,7 @@ export default async function ProductsAdmin({
   }>;
 }) {
   const user = await requirePermission('products.view');
+  const scope = await getAdminCountryScope();
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
 
@@ -66,6 +68,12 @@ export default async function ProductsAdmin({
         monthlyPrice: true,
         annualPrice: true,
         category: { select: { name: true } },
+        // Which markets actually publish this product, so the catalogue shows
+        // where a plan is on sale without opening it.
+        countries: {
+          where: { status: 'PUBLISHED' },
+          select: { country: { select: { code: true } } },
+        },
         _count: { select: { leads: true } },
       },
     }),
@@ -98,6 +106,7 @@ export default async function ProductsAdmin({
     currency: row.currency,
     monthlyPrice: decimalToString(row.monthlyPrice),
     annualPrice: decimalToString(row.annualPrice),
+    liveIn: row.countries.map((entry) => entry.country.code),
     leadCount: row._count.leads,
   }));
 
@@ -194,6 +203,7 @@ export default async function ProductsAdmin({
           filtered={Boolean(
             params.q || params.status || params.category || params.brand || params.featured,
           )}
+          showCountries={scope.canSwitch}
         />
         {tableRows.length > 0 ? (
           <AdminPagination

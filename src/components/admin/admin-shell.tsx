@@ -5,10 +5,13 @@ import { SessionProvider } from 'next-auth/react';
 import { AdminSidebar } from './sidebar';
 import { AdminTopbar } from './topbar';
 import { cn } from '@/lib/utils/cn';
+import type { CountryContext } from '@/lib/country/types';
 
 export function AdminShell({
   user,
   branding,
+  country,
+  countries,
   children,
 }: {
   user: {
@@ -20,6 +23,10 @@ export function AdminShell({
     image?: string | null;
   };
   branding: { siteName: string; logoUrl: string | null; logoDarkUrl: string | null };
+  /** The market the admin is editing, resolved on the server. */
+  country: Pick<CountryContext, 'id' | 'code' | 'name'>;
+  /** Every market this user may switch to. */
+  countries: Array<Pick<CountryContext, 'id' | 'code' | 'name' | 'isDefault'>>;
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
@@ -84,6 +91,8 @@ export function AdminShell({
             }}
             permissions={user.permissions}
             isSuperAdmin={user.isSuperAdmin}
+            country={country}
+            countries={countries}
             onOpenSidebar={() => setSidebarOpen(true)}
           />
           <main id="admin-main" className="mx-auto w-full max-w-[100rem] px-4 py-6 sm:px-6 sm:py-8">

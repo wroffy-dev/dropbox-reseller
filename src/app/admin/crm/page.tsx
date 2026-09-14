@@ -23,6 +23,8 @@ import { getActionItems } from '@/lib/services/dashboard';
 import { prisma } from '@/lib/db/prisma';
 import { startOfDay, endOfDay } from '@/lib/admin/date-range';
 import { formatRelative } from '@/lib/utils/format';
+import { resolveListCountry, ALL_COUNTRIES } from '@/lib/admin/country-filter';
+import { CountryScopePicker } from '@/components/admin/country-scope-picker';
 import { cn } from '@/lib/utils/cn';
 
 export const metadata: Metadata = { title: 'CRM dashboard' };
@@ -31,25 +33,31 @@ export const dynamic = 'force-dynamic';
 export default async function CrmDashboard({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ range?: string; from?: string; to?: string; country?: string }>;
 }) {
   const user = await requirePermission('leads.view');
   const params = await searchParams;
   const range = resolveRange(params);
 
+  // Every figure on this page reports one market, or all of them — never a
+  // silent mixture. The default is the market chosen in the topbar.
+  const country = await resolveListCountry(user, params.country);
+  const countryId = country.countryId ?? undefined;
+
   const [kpis, trend, statuses, sources, campaigns, entryPoints, actionItems, recentLeads] =
     await Promise.all([
-      getCrmKpis(range),
-      getLeadTrend(range),
-      getStatusBreakdown(range),
-      getSourcePerformance(range),
-      getCampaignPerformance(range),
-      getTopEntryPoints(range),
-      getActionItems(),
+      getCrmKpis(range, countryId),
+      getLeadTrend(range, countryId),
+      getStatusBreakdown(range, countryId),
+      getSourcePerformance(range, countryId),
+      getCampaignPerformance(range, countryId),
+      getTopEntryPoints(range, countryId),
+      getActionItems(countryId),
       prisma.lead.findMany({
         where: {
           deletedAt: null,
           status: { not: 'SPAM' },
+          ...(countryId ? { countryId } : {}),
           createdAt: { gte: startOfDay(range.from), lte: endOfDay(range.to) },
         },
         orderBy: { createdAt: 'desc' },
@@ -70,19 +78,34 @@ export default async function CrmDashboard({
 
   // Every link out of this dashboard carries the range, so drilling into the
   // leads list shows the same window the chart just described.
-  const rangeQuery = new URLSearchParams(
-    range.preset === 'custom'
-      ? { from: range.from, to: range.to }
-      : { from: range.from, to: range.to },
-  ).toString();
+  const rangeQuery = new URLSearchParams({
+    from: range.from,
+    to: range.to,
+    // The market travels with the range, so a drill-down into the leads list
+    // shows exactly the rows the chart counted.
+    ...(country.multiCountry ? { country: country.value } : {}),
+  }).toString();
 
   return (
     <>
       <AdminPageHeader
         title="CRM dashboard"
-        description={`Lead performance for ${formatRangeLabel(range)}.`}
+        description={
+          country.multiCountry
+            ? `Lead performance for ${formatRangeLabel(range)} · ${country.countryId ? country.current.name : 'all countries'}.`
+            : `Lead performance for ${formatRangeLabel(range)}.`
+        }
         actions={
           <>
+            {country.multiCountry ? (
+              <CountryScopePicker
+                value={country.value}
+                options={[
+                  { value: ALL_COUNTRIES, label: 'All countries' },
+                  ...country.countries.map((row) => ({ value: row.id, label: row.name })),
+                ]}
+              />
+            ) : null}
             <DateRangePicker range={range} />
             {canCreate ? (
               <ButtonLink href="/admin/leads/new">

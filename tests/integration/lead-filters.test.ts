@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mockAuth, uniqueSuffix, TEST_ACTOR } from '../helpers';
+import { mockAuth, uniqueSuffix, TEST_ACTOR, ensureTestCountry } from '../helpers';
 
 mockAuth();
 
@@ -17,6 +17,7 @@ async function count(filters: Parameters<typeof buildLeadWhere>[0]) {
 }
 
 beforeAll(async () => {
+  const countryId = await ensureTestCountry();
   const role = await prisma.userRole.upsert({
     where: { slug: 'test-role-filters' },
     update: {},
@@ -50,6 +51,7 @@ beforeAll(async () => {
     // Qualified + google/cpc + assigned + overdue follow-up
     prisma.lead.create({
       data: {
+        countryId,
         name: `Ada ${suffix}`,
         email: `ada-${suffix}@example.test`,
         company: 'Acme',
@@ -67,6 +69,7 @@ beforeAll(async () => {
     // Qualified + google/cpc but unassigned, no follow-up
     prisma.lead.create({
       data: {
+        countryId,
         name: `Grace ${suffix}`,
         email: `grace-${suffix}@example.test`,
         status: 'QUALIFIED',
@@ -78,6 +81,7 @@ beforeAll(async () => {
     // New + linkedin/social, unassigned
     prisma.lead.create({
       data: {
+        countryId,
         name: `Linus ${suffix}`,
         email: `linus-${suffix}@example.test`,
         status: 'NEW',
@@ -88,6 +92,7 @@ beforeAll(async () => {
     // Won, older than the recent window
     prisma.lead.create({
       data: {
+        countryId,
         name: `Won ${suffix}`,
         email: `won-${suffix}@example.test`,
         status: 'WON',
@@ -212,8 +217,10 @@ describe('the "no attribution" drill-down', () => {
   let untaggedId = '';
 
   beforeAll(async () => {
+    const countryId = await ensureTestCountry();
     const lead = await prisma.lead.create({
       data: {
+        countryId,
         name: `Untagged ${suffix}`,
         email: `untagged-${suffix}@example.test`,
         status: 'NEW',

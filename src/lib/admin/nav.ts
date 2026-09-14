@@ -288,7 +288,17 @@ export const ADMIN_NAV: AdminNavModule[] = [
         href: '/admin/settings',
         permission: 'settings.manage',
         description: 'Name, contact details and branding',
-        notMatches: ['/admin/settings/email', '/admin/settings/design'],
+        notMatches: [
+          '/admin/settings/email',
+          '/admin/settings/design',
+          '/admin/settings/countries',
+        ],
+      },
+      {
+        label: 'Countries',
+        href: '/admin/settings/countries',
+        permission: 'settings.manage',
+        description: 'Storefronts, URL prefixes, currencies and local contact details',
       },
       {
         label: 'Email Settings',

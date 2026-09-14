@@ -25,7 +25,8 @@ import type {
   WidgetSocialContent,
 } from '@/lib/cms/blog-blocks';
 import type { BlogRenderContext } from '@/lib/cms/blog-render';
-import { categoryPath, tagPath, postPath } from '@/lib/cms/blog-render';
+import { blogPath, categoryPath, tagPath, postPath } from '@/lib/cms/blog-render';
+import type { CountryContext } from '@/lib/country/types';
 import { buildPanelStyles, type PanelDesign } from '@/lib/cms/design';
 import {
   resolvePostSource,
@@ -34,6 +35,7 @@ import {
   type BlogListItem,
 } from '@/lib/services/blog';
 import { prisma } from '@/lib/db/prisma';
+import { selectProducts } from '@/lib/services/products';
 import { getMedia } from '@/lib/services/media';
 import { getPublicForm, getDefaultForm } from '@/lib/services/forms';
 import { PublicFormRenderer } from '@/components/forms/public-form';
@@ -129,17 +131,22 @@ export async function WidgetShell({
   );
 }
 
-type WidgetProps<T> = { content: T; ctx: { blog?: BlogRenderContext }; id: string };
+type WidgetProps<T> = {
+  content: T;
+  /** The slice of the block context a widget can act on. */
+  ctx: { country: CountryContext; blog?: BlogRenderContext };
+  id: string;
+};
 
 const chromeOf = (content: WidgetChrome): WidgetChrome => content;
 
 // ---------------------------------------------------------------------------
 
-export async function WidgetSearch({ content, id }: WidgetProps<WidgetSearchContent>) {
+export async function WidgetSearch({ content, ctx, id }: WidgetProps<WidgetSearchContent>) {
   return (
     <WidgetShell chrome={chromeOf(content)} headingId={id}>
       <BlogSearch
-        action="/blog"
+        action={blogPath(ctx.country)}
         placeholder={content.placeholder}
         buttonLabel={content.buttonLabel}
         showButton={content.showButton}
@@ -175,7 +182,7 @@ export async function WidgetToc({ content, ctx, id }: WidgetProps<WidgetTocConte
 
 export async function WidgetPosts({ content, ctx, id }: WidgetProps<WidgetPostListContent>) {
   const article = ctx.blog?.article;
-  const posts = await resolvePostSource(content, {
+  const posts = await resolvePostSource(ctx.country.id, content, {
     currentPostId: article?.post.id ?? null,
     currentCategoryId: article?.post.categoryId ?? null,
   });
@@ -193,7 +200,7 @@ export async function WidgetPosts({ content, ctx, id }: WidgetProps<WidgetPostLi
       <ol className={cn('space-y-4', content.layout === 'list' && 'space-y-2.5')}>
         {posts.map((post, index) => (
           <li key={post.id}>
-            <WidgetPostRow post={post} content={content} index={index} />
+            <WidgetPostRow post={post} content={content} index={index} country={ctx.country} />
           </li>
         ))}
       </ol>
@@ -205,13 +212,15 @@ function WidgetPostRow({
   post,
   content,
   index,
+  country,
 }: {
   post: BlogListItem;
   content: WidgetPostListContent;
   index: number;
+  country: CountryContext;
 }) {
   const image = post.thumbnail ?? post.featuredImage;
-  const href = postPath(post.slug);
+  const href = postPath(country, post.slug);
   const withImage = content.showImage && content.layout !== 'list' && Boolean(image);
 
   const meta: string[] = [];
@@ -271,7 +280,7 @@ function WidgetPostRow({
 }
 
 export async function WidgetCategories({ content, ctx, id }: WidgetProps<WidgetCategoriesContent>) {
-  const all = ctx.blog?.archive?.categories ?? (await getBlogCategories());
+  const all = ctx.blog?.archive?.categories ?? (await getBlogCategories(ctx.country.id));
 
   let categories = content.showChildren ? all : all.filter((category) => !category.parentId);
   if (content.source === 'selected' && content.categoryIds.length > 0) {
@@ -294,7 +303,7 @@ export async function WidgetCategories({ content, ctx, id }: WidgetProps<WidgetC
           {categories.map((category) => (
             <li key={category.id}>
               <Link
-                href={categoryPath(category.slug)}
+                href={categoryPath(ctx.country, category.slug)}
                 className={cn('blog-chip blog-chip--pill', activeSlug === category.slug && 'blog-chip--active')}
               >
                 {category.name}
@@ -308,7 +317,7 @@ export async function WidgetCategories({ content, ctx, id }: WidgetProps<WidgetC
           {categories.map((category) => (
             <li key={category.id} className={category.parentId ? 'pl-4' : undefined}>
               <Link
-                href={categoryPath(category.slug)}
+                href={categoryPath(ctx.country, category.slug)}
                 aria-current={activeSlug === category.slug ? 'page' : undefined}
                 className="blog-widget__link flex items-center justify-between gap-2"
               >
@@ -326,7 +335,7 @@ export async function WidgetCategories({ content, ctx, id }: WidgetProps<WidgetC
 }
 
 export async function WidgetTags({ content, ctx, id }: WidgetProps<WidgetTagsContent>) {
-  const tags = ctx.blog?.archive?.tags ?? (await getBlogTags(content.limit));
+  const tags = ctx.blog?.archive?.tags ?? (await getBlogTags(ctx.country.id, content.limit));
   const shown = tags.filter((tag) => tag.count > 0).slice(0, content.limit);
   if (shown.length === 0) return null;
 
@@ -335,7 +344,7 @@ export async function WidgetTags({ content, ctx, id }: WidgetProps<WidgetTagsCon
       <ul className="flex flex-wrap gap-1.5">
         {shown.map((tag) => (
           <li key={tag.id}>
-            <Link href={tagPath(tag.slug)} className="blog-card__tag">
+            <Link href={tagPath(ctx.country, tag.slug)} className="blog-card__tag">
               {tag.name}
               {content.showCounts ? <span className="ml-1 opacity-60">{tag.count}</span> : null}
             </Link>
@@ -351,7 +360,7 @@ export async function WidgetForm({ content, ctx, id }: WidgetProps<WidgetFormCon
   // campaign-specific article possible without a bespoke sidebar.
   const postForm = content.preferPostForm ? ctx.blog?.article?.forms.sidebar : '';
   const slug = postForm || content.formSlug;
-  const form = slug ? await getPublicForm(slug) : await getDefaultForm();
+  const form = slug ? await getPublicForm(slug, ctx.country.id) : await getDefaultForm(ctx.country.id);
   if (!form) return null;
 
   return (
@@ -432,43 +441,15 @@ export async function WidgetAuthor({ content, ctx, id }: WidgetProps<WidgetAutho
   );
 }
 
-export async function WidgetProducts({ content, id }: WidgetProps<WidgetProductsContent>) {
-  const where =
-    content.source === 'featured'
-      ? { isFeatured: true }
-      : content.source === 'category'
-        ? content.categoryId
-          ? { categoryId: content.categoryId }
-          : {}
-        : content.source === 'selected'
-          ? { id: { in: content.productIds } }
-          : {};
-
-  const products = await prisma.product.findMany({
-    where: { deletedAt: null, status: 'PUBLISHED', ...where },
-    orderBy:
-      content.source === 'latest'
-        ? [{ createdAt: 'desc' }]
-        : [{ sortOrder: 'asc' }, { name: 'asc' }],
-    take: content.limit,
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      shortDescription: true,
-      monthlyPrice: true,
-      priceSuffix: true,
-      currency: true,
-      image: { select: { url: true, altText: true } },
-    },
+export async function WidgetProducts({ content, ctx, id }: WidgetProps<WidgetProductsContent>) {
+  // Routed through the shared product selector so the widget shows this
+  // market's catalogue, in this market's order, at this market's prices.
+  const ordered = await selectProducts(ctx.country, {
+    source: content.source,
+    productIds: content.productIds,
+    categoryId: content.categoryId,
+    limit: content.limit,
   });
-
-  const ordered =
-    content.source === 'selected'
-      ? content.productIds
-          .map((productId) => products.find((product) => product.id === productId))
-          .filter((product): product is (typeof products)[number] => Boolean(product))
-      : products;
 
   if (ordered.length === 0) return null;
 
@@ -477,10 +458,10 @@ export async function WidgetProducts({ content, id }: WidgetProps<WidgetProducts
       <ul className="space-y-3">
         {ordered.map((product) => (
           <li key={product.id}>
-            <Link href={`/products/${product.slug}`} className="group flex items-start gap-3">
-              {content.showImage && product.image ? (
+            <Link href={product.href} className="group flex items-start gap-3">
+              {content.showImage && product.imageUrl ? (
                 <Image
-                  src={product.image.url}
+                  src={product.imageUrl}
                   alt=""
                   width={48}
                   height={48}
@@ -490,7 +471,7 @@ export async function WidgetProducts({ content, id }: WidgetProps<WidgetProducts
               ) : null}
               <span className="min-w-0 flex-1">
                 <span className="blog-widget__post-title block">{product.name}</span>
-                {content.showPrice && product.monthlyPrice !== null ? (
+                {content.showPrice && product.monthlyPrice ? (
                   <span className="blog-widget__meta mt-0.5 block">
                     {formatMoney(product.monthlyPrice, product.currency)}
                     {product.priceSuffix ? ` ${product.priceSuffix}` : ''}

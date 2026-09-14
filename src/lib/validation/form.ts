@@ -74,6 +74,12 @@ export const formFieldSchema = z.object({
 
 export const formInputSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(160),
+  /**
+   * The market this form belongs to, or null for a form shared by every
+   * market — which is what every form built before markets existed is, and
+   * what the default remains.
+   */
+  countryId: optional(40),
   slug: z
     .string()
     .max(160)

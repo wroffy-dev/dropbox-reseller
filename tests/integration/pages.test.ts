@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { mockAuth, formData, uniqueSuffix, TEST_ACTOR } from '../helpers';
+import { mockAuth, formData, uniqueSuffix, TEST_ACTOR, ensureTestCountry, testCountryContext } from '../helpers';
 
 mockAuth();
 
@@ -62,7 +62,7 @@ describe('page lifecycle', () => {
   });
 
   it('keeps a draft page off the public site', async () => {
-    expect(await getPublishedPage(`test-page-${suffix}`)).toBeNull();
+    expect(await getPublishedPage(await ensureTestCountry(), `test-page-${suffix}`)).toBeNull();
   });
 
   it('records an audit entry for the creation', async () => {
@@ -152,7 +152,7 @@ describe('page lifecycle', () => {
 
     vi.resetModules();
     const { getPublishedPage: fresh } = await import('@/lib/services/pages');
-    const page = await fresh(`test-page-${suffix}`);
+    const page = await fresh(await ensureTestCountry(), `test-page-${suffix}`);
     expect(page?.title).toBe(`Test Page ${suffix}`);
     expect(page?.publishedAt).not.toBeNull();
   });
@@ -204,7 +204,7 @@ describe('page lifecycle', () => {
 
     vi.resetModules();
     const { getPublishedPage: fresh } = await import('@/lib/services/pages');
-    expect(await fresh(`test-page-${suffix}`)).toBeNull();
+    expect(await fresh(await ensureTestCountry(), `test-page-${suffix}`)).toBeNull();
   });
 
   it('refuses to delete the homepage', async () => {

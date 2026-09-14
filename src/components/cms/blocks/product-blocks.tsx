@@ -21,7 +21,7 @@ export async function ProductCardsBlock({
   ctx: BlockContext;
 }) {
   const inverted = ctx.inverted;
-  const products = await selectProducts({
+  const products = await selectProducts(ctx.country, {
     source: content.source,
     productIds: content.productIds,
     categoryId: content.categoryId,
@@ -85,7 +85,7 @@ export async function ProductTableBlock({
   ctx: BlockContext;
 }) {
   const inverted = ctx.inverted;
-  const products = await selectProducts({
+  const products = await selectProducts(ctx.country, {
     source: content.source,
     productIds: content.productIds,
     categoryId: content.categoryId,
@@ -320,7 +320,7 @@ export async function ProductGridBlock({
   content: ProductGridContent;
   ctx: BlockContext;
 }) {
-  const products = await selectProducts({
+  const products = await selectProducts(ctx.country, {
     source: content.source,
     productIds: content.productIds,
     categoryId: content.categoryId,
@@ -387,7 +387,7 @@ export async function ProductGridBlock({
                     )}
                   >
                     {content.linkName ? (
-                      <Link href={`/products/${product.slug}`} className="hover:underline">
+                      <Link href={product.href} className="hover:underline">
                         {product.name}
                       </Link>
                     ) : (
@@ -439,7 +439,7 @@ export async function ProductGridBlock({
 
               {content.showActions && content.showDetailsLink ? (
                 <Link
-                  href={`/products/${product.slug}`}
+                  href={product.href}
                   className={cn(
                     'shrink-0 text-xs font-medium underline-offset-4 hover:underline',
                     ctx.inverted ? 'text-white/75 hover:text-white' : 'text-muted hover:text-brand',

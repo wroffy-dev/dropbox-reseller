@@ -5,6 +5,7 @@ import type { BlogListItem } from '@/lib/services/blog';
 import type { BlogCardSettings } from '@/lib/cms/blog-settings';
 import { DEFAULT_BLOG_CARD, RATIO_CSS, SHADOW_CSS } from '@/lib/cms/blog-settings';
 import { categoryPath, postPath, tagPath } from '@/lib/cms/blog-render';
+import type { CountryContext } from '@/lib/country/types';
 import { formatDate, initials } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
 
@@ -19,18 +20,21 @@ import { cn } from '@/lib/utils/cn';
  */
 export function PostCard({
   post,
+  country,
   card = DEFAULT_BLOG_CARD,
   priority,
   className,
 }: {
   post: BlogListItem;
+  /** The market the card links into, so one card works in every storefront. */
+  country: CountryContext;
   card?: BlogCardSettings;
   priority?: boolean;
   className?: string;
 }) {
   const ratio = RATIO_CSS[card.imageRatio];
   const image = post.featuredImage ?? post.thumbnail;
-  const href = postPath(post.slug);
+  const href = postPath(country, post.slug);
 
   return (
     <article
@@ -67,7 +71,7 @@ export function PostCard({
       ) : null}
 
       <div className="blog-card__body flex flex-1 flex-col">
-        <CardMeta post={post} card={card} />
+        <CardMeta post={post} card={card} country={country} />
 
         <h3 className="blog-card__title">
           <Link href={href}>{post.title}</Link>
@@ -86,7 +90,7 @@ export function PostCard({
           <ul className="mt-3 flex flex-wrap gap-1.5">
             {post.tags.slice(0, 4).map(({ tag }) => (
               <li key={tag.slug}>
-                <Link href={tagPath(tag.slug)} className="blog-card__tag">
+                <Link href={tagPath(country, tag.slug)} className="blog-card__tag">
                   {tag.name}
                 </Link>
               </li>
@@ -100,7 +104,15 @@ export function PostCard({
   );
 }
 
-function CardMeta({ post, card }: { post: BlogListItem; card: BlogCardSettings }) {
+function CardMeta({
+  post,
+  card,
+  country,
+}: {
+  post: BlogListItem;
+  card: BlogCardSettings;
+  country: CountryContext;
+}) {
   const bits: React.ReactNode[] = [];
   if (card.showDate && post.publishedAt) {
     bits.push(
@@ -123,7 +135,7 @@ function CardMeta({ post, card }: { post: BlogListItem; card: BlogCardSettings }
   return (
     <div className="blog-card__meta flex flex-wrap items-center gap-x-2 gap-y-1">
       {card.showCategory && post.category ? (
-        <Link href={categoryPath(post.category.slug)} className="blog-card__category">
+        <Link href={categoryPath(country, post.category.slug)} className="blog-card__category">
           {post.category.name}
         </Link>
       ) : null}

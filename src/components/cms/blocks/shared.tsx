@@ -8,6 +8,7 @@ import type { ResolvedMedia } from '@/lib/services/media';
 import type { SectionDesign } from '@/lib/cms/design';
 import { resolveColumns, gridStyle } from '@/lib/cms/design';
 import type { BlogRenderContext } from '@/lib/cms/blog-render';
+import type { CountryContext } from '@/lib/country/types';
 
 /**
  * Context every block receives from the section renderer.
@@ -16,6 +17,15 @@ import type { BlogRenderContext } from '@/lib/cms/blog-render';
  * the design once and hands down only what a block can act on.
  */
 export type BlockContext = {
+  /**
+   * The market this section is being rendered for.
+   *
+   * Blocks read it instead of building market-aware URLs themselves: the
+   * section renderer has already rewritten the stored content's internal links,
+   * so a block only needs it for the links it generates from data (a product,
+   * an article, a category archive).
+   */
+  country: CountryContext;
   /** The section paints a dark surface, so content must invert. */
   inverted: boolean;
   /** First section on the page — its heading becomes the <h1>. */

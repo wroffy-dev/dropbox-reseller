@@ -28,6 +28,8 @@ export type LeadRow = {
   email: string;
   phone: string | null;
   company: string | null;
+  /** The storefront this lead came from. */
+  countryName: string;
   status: LeadStatus;
   source: string | null;
   utmSource: string | null;
@@ -61,6 +63,7 @@ export function LeadsTable({
   filters,
   filtered,
   total,
+  showCountry = false,
 }: {
   rows: LeadRow[];
   can: LeadPermissions;
@@ -68,6 +71,8 @@ export function LeadsTable({
   filters: Record<string, string | undefined>;
   filtered: boolean;
   total: number;
+  /** Adds the Country column. Hidden on a single-market installation. */
+  showCountry?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -270,6 +275,7 @@ export function LeadsTable({
                 Lead
               </SortableTh>
               <Th>Company</Th>
+              {showCountry ? <Th>Country</Th> : null}
               <Th>Source</Th>
               <Th>Product / form</Th>
               <Th>Owner</Th>
@@ -327,6 +333,10 @@ export function LeadsTable({
                     {row.company ?? '—'}
                   </span>
                 </Td>
+
+                {showCountry ? (
+                  <Td className="whitespace-nowrap text-sm text-content">{row.countryName}</Td>
+                ) : null}
 
                 <Td className="max-w-[12rem] text-sm text-muted">
                   <span className="block truncate" title={row.source ?? row.utmSource ?? undefined}>
@@ -421,7 +431,10 @@ export function LeadsTable({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-content">{row.name}</p>
-                  <p className="truncate text-xs text-muted">{row.company ?? row.email}</p>
+                  <p className="truncate text-xs text-muted">
+                    {row.company ?? row.email}
+                    {showCountry ? ` · ${row.countryName}` : ''}
+                  </p>
                 </div>
                 <LeadStatusBadge status={row.status} />
               </div>

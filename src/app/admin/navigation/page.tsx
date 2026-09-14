@@ -5,6 +5,7 @@ import { AdminPageHeader } from '@/components/admin/page-header';
 import { MenuManager, type MenuSummary } from '@/components/admin/navigation/menu-manager';
 import type { EditorItem, NavTargets } from '@/components/admin/navigation/nav-editor';
 import { Alert } from '@/components/ui/states';
+import { getAdminCountryScope } from '@/lib/country/admin';
 
 export const metadata: Metadata = { title: 'Navigation' };
 export const dynamic = 'force-dynamic';
@@ -12,13 +13,22 @@ export const dynamic = 'force-dynamic';
 export default async function NavigationAdmin() {
   const user = await requirePermission('navigation.manage');
 
+  /*
+   * Menus belong to a market, so this screen edits the menus of the market
+   * chosen in the topbar — and the pages it offers as link targets are that
+   * market's pages, which is what stops a UAE menu linking at an India page.
+   */
+  const scope = await getAdminCountryScope();
+  const countryId = scope.country.id;
+
   const [menus, pages, products, posts, categories] = await Promise.all([
     prisma.navigation.findMany({
+      where: { countryId },
       orderBy: { createdAt: 'asc' },
       include: { items: { orderBy: { sortOrder: 'asc' } } },
     }),
     prisma.page.findMany({
-      where: { deletedAt: null },
+      where: { deletedAt: null, countryId },
       orderBy: { title: 'asc' },
       select: { id: true, title: true, slug: true },
     }),
@@ -28,7 +38,7 @@ export default async function NavigationAdmin() {
       select: { id: true, name: true },
     }),
     prisma.blogPost.findMany({
-      where: { deletedAt: null },
+      where: { deletedAt: null, countryId },
       orderBy: { publishedAt: 'desc' },
       take: 100,
       select: { id: true, title: true },
@@ -72,7 +82,11 @@ export default async function NavigationAdmin() {
     <>
       <AdminPageHeader
         title="Navigation"
-        description="Menus shown in the header and footer. Changes appear on the site immediately."
+        description={
+          scope.canSwitch
+            ? `Menus shown in the header and footer of the ${scope.country.name} storefront. Changes appear on the site immediately.`
+            : 'Menus shown in the header and footer. Changes appear on the site immediately.'
+        }
         crumbs={[{ label: 'Navigation' }]}
       />
 
@@ -81,7 +95,14 @@ export default async function NavigationAdmin() {
         name as the heading, and the legal menu appears beside the copyright line.
       </Alert>
 
-      <MenuManager menus={summaries} targets={targets} canEdit={userCan(user, 'navigation.manage')} />
+      <MenuManager
+        menus={summaries}
+        targets={targets}
+        countryId={countryId}
+        countryName={scope.country.name}
+        showCountry={scope.canSwitch}
+        canEdit={userCan(user, 'navigation.manage')}
+      />
     </>
   );
 }

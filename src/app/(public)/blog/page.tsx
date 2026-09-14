@@ -1,54 +1,35 @@
 import type { Metadata } from 'next';
-import { getBlogSettings } from '@/lib/services/blog-cms';
-import { buildMetadata } from '@/lib/seo/metadata';
-import { JsonLd } from '@/components/seo/json-ld';
-import { breadcrumbSchema } from '@/lib/seo/structured-data';
-import { BlogArchive } from '@/components/blog/blog-archive';
+import { getDefaultCountry } from '@/lib/country/registry';
+import {
+  blogArchiveMetadata,
+  BlogArchiveSurface,
+  type BlogSearchParams,
+} from '../_surfaces/blog';
 
-type SearchParams = Promise<{ page?: string; q?: string; tag?: string }>;
+type SearchParams = Promise<BlogSearchParams>;
 
 // The root layout reads the visitor's tracking-consent cookie, so nothing under
 // it can be rendered statically. Declaring `revalidate` here made Next try
 // anyway and every request failed with DYNAMIC_SERVER_USAGE.
 export const dynamic = 'force-dynamic';
 
+/**
+ * The root market's blog archive.
+ *
+ * A prefixed market reaches the same surface through the public catch-all, so
+ * this route only declares the URL — the rendering is shared and there is one
+ * implementation to maintain.
+ */
 export async function generateMetadata({
   searchParams,
 }: {
   searchParams: SearchParams;
 }): Promise<Metadata> {
-  const [settings, params] = await Promise.all([getBlogSettings(), searchParams]);
-  const page = Math.max(1, Number(params.page) || 1);
-
-  return buildMetadata({
-    title: settings.seoTitle || 'Blog',
-    description:
-      settings.seoDescription ||
-      'Guides, migration playbooks and administration tips for teams running Dropbox.',
-    path: '/blog',
-    canonicalUrl: settings.canonicalUrl,
-    // A search result or page 2+ is not a page to index — the articles
-    // themselves are already indexed on their own URLs.
-    noIndex: settings.noIndex || page > 1 || Boolean(params.q?.trim()),
-    noFollow: settings.noFollow,
-    ogTitle: settings.ogTitle,
-    ogDescription: settings.ogDescription,
-    ogImageUrl: settings.ogImageUrl,
-  });
+  const [country, params] = await Promise.all([getDefaultCountry(), searchParams]);
+  return blogArchiveMetadata(country, params);
 }
 
 export default async function BlogIndex({ searchParams }: { searchParams: SearchParams }) {
-  const params = await searchParams;
-
-  return (
-    <>
-      <BlogArchive basePath="/blog" searchParams={params} />
-      <JsonLd
-        data={breadcrumbSchema([
-          { name: 'Home', path: '/' },
-          { name: 'Blog', path: '/blog' },
-        ])}
-      />
-    </>
-  );
+  const [country, params] = await Promise.all([getDefaultCountry(), searchParams]);
+  return <BlogArchiveSurface country={country} searchParams={params} />;
 }

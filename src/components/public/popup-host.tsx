@@ -29,8 +29,13 @@ export type PopupConfig = {
 
 const STORAGE_PREFIX = 'popup_seen_';
 
-function matchesPath(popup: PopupConfig, pathname: string): boolean {
-  const slug = pathname.replace(/^\/+|\/+$/g, '');
+function matchesPath(popup: PopupConfig, pathname: string, basePath: string): boolean {
+  // Targeting is written against market-relative slugs ("pricing"), so the
+  // market prefix comes off before matching — "/ae/pricing" targets "pricing"
+  // exactly as "/pricing" does.
+  const prefix = basePath === '/' ? '' : basePath;
+  const relative = prefix && pathname.startsWith(prefix) ? pathname.slice(prefix.length) : pathname;
+  const slug = relative.replace(/^\/+|\/+$/g, '');
   if (popup.pageSlugs.length > 0 && popup.pageSlugs.includes(slug)) return true;
   if (popup.urlPatterns.length === 0 && popup.pageSlugs.length === 0) return true;
   return popup.urlPatterns.some((pattern) => {
@@ -62,7 +67,14 @@ function markSeen(popupId: string) {
 }
 
 /** Evaluates popup targeting and triggers entirely on the client. */
-export function PopupHost({ popups }: { popups: PopupConfig[] }) {
+export function PopupHost({
+  popups,
+  basePath = '/',
+}: {
+  popups: PopupConfig[];
+  /** The current market's URL prefix, so targeting stays market-relative. */
+  basePath?: string;
+}) {
   const pathname = usePathname();
   const [active, setActive] = React.useState<PopupConfig | null>(null);
 
@@ -73,7 +85,7 @@ export function PopupHost({ popups }: { popups: PopupConfig[] }) {
     const isMobile = window.matchMedia('(max-width: 767px)').matches;
     const candidates = popups.filter(
       (p) =>
-        matchesPath(p, pathname) &&
+        matchesPath(p, pathname, basePath) &&
         !seenRecently(p) &&
         (p.device === 'ALL' || (p.device === 'MOBILE') === isMobile),
     );
@@ -111,7 +123,7 @@ export function PopupHost({ popups }: { popups: PopupConfig[] }) {
     }
 
     return () => cleanups.forEach((fn) => fn());
-  }, [pathname, popups]);
+  }, [pathname, popups, basePath]);
 
   const close = React.useCallback(() => {
     if (active) markSeen(active.id);

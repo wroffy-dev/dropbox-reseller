@@ -2,12 +2,30 @@ import 'server-only';
 import { cache } from 'react';
 import { prisma } from '@/lib/db/prisma';
 import { decimalToString } from '@/lib/utils/money';
+import { countryPath } from '@/lib/country/routing';
+import type { CountryContext } from '@/lib/country/types';
 import type { Prisma } from '@prisma/client';
+
+/**
+ * Products, resolved for one market.
+ *
+ * `Product` stays the global master — a product's identity, SKU, brand,
+ * category, shared specification and imagery are the same everywhere. What a
+ * market owns is whether the product is on sale there, what it costs, in which
+ * currency, its local copy, its call to action and its SEO; all of that lives
+ * in `ProductCountry`.
+ *
+ * Money is never converted at render time. A price is whatever an administrator
+ * entered for that market, in that market's currency, because a rate-derived
+ * price would change under the visitor and could not be quoted.
+ */
 
 export type PublicProduct = {
   id: string;
   name: string;
   slug: string;
+  /** The product's URL inside the market it was resolved for. */
+  href: string;
   sku: string | null;
   shortDescription: string | null;
   description: string | null;
@@ -54,7 +72,6 @@ const productSelect = {
   discountPercent: true,
   priceSuffix: true,
   priceNote: true,
-  isFeatured: true,
   features: true,
   benefits: true,
   specs: true,
@@ -67,7 +84,28 @@ const productSelect = {
   brand: { select: { name: true, slug: true } },
 } satisfies Prisma.ProductSelect;
 
-type ProductRow = Prisma.ProductGetPayload<{ select: typeof productSelect }>;
+const countrySelect = {
+  id: true,
+  countryId: true,
+  isFeatured: true,
+  sortOrder: true,
+  featuredOrder: true,
+  currency: true,
+  monthlyPrice: true,
+  annualPrice: true,
+  compareAtPrice: true,
+  discountPercent: true,
+  priceSuffix: true,
+  priceNote: true,
+  shortDescription: true,
+  description: true,
+  ctaLabel: true,
+  ctaUrl: true,
+  ctaForm: { select: { slug: true, isActive: true } },
+  product: { select: productSelect },
+} satisfies Prisma.ProductCountrySelect;
+
+type ProductCountryRow = Prisma.ProductCountryGetPayload<{ select: typeof countrySelect }>;
 
 function toStringArray(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -82,38 +120,54 @@ function toSpecs(raw: unknown): Array<{ label: string; value: string }> {
     .filter((s) => s.label);
 }
 
-export function toPublicProduct(row: ProductRow): PublicProduct {
+const pick = (local: string | null, global: string | null): string | null => {
+  const trimmed = local?.trim();
+  return trimmed ? local : global;
+};
+
+/**
+ * Merges a market's configuration over the global product.
+ *
+ * Copy falls back to the master record, so a market that has nothing to say
+ * about a product still shows a complete page. Money never falls back: an empty
+ * AED price shows the market's price note, never India's rupee figure.
+ */
+export function toPublicProduct(row: ProductCountryRow, country: CountryContext): PublicProduct {
+  const product = row.product;
+  const ctaForm = row.ctaForm?.isActive ? row.ctaForm : product.ctaForm?.isActive ? product.ctaForm : null;
+
   return {
-    id: row.id,
-    name: row.name,
-    slug: row.slug,
-    sku: row.sku,
-    shortDescription: row.shortDescription,
-    description: row.description,
-    storage: row.storage,
-    minUsers: row.minUsers,
-    maxUsers: row.maxUsers,
-    currency: row.currency,
+    id: product.id,
+    name: product.name,
+    slug: product.slug,
+    href: countryPath(country, `products/${product.slug}`),
+    sku: product.sku,
+    shortDescription: pick(row.shortDescription, product.shortDescription),
+    description: pick(row.description, product.description),
+    storage: product.storage,
+    minUsers: product.minUsers,
+    maxUsers: product.maxUsers,
+    currency: row.currency || country.currency,
     monthlyPrice: decimalToString(row.monthlyPrice),
     annualPrice: decimalToString(row.annualPrice),
     compareAtPrice: decimalToString(row.compareAtPrice),
     discountPercent: row.discountPercent,
-    priceSuffix: row.priceSuffix,
-    priceNote: row.priceNote,
+    priceSuffix: pick(row.priceSuffix, product.priceSuffix),
+    priceNote: pick(row.priceNote, product.priceNote),
     isFeatured: row.isFeatured,
-    features: toStringArray(row.features),
-    benefits: toStringArray(row.benefits),
-    specs: toSpecs(row.specs),
-    ctaLabel: row.ctaLabel || 'Get Started',
-    ctaUrl: row.ctaUrl,
-    ctaFormSlug: row.ctaForm?.isActive ? row.ctaForm.slug : null,
-    imageUrl: row.image?.url ?? null,
-    imageAlt: row.image?.altText ?? row.name,
-    galleryIds: toStringArray(row.galleryIds),
-    categoryName: row.category?.name ?? null,
-    categorySlug: row.category?.slug ?? null,
-    brandName: row.brand?.name ?? null,
-    brandSlug: row.brand?.slug ?? null,
+    features: toStringArray(product.features),
+    benefits: toStringArray(product.benefits),
+    specs: toSpecs(product.specs),
+    ctaLabel: pick(row.ctaLabel, product.ctaLabel) || 'Get Started',
+    ctaUrl: pick(row.ctaUrl, product.ctaUrl),
+    ctaFormSlug: ctaForm?.slug ?? null,
+    imageUrl: product.image?.url ?? null,
+    imageAlt: product.image?.altText ?? product.name,
+    galleryIds: toStringArray(product.galleryIds),
+    categoryName: product.category?.name ?? null,
+    categorySlug: product.category?.slug ?? null,
+    brandName: product.brand?.name ?? null,
+    brandSlug: product.brand?.slug ?? null,
   };
 }
 
@@ -121,11 +175,12 @@ export function toPublicProduct(row: ProductRow): PublicProduct {
  * Evaluated per call so `new Date()` reflects the current request rather than
  * the moment the module was first imported.
  */
-export function publishedProductWhere(): Prisma.ProductWhereInput {
+export function publishedProductWhere(countryId: string): Prisma.ProductCountryWhereInput {
   return {
+    countryId,
     status: 'PUBLISHED',
-    deletedAt: null,
     OR: [{ publishedAt: null }, { publishedAt: { lte: new Date() } }],
+    product: { deletedAt: null },
   };
 }
 
@@ -142,52 +197,133 @@ export type ProductSelection = {
 /**
  * Resolves the product-source configuration shared by every product block.
  *
- * Ordering is always explicit and admin-controlled:
+ * Ordering is always explicit and admin-controlled, and it is now the market's
+ * ordering: a plan can lead the UAE catalogue and sit third in India's.
  *  - hand-picked keeps the order the admin dragged them into;
- *  - featured uses the dedicated featured order;
- *  - everything else uses the catalogue sort order, never creation date.
+ *  - featured uses the market's featured order;
+ *  - everything else uses the market's catalogue sort order, never creation date.
  */
 export const selectProducts = cache(
-  async (selection: ProductSelection): Promise<PublicProduct[]> => {
+  async (country: CountryContext, selection: ProductSelection): Promise<PublicProduct[]> => {
     const take = Math.min(Math.max(selection.limit ?? 3, 1), 24);
+    const base = publishedProductWhere(country.id);
 
     if (selection.source === 'selected') {
       const ids = selection.productIds ?? [];
       if (ids.length === 0) return [];
-      const rows = await prisma.product.findMany({
-        where: { ...publishedProductWhere(), id: { in: ids } },
-        select: productSelect,
+      const rows = await prisma.productCountry.findMany({
+        where: { ...base, productId: { in: ids } },
+        select: countrySelect,
       });
       // Preserve the admin's hand-picked order.
-      const byId = new Map(rows.map((r) => [r.id, r]));
+      const byId = new Map(rows.map((r) => [r.product.id, r]));
       return ids
         .map((id) => byId.get(id))
-        .filter((r): r is ProductRow => Boolean(r))
+        .filter((r): r is ProductCountryRow => Boolean(r))
         .slice(0, take)
-        .map(toPublicProduct);
+        .map((row) => toPublicProduct(row, country));
     }
 
-    const where: Prisma.ProductWhereInput = { ...publishedProductWhere() };
+    const where: Prisma.ProductCountryWhereInput = { ...base };
     if (selection.source === 'featured') where.isFeatured = true;
-    if (selection.source === 'category' && selection.categoryId) where.categoryId = selection.categoryId;
-    if (selection.source === 'brand' && selection.brandId) where.brandId = selection.brandId;
+    if (selection.source === 'category' && selection.categoryId) {
+      where.product = { deletedAt: null, categoryId: selection.categoryId };
+    }
+    if (selection.source === 'brand' && selection.brandId) {
+      where.product = { deletedAt: null, brandId: selection.brandId };
+    }
 
-    const orderBy: Prisma.ProductOrderByWithRelationInput[] =
+    const orderBy: Prisma.ProductCountryOrderByWithRelationInput[] =
       selection.source === 'latest'
         ? [{ publishedAt: 'desc' }, { createdAt: 'desc' }]
         : selection.source === 'featured'
-          ? [{ featuredOrder: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
-          : [{ sortOrder: 'asc' }, { name: 'asc' }];
+          ? [{ featuredOrder: 'asc' }, { sortOrder: 'asc' }, { product: { name: 'asc' } }]
+          : [{ sortOrder: 'asc' }, { product: { name: 'asc' } }];
 
-    const rows = await prisma.product.findMany({ where, orderBy, take, select: productSelect });
-    return rows.map(toPublicProduct);
+    const rows = await prisma.productCountry.findMany({
+      where,
+      orderBy,
+      take,
+      select: countrySelect,
+    });
+    return rows.map((row) => toPublicProduct(row, country));
   },
 );
 
-export const getPublicProduct = cache(async (slug: string): Promise<PublicProduct | null> => {
-  const row = await prisma.product.findFirst({
-    where: { ...publishedProductWhere(), slug },
-    select: productSelect,
+export const getPublicProduct = cache(
+  async (country: CountryContext, slug: string): Promise<PublicProduct | null> => {
+    const row = await prisma.productCountry.findFirst({
+      where: { ...publishedProductWhere(country.id), product: { deletedAt: null, slug } },
+      select: countrySelect,
+    });
+    return row ? toPublicProduct(row, country) : null;
+  },
+);
+
+/** The market-level SEO record for a product page, without loading the product. */
+export const getProductSeo = cache(async (countryId: string, slug: string) => {
+  return prisma.productCountry.findFirst({
+    where: { ...publishedProductWhere(countryId), product: { deletedAt: null, slug } },
+    select: {
+      seoTitle: true,
+      seoDescription: true,
+      canonicalUrl: true,
+      noIndex: true,
+      ogImage: { select: { url: true } },
+      product: {
+        select: {
+          name: true,
+          seoTitle: true,
+          seoDescription: true,
+          shortDescription: true,
+          canonicalUrl: true,
+          noIndex: true,
+          ogImage: { select: { url: true } },
+          image: { select: { url: true } },
+        },
+      },
+    },
   });
-  return row ? toPublicProduct(row) : null;
 });
+
+/** Markets in which a product is published — for hreflang and the market switcher. */
+export const findLiveProductCountries = cache(async (slug: string): Promise<string[]> => {
+  const rows = await prisma.productCountry.findMany({
+    where: {
+      status: 'PUBLISHED',
+      OR: [{ publishedAt: null }, { publishedAt: { lte: new Date() } }],
+      product: { deletedAt: null, slug },
+    },
+    select: { countryId: true },
+  });
+  return rows.map((row) => row.countryId);
+});
+
+/** Variant pricing for a market, falling back to the variant's global price. */
+export const getVariantPricing = cache(
+  async (productId: string, countryId: string) => {
+    const variants = await prisma.productVariant.findMany({
+      where: { productId },
+      orderBy: { sortOrder: 'asc' },
+      include: { countries: { where: { countryId } } },
+    });
+
+    return variants
+      .map((variant) => {
+        const local = variant.countries[0] ?? null;
+        return {
+          id: variant.id,
+          name: variant.name,
+          sku: variant.sku,
+          storage: variant.storage,
+          users: variant.users,
+          isDefault: variant.isDefault,
+          isAvailable: local ? local.isAvailable : true,
+          currency: local?.currency ?? null,
+          monthlyPrice: decimalToString(local?.monthlyPrice ?? variant.monthlyPrice),
+          annualPrice: decimalToString(local?.annualPrice ?? variant.annualPrice),
+        };
+      })
+      .filter((variant) => variant.isAvailable);
+  },
+);

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { DatabaseBackup, Mail, Palette } from 'lucide-react';
+import { DatabaseBackup, Mail, Palette, Globe } from 'lucide-react';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { getWebsiteSettings } from '@/lib/services/settings';
 import { AdminPageHeader } from '@/components/admin/page-header';
@@ -33,6 +33,10 @@ export default async function SettingsAdmin() {
         crumbs={[{ label: 'Settings' }]}
         actions={
           <>
+            <Link href="/admin/settings/countries" className={buttonClasses('outline', 'md')}>
+              <Globe className="h-4 w-4" aria-hidden="true" />
+              Countries
+            </Link>
             <Link href="/admin/settings/design" className={buttonClasses('outline', 'md')}>
               <Palette className="h-4 w-4" aria-hidden="true" />
               Website design

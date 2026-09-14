@@ -13,6 +13,7 @@ import {
 import { PipelineBoard, type PipelineCard } from '@/components/admin/leads/pipeline-board';
 import { Alert } from '@/components/ui/states';
 import { decimalToString } from '@/lib/utils/money';
+import { resolveListCountry, countryFilterDefinition } from '@/lib/admin/country-filter';
 import type { Prisma } from '@prisma/client';
 
 export const metadata: Metadata = { title: 'Pipeline' };
@@ -28,6 +29,7 @@ export default async function PipelinePage({
     assignedTo?: string;
     productId?: string;
     source?: string;
+    country?: string;
     from?: string;
     to?: string;
   }>;
@@ -35,9 +37,13 @@ export default async function PipelinePage({
   const user = await requirePermission('leads.view');
   const params = await searchParams;
 
+  // The board follows the market chosen in the topbar, so a market's sales team
+  // works their own pipeline rather than a merged one.
+  const country = await resolveListCountry(user, params.country);
+
   // Spam never appears on the board.
   const where: Prisma.LeadWhereInput = {
-    ...buildLeadWhere(params),
+    ...buildLeadWhere({ ...params, countryId: country.countryId ?? undefined }),
     status: { notIn: ['SPAM'] },
   };
 
@@ -86,6 +92,7 @@ export default async function PipelinePage({
   }));
 
   const definitions: FilterDefinition[] = [
+    ...countryFilterDefinition(country),
     {
       name: 'assignedTo',
       label: 'Owner',

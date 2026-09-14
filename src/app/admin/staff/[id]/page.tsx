@@ -6,6 +6,8 @@ import { AdminPageHeader } from '@/components/admin/page-header';
 import { StaffForm, type StaffFormValues } from '@/components/admin/staff/staff-form';
 import { formatDate } from '@/lib/utils/format';
 import { StaffSecurityCard } from '@/components/admin/staff/staff-security-card';
+import { StaffCountriesCard } from '@/components/admin/staff/staff-countries-card';
+import { listCountries } from '@/lib/country/registry';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +25,15 @@ export default async function EditStaff({ params }: { params: Promise<{ id: stri
   const user = await requirePermission('staff.manage');
   const { id } = await params;
 
-  const [member, actorRole] = await Promise.all([
-    prisma.user.findFirst({ where: { id, deletedAt: null }, include: { roles: true } }),
+  const [member, actorRole, countries] = await Promise.all([
+    prisma.user.findFirst({
+      where: { id, deletedAt: null },
+      include: { roles: true, countries: { select: { countryId: true } } },
+    }),
     user.role
       ? prisma.userRole.findUnique({ where: { slug: user.role }, select: { rank: true } })
       : null,
+    listCountries(),
   ]);
   if (!member) notFound();
 
@@ -65,6 +71,19 @@ export default async function EditStaff({ params }: { params: Promise<{ id: stri
         crumbs={[{ label: 'Staff', href: '/admin/staff' }, { label: member.name }]}
       />
       <StaffForm initial={initial} roles={roles} mode="edit" isSelf={member.id === user.id} />
+
+      <StaffCountriesCard
+        userId={member.id}
+        countries={countries.map((country) => ({
+          id: country.id,
+          name: country.name,
+          code: country.code,
+          isActive: country.isActive,
+        }))}
+        selected={member.countries.map((row) => row.countryId)}
+        isSuperAdmin={member.roles.slug === 'super-admin'}
+        canEdit={userCan(user, 'staff.manage')}
+      />
 
       <StaffSecurityCard
         member={{

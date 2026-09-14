@@ -8,6 +8,68 @@ import { collectSeedProblems } from '../src/lib/env-validation';
 
 const prisma = new PrismaClient();
 
+/**
+ * The markets the platform ships with.
+ *
+ * India is the root market and keeps the empty slug, which is what serves it
+ * from `/` and leaves every original URL untouched. The ids match the ones the
+ * multi-country migration inserts, so a seeded database and a migrated one end
+ * up with the same rows rather than two near-duplicates.
+ *
+ * Adding a market later needs no code: this list exists so a brand new database
+ * has somewhere to put content, not as the source of truth.
+ */
+const COUNTRIES = [
+  {
+    id: 'country_in',
+    name: 'India',
+    code: 'IN',
+    slug: '',
+    locale: 'en-IN',
+    currency: 'INR',
+    currencySymbol: '₹',
+    phoneCode: '+91',
+    timezone: 'Asia/Kolkata',
+    isDefault: true,
+    sortOrder: 0,
+  },
+  {
+    id: 'country_ae',
+    name: 'United Arab Emirates',
+    code: 'AE',
+    slug: 'ae',
+    locale: 'en-AE',
+    currency: 'AED',
+    currencySymbol: 'AED',
+    phoneCode: '+971',
+    timezone: 'Asia/Dubai',
+    isDefault: false,
+    sortOrder: 1,
+  },
+];
+
+async function seedCountries() {
+  for (const country of COUNTRIES) {
+    await prisma.country.upsert({
+      where: { code: country.code },
+      // An existing market is never renamed, re-slugged or reactivated: an
+      // operator may have changed any of it deliberately.
+      update: {},
+      create: { ...country, isActive: true },
+    });
+  }
+  console.log(`  countries: ${COUNTRIES.map((c) => c.code).join(', ')}`);
+}
+
+/** The root market, which every piece of seeded demo content belongs to. */
+async function defaultCountryId(): Promise<string> {
+  const row =
+    (await prisma.country.findFirst({ where: { isDefault: true } })) ??
+    (await prisma.country.findFirst({ orderBy: { sortOrder: 'asc' } }));
+  if (!row) throw new Error('No country configured — run seedCountries first.');
+  return row.id;
+}
+
 async function seedPermissions() {
   for (const [key, meta] of Object.entries(PERMISSIONS)) {
     await prisma.permission.upsert({
@@ -362,6 +424,42 @@ async function seedProducts() {
       },
     });
   }
+
+  /*
+   * Every product is put on sale in the root market at the price on the master
+   * record. Other markets deliberately get nothing: a plan is not for sale in a
+   * market until somebody prices it there, which is safer than inventing a
+   * price or showing another market's currency.
+   */
+  const countryId = await defaultCountryId();
+  for (const p of PRODUCTS) {
+    const product = await prisma.product.findUnique({ where: { slug: p.slug } });
+    if (!product) continue;
+    await prisma.productCountry.upsert({
+      where: { productId_countryId: { productId: product.id, countryId } },
+      update: {},
+      create: {
+        productId: product.id,
+        countryId,
+        status: 'PUBLISHED',
+        publishedAt: new Date(),
+        isFeatured: p.isFeatured,
+        sortOrder: p.sortOrder,
+        featuredOrder: p.sortOrder,
+        currency: 'INR',
+        monthlyPrice: p.monthlyPrice ? new Prisma.Decimal(p.monthlyPrice) : null,
+        annualPrice: p.annualPrice ? new Prisma.Decimal(p.annualPrice) : null,
+        compareAtPrice: p.compareAtPrice ? new Prisma.Decimal(p.compareAtPrice) : null,
+        discountPercent: p.discountPercent ?? null,
+        priceSuffix: 'per user / month',
+        priceNote: p.priceNote ?? null,
+        ctaLabel: p.ctaLabel ?? 'Get Started',
+        seoTitle: `${p.name} — pricing and features`,
+        seoDescription: p.shortDescription,
+      },
+    });
+  }
+
   console.log(`  products: ${PRODUCTS.length}`);
 }
 
@@ -459,11 +557,16 @@ async function seedPages() {
     { slug: 'about', title: 'About', isHomepage: false, sections: demoAbout, seoTitle: 'About us' },
   ];
 
+  const countryId = await defaultCountryId();
+
   for (const page of pages) {
-    const existing = await prisma.page.findUnique({ where: { slug: page.slug } });
+    const existing = await prisma.page.findUnique({
+      where: { countryId_slug: { countryId, slug: page.slug } },
+    });
     if (existing) continue;
     await prisma.page.create({
       data: {
+        countryId,
         slug: page.slug,
         title: page.title,
         isHomepage: page.isHomepage,
@@ -534,6 +637,7 @@ const POSTS = [
 
 async function seedBlog() {
   const admin = await prisma.user.findFirst({ where: { roles: { slug: 'super-admin' } } });
+  const countryId = await defaultCountryId();
 
   for (const post of POSTS) {
     const category = await prisma.blogCategory.upsert({
@@ -542,12 +646,15 @@ async function seedBlog() {
       create: { name: post.category, slug: post.category.toLowerCase().replace(/\s+/g, '-') },
     });
 
-    const existing = await prisma.blogPost.findUnique({ where: { slug: post.slug } });
+    const existing = await prisma.blogPost.findUnique({
+      where: { countryId_slug: { countryId, slug: post.slug } },
+    });
     if (existing) continue;
 
     const words = post.content.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length;
     const created = await prisma.blogPost.create({
       data: {
+        countryId,
         title: post.title,
         slug: post.slug,
         status: 'PUBLISHED',
@@ -580,26 +687,18 @@ async function seedBlog() {
 }
 
 async function seedNavigation() {
-  const header = await prisma.navigation.upsert({
-    where: { slug: 'main-menu' },
-    update: {},
-    create: { slug: 'main-menu', name: 'Main menu', location: 'HEADER' },
-  });
-  const footer = await prisma.navigation.upsert({
-    where: { slug: 'footer-company' },
-    update: {},
-    create: { slug: 'footer-company', name: 'Company', location: 'FOOTER' },
-  });
-  const footerResources = await prisma.navigation.upsert({
-    where: { slug: 'footer-resources' },
-    update: {},
-    create: { slug: 'footer-resources', name: 'Resources', location: 'FOOTER' },
-  });
-  const legal = await prisma.navigation.upsert({
-    where: { slug: 'legal' },
-    update: {},
-    create: { slug: 'legal', name: 'Legal', location: 'LEGAL' },
-  });
+  const countryId = await defaultCountryId();
+  const menu = (slug: string, name: string, location: 'HEADER' | 'FOOTER' | 'LEGAL') =>
+    prisma.navigation.upsert({
+      where: { countryId_slug: { countryId, slug } },
+      update: {},
+      create: { countryId, slug, name, location },
+    });
+
+  const header = await menu('main-menu', 'Main menu', 'HEADER');
+  const footer = await menu('footer-company', 'Company', 'FOOTER');
+  const footerResources = await menu('footer-resources', 'Resources', 'FOOTER');
+  const legal = await menu('legal', 'Legal', 'LEGAL');
 
   const existing = await prisma.navigationItem.count({ where: { navigationId: header.id } });
   if (existing > 0) {
@@ -671,12 +770,15 @@ async function seedLeads() {
     { name: 'Sam Ortiz', email: 'sam@driftworks.example', company: 'Driftworks', status: 'NEW' as const, source: 'Product CTA', utmSource: 'google', utmMedium: 'cpc', utmCampaign: 'dropbox-business-in', days: 1 },
   ];
 
+  const leadCountryId = await defaultCountryId();
+
   let index = 0;
   for (const s of samples) {
     const product = products[index % products.length];
     const createdAt = new Date(Date.now() - s.days * 86_400_000);
     const lead = await prisma.lead.create({
       data: {
+        countryId: leadCountryId,
         name: s.name,
         email: s.email,
         phone: '+91 98765 4321' + index,
@@ -756,6 +858,8 @@ async function seedCustomers() {
 
 async function main() {
   console.log('Seeding database…');
+  // Markets come first: pages, articles, menus and leads all belong to one.
+  await seedCountries();
   await seedPermissions();
   await seedRoles();
   await seedAdmin();

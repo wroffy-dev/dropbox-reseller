@@ -2,6 +2,8 @@ import * as React from 'react';
 import { parseBlockContent } from '@/lib/cms/blocks';
 import { parseSectionDesign, buildSectionStyles } from '@/lib/cms/design';
 import type { BlogRenderContext } from '@/lib/cms/blog-render';
+import type { CountryContext } from '@/lib/country/types';
+import { localiseContent } from '@/lib/country/routing';
 import type {
   WidgetPostListContent,
   WidgetSearchContent,
@@ -49,9 +51,12 @@ async function WidgetBody({
   ctx,
 }: {
   section: RenderableSection;
-  ctx: { blog?: BlogRenderContext };
+  ctx: { country: CountryContext; blog?: BlogRenderContext };
 }) {
-  const { blockType, content } = section;
+  const { blockType } = section;
+  // Internal links stored in a widget's payload resolve inside the market being
+  // rendered, the same way a page section's do.
+  const content = localiseContent(section.content, ctx.country);
   const parse = <T,>() => parseBlockContent<T>(blockType, content);
   const id = `widget-${section.id}`;
 
@@ -125,7 +130,7 @@ export async function BlogSidebar({
               className={`cms-slot ${styles.className}`}
               style={styles.style as React.CSSProperties}
             >
-              <WidgetBody section={widget} ctx={{ blog }} />
+              <WidgetBody section={widget} ctx={{ country: blog.country, blog }} />
             </div>
           </React.Fragment>
         );

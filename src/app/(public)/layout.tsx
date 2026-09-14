@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { prisma } from "@/lib/db/prisma";
 import { getPublishedPage } from "@/lib/services/pages";
-import { getSeoSettings, getWebsiteSettings } from "@/lib/services/settings";
+import { getWebsiteSettings } from "@/lib/services/settings";
 import {
   getNavigations,
   getPrimaryNavigation,
@@ -13,6 +13,11 @@ import { PopupHost } from "@/components/public/popup-host";
 import { JsonLd } from "@/components/seo/json-ld";
 import { organizationSchema, websiteSchema } from "@/lib/seo/structured-data";
 import { getCurrentUser } from "@/lib/auth/guards";
+import { resolveCountryPath } from "@/lib/country/registry";
+import { getCountrySettings } from "@/lib/country/settings";
+import { resolveMarketOptions } from "@/lib/country/switch";
+import { countryPath, contentSlug, countryHref } from "@/lib/country/routing";
+import type { CountryContext } from "@/lib/country/types";
 
 export default async function PublicLayout({
   children,
@@ -22,29 +27,43 @@ export default async function PublicLayout({
   const headerList = await headers();
   const pathname = headerList.get("x-pathname") ?? "/";
 
+  /*
+   * The market owns the request from here down: navigation, contact details,
+   * popups and structured data are all resolved for it. Resolution is one
+   * request-cached lookup shared with the page below, so a market-aware layout
+   * costs no extra query.
+   */
+  const { country, path } = await resolveCountryPath(pathname);
+
   // A CMS page can opt out of the site header or footer. Other public routes
   // (blog, products) always show both. getPublishedPage is request-cached, so
   // this adds no extra query for the page route itself.
-  const chrome = await resolveChrome(pathname);
+  const chrome = await resolveChrome(country, path);
 
-  const [site, seo, nav, footerMenus, legalMenus, popups] = await Promise.all([
+  const [site, local, nav, footerMenus, legalMenus, markets, popups] = await Promise.all([
     getWebsiteSettings(),
-    getSeoSettings(),
-    getPrimaryNavigation(),
-    getNavigations("FOOTER"),
-    getNavigations("LEGAL"),
+    getCountrySettings(country),
+    getPrimaryNavigation(country),
+    getNavigations(country, "FOOTER"),
+    getNavigations(country, "LEGAL"),
+    resolveMarketOptions(country, path),
     prisma.popup.findMany({
       where: {
         isActive: true,
         deletedAt: null,
-        OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }],
-        AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: new Date() } }] }],
+        // A popup with no market is shown everywhere; one bound to a market is
+        // shown only in that storefront.
+        OR: [{ countryId: null }, { countryId: country.id }],
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }] },
+          { OR: [{ endsAt: null }, { endsAt: { gte: new Date() } }] },
+        ],
       },
       include: {
         image: { select: { url: true, altText: true } },
         form: { select: { slug: true } },
         leadMagnet: { select: { slug: true, title: true } },
-        pageTargets: { select: { page: { select: { slug: true } } } },
+        pageTargets: { select: { page: { select: { slug: true, countryId: true } } } },
       },
     }),
   ]);
@@ -67,16 +86,21 @@ export default async function PublicLayout({
       {chrome.showHeader ? (
         <SiteHeader
           nav={nav}
+          markets={markets}
           brand={{
             siteName: site.siteName,
             logoUrl: site.logoUrl,
-            ctaLabel: site.headerCtaLabel,
-            ctaUrl: site.headerCtaUrl,
+            homeUrl: countryPath(country),
+            ctaLabel: local.headerCtaLabel,
+            ctaUrl: countryHref(country, local.headerCtaUrl),
             secondaryCtaLabel: site.headerSecondaryCtaLabel,
-            secondaryCtaUrl: site.headerSecondaryCtaUrl,
+            secondaryCtaUrl: countryHref(country, site.headerSecondaryCtaUrl),
             announcement:
               site.announcementEnabled && site.announcementText
-                ? { text: site.announcementText, url: site.announcementUrl }
+                ? {
+                    text: site.announcementText,
+                    url: countryHref(country, site.announcementUrl),
+                  }
                 : null,
           }}
         />
@@ -87,11 +111,14 @@ export default async function PublicLayout({
       {chrome.showFooter ? (
         <SiteFooter
           settings={site}
+          local={local}
+          homeUrl={countryPath(country)}
           columns={footerMenus}
           legal={legalMenus[0]?.items ?? []}
         />
       ) : null}
       <PopupHost
+        basePath={countryPath(country)}
         popups={popups.map((p) => ({
           id: p.id,
           type: p.type,
@@ -102,7 +129,7 @@ export default async function PublicLayout({
           formSlug: p.form?.slug ?? null,
           leadMagnetSlug: p.leadMagnet?.slug ?? null,
           ctaLabel: p.ctaLabel,
-          ctaUrl: p.ctaUrl,
+          ctaUrl: countryHref(country, p.ctaUrl),
           trigger: p.trigger,
           delaySeconds: p.delaySeconds,
           scrollPercent: p.scrollPercent,
@@ -111,24 +138,29 @@ export default async function PublicLayout({
           urlPatterns: Array.isArray(p.urlPatterns)
             ? (p.urlPatterns as string[])
             : [],
-          pageSlugs: p.pageTargets.map((t) => t.page.slug),
+          // Page targets only count when the page belongs to this market, so a
+          // popup pinned to India's pricing page never fires on the UAE one.
+          pageSlugs: p.pageTargets
+            .filter((t) => t.page.countryId === country.id)
+            .map((t) => t.page.slug),
         }))}
       />
-      <JsonLd data={[organizationSchema(seo, site), websiteSchema(site)]} />
+      <JsonLd data={[organizationSchema(country, local, site), websiteSchema(country, site)]} />
     </>
   );
 }
 
 /** CMS pages may hide the header or footer; every other route keeps both. */
 async function resolveChrome(
-  pathname: string,
+  country: CountryContext,
+  path: string,
 ): Promise<{ showHeader: boolean; showFooter: boolean }> {
-  const slug = pathname.replace(/^\/+|\/+$/g, "");
-  if (slug.startsWith("blog") || slug.startsWith("products")) {
+  const slug = contentSlug(path);
+  if (slug === "blog" || slug.startsWith("blog/") || slug.startsWith("products/")) {
     return { showHeader: true, showFooter: true };
   }
   try {
-    const page = await getPublishedPage(slug);
+    const page = await getPublishedPage(country.id, slug);
     if (!page) return { showHeader: true, showFooter: true };
     return { showHeader: page.showHeader, showFooter: page.showFooter };
   } catch {

@@ -19,6 +19,9 @@ import { toDecimal } from '@/lib/utils/money';
 import { sanitizeText } from '@/lib/utils/sanitize';
 import { LEAD_STATUS_LABELS } from '@/lib/crm/constants';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
+import { resolveActionCountry } from '@/lib/country/admin';
+import { listAccessibleCountries } from '@/lib/country/access';
+import type { Prisma } from '@prisma/client';
 
 function revalidateCrm(leadId?: string) {
   revalidatePath('/admin/leads');
@@ -32,8 +35,13 @@ export async function createLead(formData: FormData): Promise<ActionResult<{ id:
     const user = await authorize('leads.create');
     const input = leadInputSchema.parse(Object.fromEntries(formData.entries()));
 
+    // A manually added lead belongs to the market the admin is working in
+    // unless the form names another they have access to.
+    const country = await resolveActionCountry(user, formData.get('countryId')?.toString() || null);
+
     const lead = await prisma.lead.create({
       data: {
+        countryId: country.id,
         name: sanitizeText(input.name),
         email: input.email.toLowerCase(),
         phone: input.phone,
@@ -394,7 +402,22 @@ export async function exportLeads(filters: LeadFilters): Promise<ActionResult<{ 
   try {
     const user = await authorize('leads.export');
 
-    const where = buildLeadWhere(filters);
+    /*
+     * The export mirrors whatever the screen was showing, market included, and
+     * is then narrowed to the markets this user may see — so an export can
+     * never hand someone rows from a storefront they cannot open.
+     */
+    const allowed = await listAccessibleCountries(user);
+    const allowedIds = allowed.map((country) => country.id);
+    const requested = filters.countryId && allowedIds.includes(filters.countryId)
+      ? filters.countryId
+      : null;
+
+    const where: Prisma.LeadWhereInput = {
+      ...buildLeadWhere({ ...filters, countryId: requested ?? undefined }),
+      ...(requested ? {} : { countryId: { in: allowedIds } }),
+    };
+
     const leads = await prisma.lead.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -403,11 +426,12 @@ export async function exportLeads(filters: LeadFilters): Promise<ActionResult<{ 
         product: { select: { name: true } },
         assignedTo: { select: { name: true } },
         form: { select: { name: true } },
+        country: { select: { code: true } },
       },
     });
 
     const header = [
-      'reference', 'created_at', 'name', 'email', 'phone', 'company', 'job_title',
+      'reference', 'created_at', 'country', 'name', 'email', 'phone', 'company', 'job_title',
       'status', 'priority', 'value', 'source', 'campaign', 'product', 'form',
       'assigned_to', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term',
       'utm_content', 'first_utm_source', 'first_utm_campaign', 'landing_url',
@@ -417,6 +441,7 @@ export async function exportLeads(filters: LeadFilters): Promise<ActionResult<{ 
     const rows = leads.map((lead) => [
       String(lead.reference),
       lead.createdAt.toISOString(),
+      lead.country.code,
       lead.name,
       lead.email,
       lead.phone ?? '',

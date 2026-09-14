@@ -24,13 +24,18 @@ import {
   type FilterDefinition,
   type FilterPreset,
 } from '@/lib/admin/filters';
+import {
+  resolveListCountry,
+  countryFilterDefinition,
+  ALL_COUNTRIES,
+} from '@/lib/admin/country-filter';
 
 export const metadata: Metadata = { title: 'Leads' };
 export const dynamic = 'force-dynamic';
 
 const PER_PAGE = 25;
 
-type SearchParams = LeadFilters & { page?: string };
+type SearchParams = LeadFilters & { page?: string; country?: string };
 
 /** Most-used landing URLs, so the CRM dashboard's drill-down has a chip to show. */
 async function landingUrlOptions() {
@@ -79,7 +84,15 @@ export default async function LeadsAdmin({
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
 
-  const where = buildLeadWhere(params);
+  /*
+   * Leads carry the storefront that generated them. The dashboard opens on the
+   * market chosen in the topbar so a market's sales team sees their own
+   * pipeline, and "All countries" is one click away for whoever runs both.
+   */
+  const country = await resolveListCountry(user, params.country);
+
+  const countryScope = country.countryId ? { countryId: country.countryId } : {};
+  const where = buildLeadWhere({ ...params, countryId: country.countryId ?? undefined });
   const orderBy = buildLeadOrderBy(params);
 
   const endOfToday = new Date();
@@ -125,6 +138,7 @@ export default async function LeadsAdmin({
         product: { select: { name: true } },
         form: { select: { name: true } },
         assignedTo: { select: { name: true } },
+        country: { select: { name: true } },
       },
     }),
     prisma.lead.count({ where }),
@@ -155,14 +169,17 @@ export default async function LeadsAdmin({
     attributionOptions('utmContent'),
     attributionOptions('source'),
     landingUrlOptions(),
+    // The summary tiles count the same market the list is showing, so the
+    // numbers above the table and the rows inside it always agree.
     prisma.lead.groupBy({
       by: ['status'],
-      where: { deletedAt: null },
+      where: { deletedAt: null, ...countryScope },
       _count: { _all: true },
     }),
     prisma.lead.count({
       where: {
         deletedAt: null,
+        ...countryScope,
         assignedToId: null,
         status: { notIn: ['WON', 'LOST', 'SPAM'] },
       },
@@ -170,11 +187,18 @@ export default async function LeadsAdmin({
     prisma.lead.count({
       where: {
         deletedAt: null,
+        ...countryScope,
         followUpAt: { lte: endOfToday },
         status: { notIn: ['WON', 'LOST', 'SPAM'] },
       },
     }),
   ]);
+
+  /** Keeps the current market on a summary-tile link. */
+  const countryQuery = (query: string) => {
+    const parts = [query, country.multiCountry ? `country=${country.value}` : ''].filter(Boolean);
+    return parts.length > 0 ? `?${parts.join('&')}` : '';
+  };
 
   const counts = Object.fromEntries(statusCounts.map((row) => [row.status, row._count._all]));
   const totalLeads = statusCounts.reduce((sum, row) => sum + row._count._all, 0);
@@ -193,6 +217,7 @@ export default async function LeadsAdmin({
     email: row.email,
     phone: row.phone,
     company: row.company,
+    countryName: row.country.name,
     status: row.status,
     source: row.source,
     utmSource: row.utmSource,
@@ -209,6 +234,7 @@ export default async function LeadsAdmin({
   // Primary filters sit in the bar; the rest live behind "More filters" so the
   // screen stays readable while every attribution field stays reachable.
   const definitions: FilterDefinition[] = [
+    ...countryFilterDefinition(country),
     {
       name: 'status',
       label: 'Status',
@@ -335,7 +361,11 @@ export default async function LeadsAdmin({
     <>
       <AdminPageHeader
         title="Leads"
-        description="Every enquiry captured from the website, with the product, page and campaign it came from."
+        description={
+          country.multiCountry
+            ? `Every enquiry captured from the website, with the product, page and campaign it came from. Showing ${country.countryId ? country.current.name : 'all countries'}.`
+            : 'Every enquiry captured from the website, with the product, page and campaign it came from.'
+        }
         actions={
           userCan(user, 'leads.create') ? (
             <ButtonLink href="/admin/leads/new">
@@ -347,36 +377,36 @@ export default async function LeadsAdmin({
       />
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-        <StatCard label="Total" value={totalLeads} href="/admin/leads" />
-        <StatCard label="New" value={counts.NEW ?? 0} tone="brand" href="/admin/leads?status=NEW" />
+        <StatCard label="Total" value={totalLeads} href={`/admin/leads${countryQuery('')}`} />
+        <StatCard label="New" value={counts.NEW ?? 0} tone="brand" href={`/admin/leads${countryQuery('status=NEW')}`} />
         <StatCard
           label="Contacted"
           value={counts.CONTACTED ?? 0}
-          href="/admin/leads?status=CONTACTED"
+          href={`/admin/leads${countryQuery('status=CONTACTED')}`}
         />
         <StatCard
           label="Qualified"
           value={counts.QUALIFIED ?? 0}
-          href="/admin/leads?status=QUALIFIED"
+          href={`/admin/leads${countryQuery('status=QUALIFIED')}`}
         />
         <StatCard
           label="Won"
           value={counts.WON ?? 0}
           tone="success"
-          href="/admin/leads?status=WON"
+          href={`/admin/leads${countryQuery('status=WON')}`}
         />
         <StatCard
           label="Lost"
           value={counts.LOST ?? 0}
           tone="danger"
-          href="/admin/leads?status=LOST"
+          href={`/admin/leads${countryQuery('status=LOST')}`}
         />
         <StatCard
           label="Unassigned"
           value={unassignedCount}
           tone={unassignedCount > 0 ? 'warning' : 'default'}
           hint={followUpCount > 0 ? `${followUpCount} follow-ups due` : undefined}
-          href="/admin/leads?assignedTo=unassigned"
+          href={`/admin/leads${countryQuery('assignedTo=unassigned')}`}
         />
       </div>
 
@@ -393,6 +423,7 @@ export default async function LeadsAdmin({
           staff={staff}
           filters={params}
           total={total}
+          showCountry={country.multiCountry}
           filtered={Object.entries(params).some(
             ([key, value]) => Boolean(value) && key !== 'page' && key !== 'sort' && key !== 'dir',
           )}

@@ -24,7 +24,7 @@ export function ProductCta({
   label,
   ctaLocation = 'product',
 }: {
-  product: Pick<PublicProduct, 'id' | 'name' | 'slug' | 'ctaLabel' | 'ctaUrl' | 'ctaFormSlug'>;
+  product: Pick<PublicProduct, 'id' | 'name' | 'slug' | 'href' | 'ctaLabel' | 'ctaUrl' | 'ctaFormSlug'>;
   variant?: ButtonVariant;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
@@ -50,7 +50,7 @@ export function ProductCta({
   if (!product.ctaFormSlug) {
     // No form and no URL configured — send the visitor to the product page.
     return (
-      <Link href={`/products/${product.slug}`} className={buttonClasses(variant, size, className)}>
+      <Link href={product.href} className={buttonClasses(variant, size, className)}>
         {ctaLabel}
       </Link>
     );

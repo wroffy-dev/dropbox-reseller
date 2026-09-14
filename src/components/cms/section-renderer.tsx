@@ -53,6 +53,9 @@ import type {
   ArticlePrevNextContent,
 } from '@/lib/cms/blog-blocks';
 import type { BlogRenderContext } from '@/lib/cms/blog-render';
+import { localiseContent } from '@/lib/country/routing';
+import { getRequestCountry } from '@/lib/country/request';
+import type { CountryContext } from '@/lib/country/types';
 
 import type { BlockContext } from './blocks/shared';
 import { HeroBlock } from './blocks/hero-block';
@@ -125,7 +128,15 @@ export type RenderableSection = {
  * Unknown block types render nothing rather than breaking the page.
  */
 async function BlockBody({ section, ctx }: { section: RenderableSection; ctx: BlockContext }) {
-  const { blockType, content } = section;
+  const { blockType } = section;
+  /*
+   * Internal links inside stored block content are rewritten into the market
+   * being rendered, once, here — so no block component has to know about
+   * markets to link correctly. For the root market this is the identity
+   * function and the payload is not walked at all, which is why the original
+   * single-country rendering is bit-for-bit unchanged.
+   */
+  const content = localiseContent(section.content, ctx.country);
   const parse = <T,>() => parseBlockContent<T>(blockType, content);
 
   switch (blockType) {
@@ -241,12 +252,15 @@ export async function SectionRenderer({
   anchorId,
   design: providedDesign,
   blog,
+  country: providedCountry,
   container = true,
 }: {
   section: RenderableSection;
   isFirst?: boolean;
   anchorId?: string;
   design?: SectionDesign;
+  /** The market to render for. Resolved from the request when not supplied. */
+  country?: CountryContext;
   /** Blog surfaces pass their resolved context down to every block. */
   blog?: BlogRenderContext;
   /**
@@ -256,6 +270,7 @@ export async function SectionRenderer({
   container?: boolean;
 }) {
   const design = providedDesign ?? parseSectionDesign(section.settings);
+  const country = providedCountry ?? blog?.country ?? (await getRequestCountry());
 
   const backgroundMedia =
     design.background.type === 'image' && design.background.imageId
@@ -263,7 +278,7 @@ export async function SectionRenderer({
       : null;
 
   const styles = buildSectionStyles(design, section.id, backgroundMedia?.url ?? null);
-  const ctx: BlockContext = { inverted: styles.inverted, isFirst, design, blog };
+  const ctx: BlockContext = { country, inverted: styles.inverted, isFirst, design, blog };
 
   /*
    * A section that paints a background inside a column — the article's CTA, say
@@ -322,11 +337,14 @@ export async function SectionRenderer({
 export async function SectionList({
   sections,
   blog,
+  country: providedCountry,
   container = true,
   allowFirst = true,
 }: {
   sections: RenderableSection[];
   blog?: BlogRenderContext;
+  /** The market to render for. Resolved from the request when not supplied. */
+  country?: CountryContext;
   container?: boolean;
   /**
    * Whether the leading section may own the page's `<h1>`.
@@ -339,6 +357,8 @@ export async function SectionList({
 }) {
   const visible = sections.filter((s) => s.isVisible).sort((a, b) => a.sortOrder - b.sortOrder);
   const anchors = resolveAnchors(visible);
+  // Resolved once for the whole list rather than per section.
+  const country = providedCountry ?? blog?.country ?? (await getRequestCountry());
 
   return (
     <>
@@ -349,6 +369,7 @@ export async function SectionList({
           isFirst={allowFirst && index === 0}
           anchorId={anchors.get(section.id)}
           blog={blog}
+          country={country}
           container={container}
         />
       ))}

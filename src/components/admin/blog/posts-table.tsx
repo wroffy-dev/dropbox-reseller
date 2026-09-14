@@ -28,6 +28,8 @@ export type PostRow = {
   imageUrl: string | null;
   categoryName: string | null;
   authorName: string | null;
+  /** The market this article belongs to. */
+  countryName: string;
   readingTime: number;
   publishedAt: string | null;
   updatedAt: string;
@@ -37,10 +39,13 @@ export function PostsTable({
   rows,
   can,
   filtered,
+  showCountry = false,
 }: {
   rows: PostRow[];
   can: { edit: boolean; create: boolean; delete: boolean; publish: boolean };
   filtered: boolean;
+  /** Adds the Country column. Hidden on a single-market installation. */
+  showCountry?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -160,6 +165,7 @@ export function PostsTable({
                 <span className="sr-only">Image</span>
               </Th>
               <Th>Title</Th>
+              {showCountry ? <Th>Country</Th> : null}
               <Th>Category</Th>
               <Th>Author</Th>
               <Th align="center">Featured</Th>
@@ -206,6 +212,9 @@ export function PostsTable({
                     /blog/{row.slug} · {row.readingTime} min
                   </code>
                 </Td>
+                {showCountry ? (
+                  <Td className="whitespace-nowrap text-sm text-content">{row.countryName}</Td>
+                ) : null}
                 <Td className="text-sm text-muted">{row.categoryName ?? '—'}</Td>
                 <Td className="text-sm text-muted">{row.authorName ?? '—'}</Td>
                 <Td align="center">

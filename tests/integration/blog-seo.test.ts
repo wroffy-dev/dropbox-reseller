@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mockAuth, formData, uniqueSuffix, TEST_ACTOR } from '../helpers';
+import { mockAuth, formData, uniqueSuffix, TEST_ACTOR, ensureTestCountry, testCountryContext } from '../helpers';
 
 mockAuth();
 
@@ -87,7 +87,7 @@ describe('blog lifecycle', () => {
   });
 
   it('keeps a draft post off the public blog', async () => {
-    expect(await getPublishedPost(`test-article-${suffix}`)).toBeNull();
+    expect(await getPublishedPost(await ensureTestCountry(), `test-article-${suffix}`)).toBeNull();
   });
 
   it('publishes the post and lists it publicly', async () => {
@@ -171,7 +171,7 @@ describe('blog lifecycle', () => {
     expect((await deleteBlogPost(postId)).ok).toBe(true);
     const post = await prisma.blogPost.findUniqueOrThrow({ where: { id: postId } });
     expect(post.deletedAt).not.toBeNull();
-    expect(await getPublishedPost(`test-article-${suffix}`)).toBeNull();
+    expect(await getPublishedPost(await ensureTestCountry(), `test-article-${suffix}`)).toBeNull();
   });
 });
 

@@ -6,12 +6,15 @@ import { AdminPageHeader } from '@/components/admin/page-header';
 import { FormsTable, type FormRow } from '@/components/admin/forms/forms-table';
 import { Card } from '@/components/ui/card';
 import { ButtonLink } from '@/components/ui/button';
+import { getAdminCountryScope } from '@/lib/country/admin';
 
 export const metadata: Metadata = { title: 'Forms' };
 export const dynamic = 'force-dynamic';
 
 export default async function FormsAdmin() {
   const user = await requirePermission('forms.view');
+
+  const scope = await getAdminCountryScope();
 
   const rows = await prisma.form.findMany({
     where: { deletedAt: null },
@@ -27,6 +30,7 @@ export default async function FormsAdmin() {
       // Products whose CTA button opens this form, so the list shows where a
       // form is actually used before someone deactivates it.
       productCtas: { select: { name: true }, take: 2 },
+      country: { select: { name: true } },
     },
   });
 
@@ -40,6 +44,7 @@ export default async function FormsAdmin() {
     submissionCount: row._count.submissions,
     leadCount: row._count.leads,
     productName: row.productCtas.map((product) => product.name).join(', ') || null,
+    countryName: row.country?.name ?? null,
     updatedAt: row.updatedAt.toISOString(),
   }));
 
@@ -72,6 +77,7 @@ export default async function FormsAdmin() {
             create: userCan(user, 'forms.create'),
             delete: userCan(user, 'forms.delete'),
           }}
+          showCountry={scope.canSwitch}
         />
       </Card>
     </>

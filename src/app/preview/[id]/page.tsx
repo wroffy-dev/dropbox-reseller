@@ -4,6 +4,9 @@ import { requirePermission } from '@/lib/auth/guards';
 import { getPageForPreview } from '@/lib/services/pages';
 import { getWebsiteSettings } from '@/lib/services/settings';
 import { getNavigations, getPrimaryNavigation } from '@/lib/services/navigation';
+import { getCountryById, getDefaultCountry } from '@/lib/country/registry';
+import { getCountrySettings } from '@/lib/country/settings';
+import { countryPath, countryHref } from '@/lib/country/routing';
 import { SectionList } from '@/components/cms/section-renderer';
 import { SiteHeader } from '@/components/public/site-header';
 import { SiteFooter } from '@/components/public/site-footer';
@@ -34,11 +37,16 @@ export default async function PreviewRender({ params }: { params: Promise<{ id: 
   const page = await getPageForPreview(id);
   if (!page) notFound();
 
-  const [site, nav, footerMenus, legalMenus] = await Promise.all([
+  // The preview renders in the market the page belongs to, so its menus,
+  // contact details and internal links are the ones a visitor would see.
+  const country = (await getCountryById(page.countryId)) ?? (await getDefaultCountry());
+
+  const [site, local, nav, footerMenus, legalMenus] = await Promise.all([
     getWebsiteSettings(),
-    getPrimaryNavigation(),
-    getNavigations('FOOTER'),
-    getNavigations('LEGAL'),
+    getCountrySettings(country),
+    getPrimaryNavigation(country),
+    getNavigations(country, 'FOOTER'),
+    getNavigations(country, 'LEGAL'),
   ]);
 
   return (
@@ -49,24 +57,34 @@ export default async function PreviewRender({ params }: { params: Promise<{ id: 
           brand={{
             siteName: site.siteName,
             logoUrl: site.logoUrl,
-            ctaLabel: site.headerCtaLabel,
-            ctaUrl: site.headerCtaUrl,
+            homeUrl: countryPath(country),
+            ctaLabel: local.headerCtaLabel,
+            ctaUrl: countryHref(country, local.headerCtaUrl),
             secondaryCtaLabel: site.headerSecondaryCtaLabel,
-            secondaryCtaUrl: site.headerSecondaryCtaUrl,
+            secondaryCtaUrl: countryHref(country, site.headerSecondaryCtaUrl),
             announcement:
               site.announcementEnabled && site.announcementText
-                ? { text: site.announcementText, url: site.announcementUrl }
+                ? {
+                    text: site.announcementText,
+                    url: countryHref(country, site.announcementUrl),
+                  }
                 : null,
           }}
         />
       ) : null}
 
       <main>
-        <SectionList sections={page.sections} />
+        <SectionList sections={page.sections} country={country} />
       </main>
 
       {page.showFooter ? (
-        <SiteFooter settings={site} columns={footerMenus} legal={legalMenus[0]?.items ?? []} />
+        <SiteFooter
+          settings={site}
+          local={local}
+          homeUrl={countryPath(country)}
+          columns={footerMenus}
+          legal={legalMenus[0]?.items ?? []}
+        />
       ) : null}
     </>
   );

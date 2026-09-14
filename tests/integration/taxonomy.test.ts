@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
-import { mockAuth, uniqueSuffix, TEST_ACTOR, formData } from '../helpers';
+import { mockAuth, uniqueSuffix, TEST_ACTOR, formData, ensureTestCountry } from '../helpers';
 
 mockAuth();
 
@@ -119,7 +119,12 @@ describe('page categories', () => {
   it('assigns a category to a page and counts it', async () => {
     const id = await newCategory('Solutions');
     const page = await prisma.page.create({
-      data: { title: `Page ${suffix}`, slug: `page-${suffix}`, categoryId: id },
+      data: {
+        countryId: await ensureTestCountry(),
+        title: `Page ${suffix}`,
+        slug: `page-${suffix}`,
+        categoryId: id,
+      },
     });
     pageIds.push(page.id);
 
@@ -133,7 +138,12 @@ describe('page categories', () => {
   it('never deletes pages with the category, leaving them uncategorised', async () => {
     const id = await newCategory('Solutions');
     const page = await prisma.page.create({
-      data: { title: `Kept ${suffix}`, slug: `kept-${suffix}`, categoryId: id },
+      data: {
+        countryId: await ensureTestCountry(),
+        title: `Kept ${suffix}`,
+        slug: `kept-${suffix}`,
+        categoryId: id,
+      },
     });
     pageIds.push(page.id);
 
@@ -149,7 +159,12 @@ describe('page categories', () => {
     const from = await newCategory('From');
     const to = await newCategory('To');
     const page = await prisma.page.create({
-      data: { title: `Moved ${suffix}`, slug: `moved-${suffix}`, categoryId: from },
+      data: {
+        countryId: await ensureTestCountry(),
+        title: `Moved ${suffix}`,
+        slug: `moved-${suffix}`,
+        categoryId: from,
+      },
     });
     pageIds.push(page.id);
 
@@ -260,7 +275,13 @@ describe('blog tags', () => {
   it('renames a tag without touching its post links', async () => {
     const id = await newTag('Storage');
     const post = await prisma.blogPost.create({
-      data: { title: `Post ${suffix}`, slug: `post-tag-${suffix}`, content: '', excerpt: '' },
+      data: {
+        countryId: await ensureTestCountry(),
+        title: `Post ${suffix}`,
+        slug: `post-tag-${suffix}`,
+        content: '',
+        excerpt: '',
+      },
     });
     await prisma.blogPostTag.create({ data: { postId: post.id, tagId: id } });
 
@@ -285,7 +306,13 @@ describe('blog tags', () => {
   it('deletes a tag and unlinks it from posts without deleting the posts', async () => {
     const id = await newTag('Temporary');
     const post = await prisma.blogPost.create({
-      data: { title: `Keep ${suffix}`, slug: `keep-tag-${suffix}`, content: '', excerpt: '' },
+      data: {
+        countryId: await ensureTestCountry(),
+        title: `Keep ${suffix}`,
+        slug: `keep-tag-${suffix}`,
+        content: '',
+        excerpt: '',
+      },
     });
     await prisma.blogPostTag.create({ data: { postId: post.id, tagId: id } });
 
@@ -300,7 +327,13 @@ describe('blog tags', () => {
     const used = await newTag('Used');
     const unused = await newTag('Unused');
     const post = await prisma.blogPost.create({
-      data: { title: `Bulk ${suffix}`, slug: `bulk-tag-${suffix}`, content: '', excerpt: '' },
+      data: {
+        countryId: await ensureTestCountry(),
+        title: `Bulk ${suffix}`,
+        slug: `bulk-tag-${suffix}`,
+        content: '',
+        excerpt: '',
+      },
     });
     await prisma.blogPostTag.create({ data: { postId: post.id, tagId: used } });
 

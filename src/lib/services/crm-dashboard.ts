@@ -28,11 +28,22 @@ import {
 const WON: LeadStatus = 'WON';
 const LOST: LeadStatus = 'LOST';
 
-function rangeWhere(range: Pick<DateRange, 'from' | 'to'>): Prisma.LeadWhereInput {
+/**
+ * The clause every figure on this dashboard is bounded by.
+ *
+ * `countryId` is optional and means what it says: given, the dashboard reports
+ * one storefront; omitted, it reports every market the viewer can see. There is
+ * no third state, so a number on this page always has an unambiguous scope.
+ */
+function rangeWhere(
+  range: Pick<DateRange, 'from' | 'to'>,
+  countryId?: string,
+): Prisma.LeadWhereInput {
   return {
     deletedAt: null,
     // Spam is excluded everywhere on this dashboard: it is noise, not demand.
     status: { not: 'SPAM' },
+    ...(countryId ? { countryId } : {}),
     createdAt: { gte: startOfDay(range.from), lte: endOfDay(range.to) },
   };
 }
@@ -53,9 +64,9 @@ async function countLeads(where: Prisma.LeadWhereInput): Promise<number> {
 }
 
 /** KPI row — each figure alongside the same figure for the previous period. */
-export async function getCrmKpis(range: DateRange): Promise<Kpi[]> {
-  const current = rangeWhere(range);
-  const previous = rangeWhere(previousRange(range));
+export async function getCrmKpis(range: DateRange, countryId?: string): Promise<Kpi[]> {
+  const current = rangeWhere(range, countryId);
+  const previous = rangeWhere(previousRange(range), countryId);
 
   const byStatus = (where: Prisma.LeadWhereInput, status: LeadStatus) => ({ ...where, status });
 
@@ -152,21 +163,35 @@ export type TrendPoint = { label: string; value: number };
  */
 export async function getLeadTrend(
   range: DateRange,
+  countryId?: string,
 ): Promise<{ points: TrendPoint[]; granularity: Granularity }> {
   const granularity = chooseGranularity(range);
   const from = startOfDay(range.from);
   const to = endOfDay(range.to);
 
-  const rows = await prisma.$queryRaw<Array<{ bucket: Date; count: bigint }>>`
-    SELECT date_trunc(${granularity}, "createdAt") AS bucket, COUNT(*)::bigint AS count
-    FROM "Lead"
-    WHERE "deletedAt" IS NULL
-      AND "status" <> 'SPAM'
-      AND "createdAt" >= ${from}
-      AND "createdAt" <= ${to}
-    GROUP BY bucket
-    ORDER BY bucket ASC
-  `;
+  // Parameterised either way — the market is a bound value, never interpolated.
+  const rows = countryId
+    ? await prisma.$queryRaw<Array<{ bucket: Date; count: bigint }>>`
+        SELECT date_trunc(${granularity}, "createdAt") AS bucket, COUNT(*)::bigint AS count
+        FROM "Lead"
+        WHERE "deletedAt" IS NULL
+          AND "status" <> 'SPAM'
+          AND "countryId" = ${countryId}
+          AND "createdAt" >= ${from}
+          AND "createdAt" <= ${to}
+        GROUP BY bucket
+        ORDER BY bucket ASC
+      `
+    : await prisma.$queryRaw<Array<{ bucket: Date; count: bigint }>>`
+        SELECT date_trunc(${granularity}, "createdAt") AS bucket, COUNT(*)::bigint AS count
+        FROM "Lead"
+        WHERE "deletedAt" IS NULL
+          AND "status" <> 'SPAM'
+          AND "createdAt" >= ${from}
+          AND "createdAt" <= ${to}
+        GROUP BY bucket
+        ORDER BY bucket ASC
+      `;
 
   const counts = new Map<string, number>();
   for (const row of rows) counts.set(bucketKey(row.bucket, granularity), Number(row.count));
@@ -220,11 +245,14 @@ function bucketLabel(date: Date, granularity: Granularity): string {
 export type StatusSlice = { status: LeadStatus; label: string; count: number; share: number };
 
 /** Status breakdown for the range. Shares are of the range, not of all time. */
-export async function getStatusBreakdown(range: DateRange): Promise<StatusSlice[]> {
+export async function getStatusBreakdown(
+  range: DateRange,
+  countryId?: string,
+): Promise<StatusSlice[]> {
   const { LEAD_STATUS_LABELS } = await import('@/lib/crm/constants');
   const rows = await prisma.lead.groupBy({
     by: ['status'],
-    where: rangeWhere(range),
+    where: rangeWhere(range, countryId),
     _count: { _all: true },
   });
 
@@ -256,9 +284,10 @@ export type SourceRow = {
 async function performanceBy(
   field: 'utmSource' | 'utmMedium' | 'utmCampaign',
   range: DateRange,
+  countryId?: string,
   limit = 8,
 ): Promise<SourceRow[]> {
-  const where = rangeWhere(range);
+  const where = rangeWhere(range, countryId);
 
   const [all, wonRows] = await Promise.all([
     prisma.lead.groupBy({ by: [field], where, _count: { _all: true } }),
@@ -287,18 +316,24 @@ async function performanceBy(
     .slice(0, limit);
 }
 
-export const getSourcePerformance = (range: DateRange) => performanceBy('utmSource', range);
-export const getMediumPerformance = (range: DateRange) => performanceBy('utmMedium', range);
-export const getCampaignPerformance = (range: DateRange) => performanceBy('utmCampaign', range);
+export const getSourcePerformance = (range: DateRange, countryId?: string) =>
+  performanceBy('utmSource', range, countryId);
+export const getMediumPerformance = (range: DateRange, countryId?: string) =>
+  performanceBy('utmMedium', range, countryId);
+export const getCampaignPerformance = (range: DateRange, countryId?: string) =>
+  performanceBy('utmCampaign', range, countryId);
 
 export type NamedCount = { key: string; label: string; count: number };
 
 /** Top landing pages and forms for the range, by lead volume. */
-export async function getTopEntryPoints(range: DateRange): Promise<{
+export async function getTopEntryPoints(
+  range: DateRange,
+  countryId?: string,
+): Promise<{
   landingPages: NamedCount[];
   forms: NamedCount[];
 }> {
-  const where = rangeWhere(range);
+  const where = rangeWhere(range, countryId);
 
   const [landing, forms] = await Promise.all([
     prisma.lead.groupBy({

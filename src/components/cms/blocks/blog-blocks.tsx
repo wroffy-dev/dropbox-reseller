@@ -25,11 +25,14 @@ import type {
 } from '@/lib/cms/blog-blocks';
 import {
   resolveCard,
+  blogPath,
   categoryPath,
   tagPath,
   postPath,
   type BlogRenderContext,
 } from '@/lib/cms/blog-render';
+import { countryPath } from '@/lib/country/routing';
+import type { CountryContext } from '@/lib/country/types';
 import { cardVars, enabledNetworks, RATIO_CSS } from '@/lib/cms/blog-settings';
 import { buildPanelStyles } from '@/lib/cms/design';
 import {
@@ -249,11 +252,13 @@ export function BlogBreadcrumbBlock({
 }) {
   const blog = blogOf(ctx);
   const items: Array<{ label: string; href?: string }> = [];
-  if (content.showHome) items.push({ label: content.homeLabel || 'Home', href: '/' });
+  const home = countryPath(ctx.country);
+  const archiveHref = blogPath(ctx.country);
+  if (content.showHome) items.push({ label: content.homeLabel || 'Home', href: home });
 
   const archive = blog?.archive;
-  const onSubArchive = Boolean(archive && archive.basePath !== '/blog');
-  items.push({ label: content.blogLabel || 'Blog', ...(onSubArchive ? { href: '/blog' } : {}) });
+  const onSubArchive = Boolean(archive && archive.basePath !== archiveHref);
+  items.push({ label: content.blogLabel || 'Blog', ...(onSubArchive ? { href: archiveHref } : {}) });
 
   if (archive?.categorySlug) {
     const category = archive.categories.find((c) => c.slug === archive.categorySlug);
@@ -274,7 +279,7 @@ export async function BlogCategoryFilterBlock({
   ctx: Ctx;
 }) {
   const blog = blogOf(ctx);
-  const all = blog?.archive?.categories ?? (await getBlogCategories());
+  const all = blog?.archive?.categories ?? (await getBlogCategories(ctx.country.id));
 
   let categories = content.includeChildren ? all : all.filter((c) => !c.parentId);
   if (content.source === 'selected' && content.categoryIds.length > 0) {
@@ -288,6 +293,7 @@ export async function BlogCategoryFilterBlock({
   const chips = (
     <CategoryChips
       categories={categories}
+      country={ctx.country}
       activeSlug={blog?.archive?.categorySlug ?? null}
       showAll={content.showAll}
       allLabel={content.allLabel}
@@ -304,7 +310,7 @@ export async function BlogCategoryFilterBlock({
           <div className="min-w-0 lg:flex-1">{chips}</div>
           <div className="w-full lg:w-72">
             <BlogSearch
-              action="/blog"
+              action={blogPath(ctx.country)}
               placeholder={content.searchPlaceholder}
               showButton={false}
               compact
@@ -336,7 +342,7 @@ export function BlogSearchBlock({ content, ctx }: { content: BlogSearchContent; 
         )}
       >
         <BlogSearch
-          action="/blog"
+          action={blogPath(ctx.country)}
           placeholder={content.placeholder}
           buttonLabel={content.buttonLabel}
           showButton={content.showButton}
@@ -362,6 +368,7 @@ export async function BlogFeaturedBlock({
   const manual =
     content.selection === 'manual' && content.postId
       ? await resolvePostSource(
+          ctx.country.id,
           { ...emptySource(), source: 'manual', postIds: [content.postId], limit: 1 },
           {},
         )
@@ -370,7 +377,7 @@ export async function BlogFeaturedBlock({
   const auto =
     manual.length > 0
       ? []
-      : await resolvePostSource({ ...emptySource(), source: 'featured', limit: 1 }, {});
+      : await resolvePostSource(ctx.country.id, { ...emptySource(), source: 'featured', limit: 1 }, {});
 
   const post = manual[0] ?? auto[0] ?? null;
 
@@ -387,7 +394,7 @@ export async function BlogFeaturedBlock({
   const panel = buildPanelStyles(content.panel, panelImage?.url ?? null);
 
   const image = post.featuredImage ?? post.thumbnail;
-  const href = postPath(post.slug);
+  const href = postPath(ctx.country, post.slug);
   const ratio = RATIO_CSS[content.imageRatio];
 
   const media = (
@@ -419,7 +426,7 @@ export async function BlogFeaturedBlock({
           <span className="blog-featured__badge">{content.badgeLabel}</span>
         ) : null}
         {content.showCategory && post.category ? (
-          <Link href={categoryPath(post.category.slug)} className="blog-card__category">
+          <Link href={categoryPath(ctx.country, post.category.slug)} className="blog-card__category">
             {post.category.name}
           </Link>
         ) : null}
@@ -437,7 +444,7 @@ export async function BlogFeaturedBlock({
         <ul className="mt-4 flex flex-wrap gap-1.5">
           {post.tags.slice(0, 5).map(({ tag }) => (
             <li key={tag.slug}>
-              <Link href={tagPath(tag.slug)} className="blog-card__tag">
+              <Link href={tagPath(ctx.country, tag.slug)} className="blog-card__tag">
                 {tag.name}
               </Link>
             </li>
@@ -594,6 +601,7 @@ function emptySource(): PostSource {
 /** Grid wrapper carrying the CMS column counts and gaps. */
 function PostGrid({
   posts,
+  country,
   card,
   columns,
   tabletColumns,
@@ -601,6 +609,7 @@ function PostGrid({
   priorityCount = 0,
 }: {
   posts: BlogListItem[];
+  country: CountryContext;
   card: ReturnType<typeof resolveCard>;
   columns: number;
   tabletColumns: number;
@@ -620,7 +629,13 @@ function PostGrid({
       }
     >
       {posts.map((post, index) => (
-        <PostCard key={post.id} post={post} card={card} priority={index < priorityCount} />
+        <PostCard
+          key={post.id}
+          post={post}
+          country={country}
+          card={card}
+          priority={index < priorityCount}
+        />
       ))}
     </div>
   );
@@ -635,7 +650,7 @@ export async function BlogGridBlock({ content, ctx }: { content: BlogGridContent
 
   const posts = isPrimary
     ? archive!.posts
-    : await resolvePostSource(content, {
+    : await resolvePostSource(ctx.country.id, content, {
         currentPostId: blog.article?.post.id ?? null,
         currentCategoryId: blog.article?.post.categoryId ?? null,
       });
@@ -660,7 +675,7 @@ export async function BlogGridBlock({ content, ctx }: { content: BlogGridContent
           }
           action={
             archive?.query ? (
-              <Link href="/blog" className="text-sm font-medium text-brand hover:underline">
+              <Link href={blogPath(ctx.country)} className="text-sm font-medium text-brand hover:underline">
                 Clear search
               </Link>
             ) : undefined
@@ -669,6 +684,7 @@ export async function BlogGridBlock({ content, ctx }: { content: BlogGridContent
       ) : (
         <PostGrid
           posts={posts}
+          country={ctx.country}
           card={card}
           columns={content.columns}
           tabletColumns={content.tabletColumns}
@@ -726,7 +742,7 @@ export async function BlogNewsletterBlock({
   content: BlogNewsletterContent;
   ctx: Ctx;
 }) {
-  const form = content.formSlug ? await getPublicForm(content.formSlug) : await getDefaultForm();
+  const form = content.formSlug ? await getPublicForm(content.formSlug, ctx.country.id) : await getDefaultForm(ctx.country.id);
   const panelImage =
     content.panel.background.type === 'image' && content.panel.background.imageId
       ? await getMedia(content.panel.background.imageId)
@@ -859,12 +875,14 @@ export function ArticleBreadcrumbBlock({
   if (!article.visible.showBreadcrumb) return null;
 
   const items: Array<{ label: string; href?: string }> = [];
-  if (content.showHome) items.push({ label: content.homeLabel || 'Home', href: '/' });
-  items.push({ label: content.blogLabel || 'Blog', href: '/blog' });
+  if (content.showHome) {
+    items.push({ label: content.homeLabel || 'Home', href: countryPath(ctx.country) });
+  }
+  items.push({ label: content.blogLabel || 'Blog', href: blogPath(ctx.country) });
   if (article.post.category) {
     items.push({
       label: article.post.category.name,
-      href: categoryPath(article.post.category.slug),
+      href: categoryPath(ctx.country, article.post.category.slug),
     });
   }
   items.push({ label: article.post.title });
@@ -880,7 +898,7 @@ export function ArticleHeaderBlock({ content, ctx }: { content: ArticleHeaderCon
   return (
     <header className={cn(content.align === 'center' && 'text-center')}>
       {content.showCategory && visible.showCategory && post.category ? (
-        <Link href={categoryPath(post.category.slug)} className="blog-article__category">
+        <Link href={categoryPath(ctx.country, post.category.slug)} className="blog-article__category">
           {post.category.name}
         </Link>
       ) : null}
@@ -914,7 +932,7 @@ export function ArticleHeaderBlock({ content, ctx }: { content: ArticleHeaderCon
         >
           {post.tags.map(({ tag }) => (
             <li key={tag.id}>
-              <Link href={tagPath(tag.slug)} className="blog-card__tag">
+              <Link href={tagPath(ctx.country, tag.slug)} className="blog-card__tag">
                 {tag.name}
               </Link>
             </li>
@@ -1155,7 +1173,7 @@ export function ArticleTagsBlock({ content, ctx }: { content: ArticleTagsContent
         <span className="text-sm text-muted">{content.label || 'Tags'}:</span>
       ) : null}
       {article.post.tags.map(({ tag }) => (
-        <Link key={tag.id} href={tagPath(tag.slug)} className="blog-card__tag">
+        <Link key={tag.id} href={tagPath(ctx.country, tag.slug)} className="blog-card__tag">
           {tag.name}
         </Link>
       ))}
@@ -1217,7 +1235,7 @@ export async function ArticleRelatedBlock({
   if (!blog) return null;
   if (article && !article.visible.showRelated) return null;
 
-  const posts = await resolvePostSource(content, {
+  const posts = await resolvePostSource(ctx.country.id, content, {
     currentPostId: article?.post.id ?? null,
     currentCategoryId: article?.post.categoryId ?? null,
   });
@@ -1233,6 +1251,7 @@ export async function ArticleRelatedBlock({
       <Heading content={content} ctx={ctx} />
       <PostGrid
         posts={posts}
+        country={ctx.country}
         card={card}
         columns={content.columns}
         tabletColumns={Math.min(content.columns, 2)}
@@ -1254,6 +1273,7 @@ export async function ArticlePrevNextBlock({
   if (!article.visible.showPrevNext) return null;
 
   const { previous, next } = await getAdjacentPosts({
+    countryId: ctx.country.id,
     postId: article.post.id,
     publishedAt: article.post.publishedAt,
     categoryId: article.post.categoryId,
@@ -1267,7 +1287,7 @@ export async function ArticlePrevNextBlock({
     const image = post.featuredImage ?? post.thumbnail;
     return (
       <Link
-        href={postPath(post.slug)}
+        href={postPath(ctx.country, post.slug)}
         rel={direction === 'prev' ? 'prev' : 'next'}
         className={cn(
           'blog-prevnext group flex items-center gap-3 rounded-xl border border-hairline p-4 transition-colors hover:border-brand',

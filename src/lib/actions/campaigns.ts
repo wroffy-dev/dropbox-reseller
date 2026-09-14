@@ -8,6 +8,7 @@ import { recordAudit } from '@/lib/services/audit';
 import { uniqueSlug, slugify } from '@/lib/utils/slug';
 import { sanitizeText, safeUrl } from '@/lib/utils/sanitize';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
+import { resolveActionCountry } from '@/lib/country/admin';
 import type { Prisma } from '@prisma/client';
 
 const optional = (max: number) =>
@@ -28,6 +29,8 @@ const popupSchema = z
     name: z.string().trim().min(1, 'Give the popup a name').max(120),
     type: z.enum(['OFFER', 'IMAGE', 'LEAD_FORM', 'NEWSLETTER', 'PRODUCT', 'LEAD_MAGNET']),
     isActive: z.coerce.boolean().default(false),
+    /** Empty shows the popup in every market; an id targets one market. */
+    countryId: optional(40),
     heading: optional(200),
     body: optional(1000),
     imageId: optional(40),
@@ -65,10 +68,17 @@ export async function savePopup(
       return failure('The end date must be after the start date.', { endsAt: ['Must be later'] });
     }
 
+    // A market-targeted popup is validated against the user's market access,
+    // so a crafted payload cannot aim a popup at a storefront they cannot edit.
+    const countryId = parsed.countryId
+      ? (await resolveActionCountry(user, parsed.countryId)).id
+      : null;
+
     const data = {
       name: sanitizeText(parsed.name),
       type: parsed.type,
       isActive: parsed.isActive,
+      countryId,
       heading: parsed.heading ? sanitizeText(parsed.heading) : null,
       body: parsed.body ? sanitizeText(parsed.body) : null,
       imageId: parsed.imageId,

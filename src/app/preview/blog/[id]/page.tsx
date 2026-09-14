@@ -4,6 +4,9 @@ import { requirePermission } from '@/lib/auth/guards';
 import { getPostForPreview } from '@/lib/services/blog';
 import { getWebsiteSettings } from '@/lib/services/settings';
 import { getNavigations, getPrimaryNavigation } from '@/lib/services/navigation';
+import { getCountryById, getDefaultCountry } from '@/lib/country/registry';
+import { getCountrySettings } from '@/lib/country/settings';
+import { countryPath, countryHref } from '@/lib/country/routing';
 import { BlogArticle } from '@/components/blog/blog-article';
 import { SiteHeader } from '@/components/public/site-header';
 import { SiteFooter } from '@/components/public/site-footer';
@@ -37,11 +40,15 @@ export default async function BlogPreviewRender({
   const post = await getPostForPreview(id);
   if (!post) notFound();
 
-  const [site, nav, footerMenus, legalMenus] = await Promise.all([
+  // The preview renders in the market the article belongs to.
+  const country = (await getCountryById(post.countryId)) ?? (await getDefaultCountry());
+
+  const [site, local, nav, footerMenus, legalMenus] = await Promise.all([
     getWebsiteSettings(),
-    getPrimaryNavigation(),
-    getNavigations('FOOTER'),
-    getNavigations('LEGAL'),
+    getCountrySettings(country),
+    getPrimaryNavigation(country),
+    getNavigations(country, 'FOOTER'),
+    getNavigations(country, 'LEGAL'),
   ]);
 
   return (
@@ -51,22 +58,29 @@ export default async function BlogPreviewRender({
         brand={{
           siteName: site.siteName,
           logoUrl: site.logoUrl,
-          ctaLabel: site.headerCtaLabel,
-          ctaUrl: site.headerCtaUrl,
+          homeUrl: countryPath(country),
+          ctaLabel: local.headerCtaLabel,
+          ctaUrl: countryHref(country, local.headerCtaUrl),
           secondaryCtaLabel: site.headerSecondaryCtaLabel,
-          secondaryCtaUrl: site.headerSecondaryCtaUrl,
+          secondaryCtaUrl: countryHref(country, site.headerSecondaryCtaUrl),
           announcement:
             site.announcementEnabled && site.announcementText
-              ? { text: site.announcementText, url: site.announcementUrl }
+              ? { text: site.announcementText, url: countryHref(country, site.announcementUrl) }
               : null,
         }}
       />
 
       <main>
-        <BlogArticle post={post} />
+        <BlogArticle post={post} country={country} />
       </main>
 
-      <SiteFooter settings={site} columns={footerMenus} legal={legalMenus[0]?.items ?? []} />
+      <SiteFooter
+        settings={site}
+        local={local}
+        homeUrl={countryPath(country)}
+        columns={footerMenus}
+        legal={legalMenus[0]?.items ?? []}
+      />
     </>
   );
 }

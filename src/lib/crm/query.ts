@@ -9,6 +9,15 @@ import type { Prisma } from '@prisma/client';
  */
 export type LeadFilters = {
   q?: string;
+  /**
+   * The market the lead came from.
+   *
+   * Absent means "every market this view is allowed to show" — the lead list
+   * resolves the default from the admin's selected market before it gets here,
+   * so an empty value is genuinely "all countries", not "unfiltered by
+   * accident".
+   */
+  countryId?: string;
   status?: string;
   assignedTo?: string;
   productId?: string;
@@ -64,6 +73,8 @@ export function buildLeadWhere(filters: LeadFilters): Prisma.LeadWhereInput {
       { message: { contains: q, mode: 'insensitive' } },
     ];
   }
+
+  if (filters.countryId) where.countryId = filters.countryId;
 
   if (filters.status) where.status = filters.status as Prisma.LeadWhereInput['status'];
 

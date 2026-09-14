@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mockAuth, formData, uniqueSuffix, TEST_ACTOR } from '../helpers';
+import { mockAuth, formData, uniqueSuffix, TEST_ACTOR, ensureTestCountry } from '../helpers';
 
 mockAuth();
 
@@ -35,6 +35,8 @@ const { DEFAULT_BLOG_CARD } = await import('@/lib/cms/blog-settings');
 
 const suffix = uniqueSuffix();
 const postIds: string[] = [];
+/** The market these fixtures live in; resolved in beforeAll. */
+let COUNTRY_ID = 'country_in';
 let parentCategoryId = '';
 let childCategoryId = '';
 
@@ -47,6 +49,7 @@ async function makePost(input: Record<string, unknown>): Promise<string> {
 }
 
 beforeAll(async () => {
+  COUNTRY_ID = await ensureTestCountry();
   const role = await prisma.userRole.upsert({
     where: { slug: 'test-role-blog-cms' },
     update: {},
@@ -399,19 +402,19 @@ describe('post sources', () => {
   });
 
   it('never returns an unpublished post', async () => {
-    const posts = await resolvePostSource({ ...base, limit: 24 });
+    const posts = await resolvePostSource(COUNTRY_ID, { ...base, limit: 24 });
     expect(posts.some((post) => post.title.startsWith('Draft '))).toBe(false);
   });
 
   it('returns only featured posts for the featured source', async () => {
-    const posts = await resolvePostSource({ ...base, source: 'featured' });
+    const posts = await resolvePostSource(COUNTRY_ID, { ...base, source: 'featured' });
     expect(posts.every((post) => post.isFeatured)).toBe(true);
     expect(posts.map((post) => post.id)).toContain(featuredId);
   });
 
   it('keeps the administrator’s order for a hand-picked list', async () => {
     const chosen = [childPostId, featuredId];
-    const posts = await resolvePostSource({ ...base, source: 'manual', postIds: chosen });
+    const posts = await resolvePostSource(COUNTRY_ID, { ...base, source: 'manual', postIds: chosen });
     expect(posts.map((post) => post.id)).toEqual(chosen);
   });
 
@@ -428,12 +431,13 @@ describe('post sources', () => {
 
   it('filters by tag', async () => {
     const tag = await prisma.blogTag.findFirstOrThrow({ where: { slug: `migration-${suffix}` } });
-    const posts = await resolvePostSource({ ...base, source: 'tag', tagId: tag.id });
+    const posts = await resolvePostSource(COUNTRY_ID, { ...base, source: 'tag', tagId: tag.id });
     expect(posts.map((post) => post.id)).toContain(featuredId);
   });
 
   it('excludes the article being read and any explicit exclusions', async () => {
     const posts = await resolvePostSource(
+      COUNTRY_ID,
       { ...base, excludeCurrent: true, excludeIds: [childPostId], limit: 24 },
       { currentPostId: featuredId },
     );
@@ -443,7 +447,7 @@ describe('post sources', () => {
   });
 
   it('returns an empty list for a hand-picked source with nothing picked', async () => {
-    expect(await resolvePostSource({ ...base, source: 'manual' })).toEqual([]);
+    expect(await resolvePostSource(COUNTRY_ID, { ...base, source: 'manual' })).toEqual([]);
   });
 
   it('searches titles, excerpts, body, categories and tags', async () => {
@@ -472,6 +476,7 @@ describe('post sources', () => {
 
   it('falls back through category, tags and recency for related articles', async () => {
     const related = await getRelatedPosts({
+      countryId: COUNTRY_ID,
       postId: featuredId,
       categoryId: parentCategoryId,
       limit: 3,
@@ -485,6 +490,7 @@ describe('post sources', () => {
   it('walks to the neighbouring articles by publish date', async () => {
     const post = await prisma.blogPost.findUniqueOrThrow({ where: { id: featuredId } });
     const { previous, next } = await getAdjacentPosts({
+      countryId: COUNTRY_ID,
       postId: post.id,
       publishedAt: post.publishedAt,
       categoryId: post.categoryId,
@@ -496,7 +502,7 @@ describe('post sources', () => {
   });
 
   it('counts a parent category including its subcategories', async () => {
-    const categories = await getBlogCategories();
+    const categories = await getBlogCategories(COUNTRY_ID);
     const parent = categories.find((category) => category.id === parentCategoryId);
     const child = categories.find((category) => category.id === childCategoryId);
     expect(child?.count).toBe(1);
@@ -513,7 +519,7 @@ describe('post sources', () => {
         isActive: 'false',
       }),
     );
-    const categories = await getBlogCategories();
+    const categories = await getBlogCategories(COUNTRY_ID);
     expect(categories.map((category) => category.id)).not.toContain(childCategoryId);
 
     // The archive itself still resolves, so an indexed URL keeps working.
@@ -574,7 +580,7 @@ describe('article rendering inputs', () => {
     });
     const post = await prisma.blogPost.findUniqueOrThrow({ where: { id }, select: { slug: true } });
 
-    const loaded = await getPublishedPost(post.slug);
+    const loaded = await getPublishedPost(COUNTRY_ID, post.slug);
     expect(loaded?.author?.jobTitle).toBe('Solutions Lead');
     expect(loaded?.author?.bio).toBe('Ships Dropbox rollouts.');
     expect(loaded?.author?.linkedinUrl).toBe('https://example.com/in');

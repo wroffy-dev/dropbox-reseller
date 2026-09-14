@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/icons';
 import type { WebsiteSettings } from '@prisma/client';
 import type { ResolvedNavigation, ResolvedNavItem } from '@/lib/services/navigation';
+import type { CountrySettingsView } from '@/lib/country/types';
 
 const SOCIALS: Array<{ key: keyof WebsiteSettings; label: string; Icon: IconComponent }> = [
   { key: 'linkedinUrl', label: 'LinkedIn', Icon: LinkedInIcon },
@@ -19,12 +20,26 @@ const SOCIALS: Array<{ key: keyof WebsiteSettings; label: string; Icon: IconComp
   { key: 'youtubeUrl', label: 'YouTube', Icon: YouTubeIcon },
 ];
 
+/**
+ * The site footer.
+ *
+ * Brand identity — logo, palette, social profiles — stays global; the company
+ * name, contact details and copyright line come from the market being browsed
+ * and fall back to the global settings, so the root market's footer renders
+ * exactly what it rendered before markets existed.
+ */
 export function SiteFooter({
   settings,
+  local,
+  homeUrl = '/',
   columns,
   legal,
 }: {
   settings: WebsiteSettings;
+  /** The current market's contact details and copy. */
+  local: CountrySettingsView;
+  /** The current market's home page. */
+  homeUrl?: string;
   columns: ResolvedNavigation[];
   legal: ResolvedNavItem[];
 }) {
@@ -39,7 +54,7 @@ export function SiteFooter({
       <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
         <div className="grid gap-10 lg:grid-cols-[1.4fr_repeat(auto-fit,minmax(9rem,1fr))]">
           <div className="max-w-sm">
-            <Link href="/" className="inline-flex items-center gap-2">
+            <Link href={homeUrl} className="inline-flex items-center gap-2">
               {settings.logoDarkUrl || settings.logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -51,31 +66,31 @@ export function SiteFooter({
                 <span className="font-heading text-lg font-bold text-white">{settings.siteName}</span>
               )}
             </Link>
-            {settings.footerDescription ? (
-              <p className="mt-4 text-sm leading-relaxed">{settings.footerDescription}</p>
+            {local.footerDescription ? (
+              <p className="mt-4 text-sm leading-relaxed">{local.footerDescription}</p>
             ) : null}
 
             <ul className="mt-6 space-y-2 text-sm">
-              {settings.contactEmail ? (
+              {local.salesEmail ? (
                 <li className="flex items-start gap-2.5">
                   <Mail className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                  <a href={`mailto:${settings.contactEmail}`} className="hover:text-white">
-                    {settings.contactEmail}
+                  <a href={`mailto:${local.salesEmail}`} className="hover:text-white">
+                    {local.salesEmail}
                   </a>
                 </li>
               ) : null}
-              {settings.contactPhone ? (
+              {local.salesPhone ? (
                 <li className="flex items-start gap-2.5">
                   <Phone className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                  <a href={`tel:${settings.contactPhone.replace(/\s/g, '')}`} className="hover:text-white">
-                    {settings.contactPhone}
+                  <a href={`tel:${local.salesPhone.replace(/\s/g, '')}`} className="hover:text-white">
+                    {local.salesPhone}
                   </a>
                 </li>
               ) : null}
-              {settings.address ? (
+              {local.address ? (
                 <li className="flex items-start gap-2.5">
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                  <span>{settings.address}</span>
+                  <span>{local.address}</span>
                 </li>
               ) : null}
             </ul>
@@ -104,7 +119,7 @@ export function SiteFooter({
 
         <div className="mt-12 flex flex-col gap-4 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs">
-            {settings.copyrightText || `© ${new Date().getFullYear()} ${settings.siteName}`}
+            {local.copyrightText || `© ${new Date().getFullYear()} ${local.companyName}`}
           </p>
 
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">

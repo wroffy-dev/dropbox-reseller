@@ -8,6 +8,8 @@ import { recordAudit } from '@/lib/services/audit';
 import { slugify, uniqueSlug } from '@/lib/utils/slug';
 import { sanitizeText, safeUrl } from '@/lib/utils/sanitize';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
+import { resolveActionCountry } from '@/lib/country/admin';
+import { assertCountryAccess } from '@/lib/country/access';
 
 const menuSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(120),
@@ -25,11 +27,26 @@ export async function saveNavigation(
       location: formData.get('location') || 'HEADER',
     });
 
+    // A menu belongs to one market: the UAE header is not forced to mirror
+    // India's. Editing an existing menu never moves it between markets.
+    const existingMenu = navigationId
+      ? await prisma.navigation.findUnique({
+          where: { id: navigationId },
+          select: { countryId: true },
+        })
+      : null;
+    if (navigationId && !existingMenu) return failure('That menu no longer exists.');
+    if (existingMenu) await assertCountryAccess(user, existingMenu.countryId);
+
+    const country = existingMenu
+      ? await resolveActionCountry(user, existingMenu.countryId)
+      : await resolveActionCountry(user, formData.get('countryId')?.toString() || null);
+
     const slug =
       navigationId === null
         ? await uniqueSlug(slugify(input.name), async (candidate) => {
             const existing = await prisma.navigation.findUnique({
-              where: { slug: candidate },
+              where: { countryId_slug: { countryId: country.id, slug: candidate } },
               select: { id: true },
             });
             return Boolean(existing);
@@ -42,7 +59,12 @@ export async function saveNavigation(
           data: { name: sanitizeText(input.name), location: input.location },
         })
       : await prisma.navigation.create({
-          data: { name: sanitizeText(input.name), slug: slug!, location: input.location },
+          data: {
+            countryId: country.id,
+            name: sanitizeText(input.name),
+            slug: slug!,
+            location: input.location,
+          },
         });
 
     await recordAudit({

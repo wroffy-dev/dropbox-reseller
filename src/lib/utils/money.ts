@@ -27,6 +27,11 @@ const CURRENCY_LOCALE: Record<string, string> = {
   EUR: 'de-DE',
   GBP: 'en-GB',
   AED: 'en-AE',
+  SAR: 'en-SA',
+  QAR: 'en-QA',
+  OMR: 'en-OM',
+  KWD: 'en-KW',
+  BHD: 'en-BH',
   SGD: 'en-SG',
   AUD: 'en-AU',
 };
@@ -49,4 +54,17 @@ export function formatMoney(
   }).format(asNumber);
 }
 
-export const SUPPORTED_CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD', 'AUD'] as const;
+export const SUPPORTED_CURRENCIES = [
+  'INR',
+  'USD',
+  'EUR',
+  'GBP',
+  'AED',
+  'SAR',
+  'QAR',
+  'OMR',
+  'KWD',
+  'BHD',
+  'SGD',
+  'AUD',
+] as const;

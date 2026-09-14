@@ -18,7 +18,9 @@ import type { PermissionKey } from '@/lib/auth/permissions';
 import { cn } from '@/lib/utils/cn';
 import { AdminSearch } from './admin-search';
 import { AdminBreadcrumbs } from './breadcrumbs';
+import { AdminCountrySwitcher } from './country-switcher';
 import { Menu, MenuItem, MenuSeparator } from '@/components/ui/menu';
+import type { CountryContext } from '@/lib/country/types';
 
 /** Create shortcuts, each gated by the permission its destination requires. */
 const QUICK_CREATE: Array<{
@@ -46,11 +48,17 @@ export function AdminTopbar({
   user,
   permissions,
   isSuperAdmin,
+  country,
+  countries,
   onOpenSidebar,
 }: {
   user: { name: string; email: string; roleName: string; image?: string | null };
   permissions: string[];
   isSuperAdmin: boolean;
+  /** The market the admin is currently editing. */
+  country: Pick<CountryContext, 'id' | 'code' | 'name'>;
+  /** Every market this user may switch to. */
+  countries: Array<Pick<CountryContext, 'id' | 'code' | 'name' | 'isDefault'>>;
   onOpenSidebar: () => void;
 }) {
   const can = (permission: PermissionKey) => isSuperAdmin || permissions.includes(permission);
@@ -77,6 +85,8 @@ export function AdminTopbar({
         <div className="min-w-0 flex-1 lg:max-w-xs lg:flex-none">
           <AdminSearch permissions={permissions} isSuperAdmin={isSuperAdmin} />
         </div>
+
+        <AdminCountrySwitcher current={country} countries={countries} />
 
         {createOptions.length > 0 ? (
           <Menu

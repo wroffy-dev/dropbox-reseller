@@ -50,6 +50,8 @@ export type FormBuilderValues = {
   successMessage: string;
   redirectUrl: string;
   leadSource: string;
+  /** Empty means the form is shared by every market. */
+  countryId: string;
   defaultProductId: string;
   createsLead: boolean;
   notifyEmails: string;
@@ -115,6 +117,7 @@ export const EMPTY_FORM: FormBuilderValues = {
   successMessage: 'Thank you. Our team will contact you shortly.',
   redirectUrl: '',
   leadSource: 'Website Form',
+  countryId: '',
   defaultProductId: '',
   createsLead: true,
   notifyEmails: '',

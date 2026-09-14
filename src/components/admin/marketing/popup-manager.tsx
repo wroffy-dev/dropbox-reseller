@@ -36,6 +36,8 @@ export type PopupRow = {
   startsAt: string | null;
   endsAt: string | null;
   urlPatterns: string[];
+  /** Null shows the popup in every market. */
+  countryId: string | null;
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -75,6 +77,7 @@ function blank(): PopupRow {
     startsAt: null,
     endsAt: null,
     urlPatterns: [],
+    countryId: null,
   };
 }
 
@@ -82,9 +85,12 @@ export function PopupManager({
   rows,
   forms,
   leadMagnets,
+  countries = [],
   canEdit,
 }: {
   rows: PopupRow[];
+  /** Markets a popup can be targeted at. Empty on a single-market install. */
+  countries?: Array<{ id: string; name: string }>;
   forms: Array<{ id: string; name: string }>;
   leadMagnets: Array<{ id: string; title: string }>;
   canEdit: boolean;
@@ -356,6 +362,26 @@ export function PopupManager({
                       value={editing.scrollPercent}
                       onChange={(e) => set({ scrollPercent: Number(e.target.value) })}
                     />
+                  </Field>
+                ) : null}
+                {countries.length > 0 ? (
+                  <Field
+                    label="Country"
+                    htmlFor="popup-country"
+                    hint="Targets one storefront. Leave as all countries to show it everywhere."
+                  >
+                    <Select
+                      id="popup-country"
+                      value={editing.countryId ?? ''}
+                      onChange={(e) => set({ countryId: e.target.value || null })}
+                    >
+                      <option value="">All countries</option>
+                      {countries.map((country) => (
+                        <option key={country.id} value={country.id}>
+                          {country.name}
+                        </option>
+                      ))}
+                    </Select>
                   </Field>
                 ) : null}
                 <Field label="Devices" htmlFor="popup-device">

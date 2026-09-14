@@ -11,9 +11,23 @@ import { uniqueSlug, slugify } from '@/lib/utils/slug';
 import { toDecimal } from '@/lib/utils/money';
 import { sanitizeHtml, sanitizeText } from '@/lib/utils/sanitize';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
+import { listActiveCountries } from '@/lib/country/registry';
+import { scopeForUser } from '@/lib/country/admin';
+import { countryPath } from '@/lib/country/routing';
+import type { SessionUser } from '@/lib/auth/guards';
 
-function revalidateProduct(slug: string) {
-  revalidatePath(`/products/${slug}`);
+/**
+ * Revalidates a product's page in every market that could be serving it.
+ *
+ * The catalogue is global but the pages are not, so a price change in one
+ * market still has to clear that market's URL — and only touching `/products/x`
+ * would leave `/ae/products/x` stale.
+ */
+async function revalidateProduct(slug: string) {
+  const countries = await listActiveCountries();
+  for (const country of countries) {
+    revalidatePath(countryPath(country, `products/${slug}`));
+  }
   revalidatePath('/sitemap.xml');
   // Product blocks appear on CMS pages, so the whole public tree is affected.
   revalidatePath('/', 'layout');
@@ -134,6 +148,12 @@ export async function createProduct(formData: FormData): Promise<ActionResult<{ 
       },
     });
 
+    // A new product goes on sale in the market the admin is working in, at the
+    // price they just entered. Without this a product would exist but be for
+    // sale nowhere, which is never what creating one means. Other markets stay
+    // untouched until somebody prices it there.
+    await sellInCurrentCountry(user, product.id, input);
+
     await recordAudit({
       actor: user,
       action: 'created',
@@ -144,10 +164,49 @@ export async function createProduct(formData: FormData): Promise<ActionResult<{ 
     });
 
     revalidatePath('/admin/products');
-    revalidateProduct(slug);
+    await revalidateProduct(slug);
     return success({ id: product.id }, 'Product created.');
   } catch (error) {
     return toActionError(error);
+  }
+}
+
+/**
+ * Puts a freshly created product on sale in the admin's current market.
+ *
+ * Failure here is deliberately not fatal: the product exists, and the country
+ * pricing panel on its edit screen can always add the market by hand.
+ */
+async function sellInCurrentCountry(
+  user: SessionUser,
+  productId: string,
+  input: ReturnType<typeof readProductForm>,
+): Promise<void> {
+  try {
+    const scope = await scopeForUser(user);
+    await prisma.productCountry.upsert({
+      where: { productId_countryId: { productId, countryId: scope.country.id } },
+      update: {},
+      create: {
+        productId,
+        countryId: scope.country.id,
+        status: input.status,
+        publishedAt:
+          input.status === 'PUBLISHED' ? (input.publishedAt ?? new Date()) : input.publishedAt,
+        isFeatured: input.isFeatured,
+        sortOrder: input.sortOrder,
+        featuredOrder: input.featuredOrder,
+        currency: input.currency || scope.country.currency,
+        monthlyPrice: toDecimal(input.monthlyPrice),
+        annualPrice: toDecimal(input.annualPrice),
+        compareAtPrice: toDecimal(input.compareAtPrice),
+        discountPercent: input.discountPercent ?? null,
+        priceSuffix: input.priceSuffix,
+        priceNote: input.priceNote,
+      },
+    });
+  } catch (error) {
+    console.error('[products] country pricing could not be created', error);
   }
 }
 
@@ -203,8 +262,8 @@ export async function updateProduct(productId: string, formData: FormData): Prom
 
     revalidatePath('/admin/products');
     revalidatePath(`/admin/products/${productId}`);
-    revalidateProduct(before.slug);
-    if (slug !== before.slug) revalidateProduct(slug);
+    await revalidateProduct(before.slug);
+    if (slug !== before.slug) await revalidateProduct(slug);
     return success(undefined, 'Product saved.');
   } catch (error) {
     return toActionError(error);
@@ -238,7 +297,7 @@ export async function setProductStatus(
     });
 
     revalidatePath('/admin/products');
-    revalidateProduct(product.slug);
+    await revalidateProduct(product.slug);
     return success(undefined, `Product ${status.toLowerCase()}.`);
   } catch (error) {
     return toActionError(error);
@@ -283,7 +342,7 @@ export async function toggleProductFeatured(productId: string): Promise<ActionRe
     });
 
     revalidatePath('/admin/products');
-    revalidateProduct(product.slug);
+    await revalidateProduct(product.slug);
     return success(undefined, product.isFeatured ? 'Removed from featured.' : 'Marked as featured.');
   } catch (error) {
     return toActionError(error);
@@ -439,7 +498,7 @@ export async function deleteProduct(productId: string): Promise<ActionResult> {
     });
 
     revalidatePath('/admin/products');
-    revalidateProduct(product.slug);
+    await revalidateProduct(product.slug);
     return success(undefined, 'Product deleted.');
   } catch (error) {
     return toActionError(error);

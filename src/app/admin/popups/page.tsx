@@ -4,6 +4,7 @@ import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { PopupManager, type PopupRow } from '@/components/admin/marketing/popup-manager';
 import { Card } from '@/components/ui/card';
+import { getAdminCountryScope } from '@/lib/country/admin';
 
 export const metadata: Metadata = { title: 'Popups' };
 export const dynamic = 'force-dynamic';
@@ -11,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export default async function PopupsAdmin() {
   const user = await requirePermission('marketing.manage');
 
-  const [popups, forms, leadMagnets] = await Promise.all([
+  const [popups, forms, leadMagnets, scope] = await Promise.all([
     prisma.popup.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' } }),
     prisma.form.findMany({
       where: { deletedAt: null, isActive: true },
@@ -23,6 +24,7 @@ export default async function PopupsAdmin() {
       orderBy: { title: 'asc' },
       select: { id: true, title: true },
     }),
+    getAdminCountryScope(),
   ]);
 
   const rows: PopupRow[] = popups.map((popup) => ({
@@ -45,6 +47,7 @@ export default async function PopupsAdmin() {
     startsAt: popup.startsAt?.toISOString() ?? null,
     endsAt: popup.endsAt?.toISOString() ?? null,
     urlPatterns: Array.isArray(popup.urlPatterns) ? (popup.urlPatterns as string[]) : [],
+    countryId: popup.countryId,
   }));
 
   return (
@@ -58,6 +61,11 @@ export default async function PopupsAdmin() {
         <PopupManager
           rows={rows}
           forms={forms}
+          countries={
+            scope.canSwitch
+              ? scope.countries.map((country) => ({ id: country.id, name: country.name }))
+              : []
+          }
           leadMagnets={leadMagnets}
           canEdit={userCan(user, 'marketing.manage')}
         />

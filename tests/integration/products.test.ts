@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { mockAuth, formData, uniqueSuffix, TEST_ACTOR } from '../helpers';
+import { mockAuth, formData, uniqueSuffix, TEST_ACTOR, ensureTestCountry, testCountryContext } from '../helpers';
 
 mockAuth();
 
@@ -108,7 +108,7 @@ describe('product lifecycle', () => {
   });
 
   it('keeps a draft product off the public site', async () => {
-    expect(await getPublicProduct(`test-plan-${suffix}`)).toBeNull();
+    expect(await getPublicProduct(testCountryContext(), `test-plan-${suffix}`)).toBeNull();
   });
 
   it('publishes the product and exposes it publicly', async () => {
@@ -122,7 +122,7 @@ describe('product lifecycle', () => {
     await toggleProductFeatured(productId);
     expect((await prisma.product.findUniqueOrThrow({ where: { id: productId } })).isFeatured).toBe(true);
 
-    const featured = await selectProducts({ source: 'selected', productIds: [productId], limit: 5 });
+    const featured = await selectProducts(testCountryContext(), { source: 'selected', productIds: [productId], limit: 5 });
     expect(featured).toHaveLength(1);
     expect(featured[0]!.monthlyPrice).toBe('1250.55');
     expect(featured[0]!.features).toEqual(['Feature one', 'Feature two']);
@@ -133,7 +133,7 @@ describe('product lifecycle', () => {
     const secondId = (second as { data: { id: string } }).data.id;
     created.push(secondId);
 
-    const ordered = await selectProducts({ source: 'selected', productIds: [secondId, productId], limit: 5 });
+    const ordered = await selectProducts(testCountryContext(), { source: 'selected', productIds: [secondId, productId], limit: 5 });
     expect(ordered.map((p) => p.id)).toEqual([secondId, productId]);
   });
 
@@ -165,7 +165,7 @@ describe('product lifecycle', () => {
     expect(row.deletedAt).not.toBeNull();
     expect(row.isFeatured).toBe(false);
 
-    const selected = await selectProducts({ source: 'selected', productIds: [productId], limit: 5 });
+    const selected = await selectProducts(testCountryContext(), { source: 'selected', productIds: [productId], limit: 5 });
     expect(selected).toHaveLength(0);
   });
 });

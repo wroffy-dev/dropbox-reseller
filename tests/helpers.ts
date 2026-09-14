@@ -77,3 +77,82 @@ export function formData(values: Record<string, unknown>): FormData {
 export function uniqueSuffix(): string {
   return Math.random().toString(36).slice(2, 9);
 }
+
+/**
+ * The market every test writes into.
+ *
+ * Tests exercise real Server Actions against a real database, and content is
+ * now market-scoped, so each suite needs a market to work in. This creates the
+ * default one on demand and is idempotent, so suites can call it freely.
+ */
+export async function ensureTestCountry(): Promise<string> {
+  const { prisma } = await import('@/lib/db/prisma');
+  const country = await prisma.country.upsert({
+    where: { code: 'IN' },
+    update: {},
+    create: {
+      id: 'country_in',
+      name: 'India',
+      code: 'IN',
+      slug: '',
+      locale: 'en-IN',
+      currency: 'INR',
+      currencySymbol: '₹',
+      phoneCode: '+91',
+      timezone: 'Asia/Kolkata',
+      isDefault: true,
+      isActive: true,
+      sortOrder: 0,
+    },
+  });
+  return country.id;
+}
+
+/** A second market, for the tests that assert markets stay isolated. */
+export async function ensureSecondCountry(): Promise<string> {
+  const { prisma } = await import('@/lib/db/prisma');
+  const country = await prisma.country.upsert({
+    where: { code: 'AE' },
+    update: {},
+    create: {
+      id: 'country_ae',
+      name: 'United Arab Emirates',
+      code: 'AE',
+      slug: 'ae',
+      locale: 'en-AE',
+      currency: 'AED',
+      currencySymbol: 'AED',
+      phoneCode: '+971',
+      timezone: 'Asia/Dubai',
+      isDefault: false,
+      isActive: true,
+      sortOrder: 1,
+    },
+  });
+  return country.id;
+}
+
+/**
+ * The market context tests hand to rendering helpers and services.
+ *
+ * A plain object, exactly as the registry would build it — tests never need a
+ * database round trip just to describe "the root market".
+ */
+export function testCountryContext(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'country_in',
+    name: 'India',
+    code: 'IN',
+    slug: '',
+    locale: 'en-IN',
+    currency: 'INR',
+    currencySymbol: '₹',
+    phoneCode: '+91',
+    timezone: 'Asia/Kolkata',
+    isDefault: true,
+    isActive: true,
+    sortOrder: 0,
+    prefixes: ['ae'] as readonly string[],
+    ...overrides,
+  };
+}

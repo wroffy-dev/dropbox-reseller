@@ -14,6 +14,8 @@ import { Alert, EmptyState } from '@/components/ui/states';
 import { formatRelative, formatPercent, formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
 import type { PermissionKey } from '@/lib/auth/permissions';
+import { resolveListCountry, ALL_COUNTRIES } from '@/lib/admin/country-filter';
+import { CountryScopePicker } from '@/components/admin/country-scope-picker';
 
 // Absolute so the public site's title template does not leak into the admin.
 export const metadata: Metadata = { title: { absolute: 'Dashboard · Admin' } };
@@ -22,22 +24,27 @@ export const dynamic = 'force-dynamic';
 export default async function AdminDashboard({
   searchParams,
 }: {
-  searchParams: Promise<{ denied?: string }>;
+  searchParams: Promise<{ denied?: string; country?: string }>;
 }) {
   const user = await requirePermission('dashboard.view');
   const can = (permission: PermissionKey) => userCan(user, permission);
 
   const canSeeLeads = can('leads.view');
 
-  const [params, metrics, actionItems, setupChecks, recentLeads, recentActivity, counts] =
+  const params = await searchParams;
+  // Lead figures report one storefront by default — the one chosen in the top
+  // bar — with "All countries" one click away.
+  const country = await resolveListCountry(user, params.country);
+  const countryId = country.countryId ?? undefined;
+
+  const [metrics, actionItems, setupChecks, recentLeads, recentActivity, counts] =
     await Promise.all([
-      searchParams,
-      getDashboardMetrics(30),
-      canSeeLeads ? getActionItems() : Promise.resolve([]),
+      getDashboardMetrics(30, countryId),
+      canSeeLeads ? getActionItems(countryId) : Promise.resolve([]),
       can('settings.manage') ? getSetupChecks() : Promise.resolve([]),
       canSeeLeads
         ? prisma.lead.findMany({
-            where: { deletedAt: null },
+            where: { deletedAt: null, ...(countryId ? { countryId } : {}) },
             orderBy: { createdAt: 'desc' },
             take: 6,
             select: {
@@ -85,7 +92,22 @@ export default async function AdminDashboard({
     <>
       <AdminPageHeader
         title={`Welcome back, ${user.name.split(' ')[0]}`}
-        description="What needs your attention today, and how the website is performing."
+        description={
+          country.multiCountry
+            ? `What needs your attention today across ${country.countryId ? country.current.name : 'all countries'}.`
+            : 'What needs your attention today, and how the website is performing.'
+        }
+        actions={
+          country.multiCountry ? (
+            <CountryScopePicker
+              value={country.value}
+              options={[
+                { value: ALL_COUNTRIES, label: 'All countries' },
+                ...country.countries.map((row) => ({ value: row.id, label: row.name })),
+              ]}
+            />
+          ) : undefined
+        }
       />
 
       {params.denied ? (

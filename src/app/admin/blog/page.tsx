@@ -10,6 +10,7 @@ import { AdminPagination } from '@/components/admin/admin-pagination';
 import { PostsTable, type PostRow } from '@/components/admin/blog/posts-table';
 import { Card } from '@/components/ui/card';
 import { ButtonLink, buttonClasses } from '@/components/ui/button';
+import { resolveListCountry, countryFilterDefinition } from '@/lib/admin/country-filter';
 import type { Prisma } from '@prisma/client';
 
 export const metadata: Metadata = { title: 'Blog' };
@@ -27,6 +28,7 @@ export default async function BlogAdmin({
     tag?: string;
     author?: string;
     featured?: string;
+    country?: string;
     from?: string;
     to?: string;
     page?: string;
@@ -36,7 +38,11 @@ export default async function BlogAdmin({
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
 
+  // Articles belong to a market, so the list follows the topbar's selection.
+  const country = await resolveListCountry(user, params.country);
+
   const where: Prisma.BlogPostWhereInput = { deletedAt: null };
+  if (country.countryId) where.countryId = country.countryId;
   if (params.q?.trim()) {
     where.OR = [
       { title: { contains: params.q.trim(), mode: 'insensitive' } },
@@ -77,6 +83,7 @@ export default async function BlogAdmin({
         thumbnail: { select: { url: true } },
         category: { select: { name: true } },
         author: { select: { name: true } },
+        country: { select: { name: true } },
       },
     }),
     prisma.blogPost.count({ where }),
@@ -112,12 +119,14 @@ export default async function BlogAdmin({
     imageUrl: row.featuredImage?.url ?? row.thumbnail?.url ?? null,
     categoryName: row.category?.name ?? null,
     authorName: row.author?.name ?? null,
+    countryName: row.country.name,
     readingTime: row.readingTime,
     publishedAt: row.publishedAt?.toISOString() ?? null,
     updatedAt: row.updatedAt.toISOString(),
   }));
 
   const definitions: FilterDefinition[] = [
+    ...countryFilterDefinition(country),
     {
       name: 'status',
       label: 'Status',
@@ -177,7 +186,11 @@ export default async function BlogAdmin({
     <>
       <AdminPageHeader
         title="Blog"
-        description="Articles published at /blog. Categories and tags drive the public archive pages."
+        description={
+          country.multiCountry
+            ? `Articles published at ${country.countryId ? `/${[country.current.slug, 'blog'].filter(Boolean).join('/')}` : '/blog'}. You are working in ${country.countryId ? country.current.name : 'all countries'}.`
+            : 'Articles published at /blog. Categories and tags drive the public archive pages.'
+        }
         crumbs={[{ label: 'Blog' }]}
         actions={
           <>
@@ -219,6 +232,7 @@ export default async function BlogAdmin({
         <PostsTable
           rows={tableRows}
           can={can}
+          showCountry={country.multiCountry}
           filtered={Boolean(
             params.q ||
               params.status ||

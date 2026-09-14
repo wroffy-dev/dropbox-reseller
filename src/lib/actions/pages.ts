@@ -11,11 +11,32 @@ import { parseSectionDesign, DEFAULT_SECTION_DESIGN } from '@/lib/cms/design';
 import { uniqueSlug, pageSlug } from '@/lib/utils/slug';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
 import { sanitizeText } from '@/lib/utils/sanitize';
+import { resolveActionCountry } from '@/lib/country/admin';
+import { assertCountryAccess } from '@/lib/country/access';
+import { getCountryById } from '@/lib/country/registry';
+import { revalidateCountryPage } from '@/lib/country/revalidate';
+import type { CountryContext } from '@/lib/country/types';
 
-/** Revalidates the public surfaces a page change can affect. */
-async function revalidatePage(slug: string) {
-  revalidatePath(`/${slug}`.replace(/\/+$/, '') || '/', 'page');
-  revalidatePath('/sitemap.xml');
+/** Revalidates the public surfaces a page change can affect, in its market. */
+async function revalidatePage(countryId: string, slug: string) {
+  const country = await getCountryById(countryId);
+  if (!country) return;
+  revalidateCountryPage(country, slug);
+}
+
+/**
+ * Guards a page a Server Action is about to touch.
+ *
+ * Authorisation is two-sided: the role has to permit the operation, and the
+ * user has to have access to the market the record belongs to. Both are checked
+ * against the record loaded from the database, never against an id in the
+ * request body, so a page id alone cannot reach a market the user cannot edit.
+ */
+async function assertPageAccess(
+  user: Awaited<ReturnType<typeof authorize>>,
+  countryId: string,
+): Promise<void> {
+  await assertCountryAccess(user, countryId);
 }
 
 export async function createPage(formData: FormData): Promise<ActionResult<{ id: string }>> {
@@ -46,9 +67,15 @@ export async function createPage(formData: FormData): Promise<ActionResult<{ id:
 
     if (parsed.status === 'PUBLISHED') await authorize('pages.publish');
 
+    // The market comes from the admin's current selection unless the form names
+    // one, and either way it is validated against the user's market access.
+    const country = await resolveActionCountry(user, formData.get('countryId')?.toString() || null);
+
+    // Slugs are unique per market, so the UAE can own "dropbox-business" while
+    // India already does.
     const slug = await uniqueSlug(parsed.slug || pageSlug(parsed.title), async (candidate) => {
       const existing = await prisma.page.findUnique({
-        where: { slug: candidate },
+        where: { countryId_slug: { countryId: country.id, slug: candidate } },
         select: { id: true },
       });
       return Boolean(existing);
@@ -56,11 +83,16 @@ export async function createPage(formData: FormData): Promise<ActionResult<{ id:
 
     const page = await prisma.$transaction(async (tx) => {
       if (parsed.isHomepage) {
-        await tx.page.updateMany({ where: { isHomepage: true }, data: { isHomepage: false } });
+        // Each market has exactly one homepage; another market's is untouched.
+        await tx.page.updateMany({
+          where: { isHomepage: true, countryId: country.id },
+          data: { isHomepage: false },
+        });
       }
       return tx.page.create({
         data: {
           ...parsed,
+          countryId: country.id,
           slug,
           title: sanitizeText(parsed.title),
           publishedAt:
@@ -76,12 +108,12 @@ export async function createPage(formData: FormData): Promise<ActionResult<{ id:
       action: 'created',
       entity: 'Page',
       entityId: page.id,
-      summary: `Created page “${page.title}”`,
-      after: { title: page.title, slug: page.slug, status: page.status },
+      summary: `Created page “${page.title}” (${country.code})`,
+      after: { title: page.title, slug: page.slug, status: page.status, country: country.code },
     });
 
     revalidatePath('/admin/pages');
-    await revalidatePage(slug);
+    await revalidatePage(page.countryId, slug);
     return success({ id: page.id }, 'Page created.');
   } catch (error) {
     return toActionError(error);
@@ -94,6 +126,7 @@ export async function updatePage(pageId: string, formData: FormData): Promise<Ac
 
     const before = await prisma.page.findUnique({ where: { id: pageId } });
     if (!before || before.deletedAt) return failure('That page no longer exists.');
+    await assertPageAccess(user, before.countryId);
 
     const parsed = pageInputSchema.parse({
       title: formData.get('title'),
@@ -126,7 +159,7 @@ export async function updatePage(pageId: string, formData: FormData): Promise<Ac
 
     if (slug !== before.slug) {
       const clash = await prisma.page.findFirst({
-        where: { slug, id: { not: pageId } },
+        where: { slug, countryId: before.countryId, id: { not: pageId } },
         select: { id: true },
       });
       if (clash)
@@ -135,7 +168,10 @@ export async function updatePage(pageId: string, formData: FormData): Promise<Ac
 
     const updated = await prisma.$transaction(async (tx) => {
       if (parsed.isHomepage && !before.isHomepage) {
-        await tx.page.updateMany({ where: { isHomepage: true }, data: { isHomepage: false } });
+        await tx.page.updateMany({
+          where: { isHomepage: true, countryId: before.countryId },
+          data: { isHomepage: false },
+        });
       }
       return tx.page.update({
         where: { id: pageId },
@@ -164,8 +200,8 @@ export async function updatePage(pageId: string, formData: FormData): Promise<Ac
 
     revalidatePath('/admin/pages');
     revalidatePath(`/admin/pages/${pageId}`);
-    await revalidatePage(before.slug);
-    if (slug !== before.slug) await revalidatePage(slug);
+    await revalidatePage(before.countryId, before.slug);
+    if (slug !== before.slug) await revalidatePage(before.countryId, slug);
     return success(undefined, 'Page saved.');
   } catch (error) {
     return toActionError(error);
@@ -181,6 +217,7 @@ export async function setPageStatus(
       status === 'PUBLISHED' ? await authorize('pages.publish') : await authorize('pages.edit');
     const page = await prisma.page.findUnique({ where: { id: pageId } });
     if (!page) return failure('That page no longer exists.');
+    await assertPageAccess(user, page.countryId);
 
     await prisma.page.update({
       where: { id: pageId },
@@ -202,7 +239,7 @@ export async function setPageStatus(
     });
 
     revalidatePath('/admin/pages');
-    await revalidatePage(page.slug);
+    await revalidatePage(page.countryId, page.slug);
     return success(undefined, `Page ${status.toLowerCase()}.`);
   } catch (error) {
     return toActionError(error);
@@ -217,10 +254,11 @@ export async function duplicatePage(pageId: string): Promise<ActionResult<{ id: 
       include: { sections: { orderBy: { sortOrder: 'asc' } } },
     });
     if (!source) return failure('That page no longer exists.');
+    await assertPageAccess(user, source.countryId);
 
     const slug = await uniqueSlug(`${source.slug || 'home'}-copy`, async (candidate) => {
       const existing = await prisma.page.findUnique({
-        where: { slug: candidate },
+        where: { countryId_slug: { countryId: source.countryId, slug: candidate } },
         select: { id: true },
       });
       return Boolean(existing);
@@ -228,6 +266,7 @@ export async function duplicatePage(pageId: string): Promise<ActionResult<{ id: 
 
     const copy = await prisma.page.create({
       data: {
+        countryId: source.countryId,
         title: `${source.title} (copy)`,
         slug,
         status: 'DRAFT',
@@ -271,11 +310,138 @@ export async function duplicatePage(pageId: string): Promise<ActionResult<{ id: 
   }
 }
 
+/**
+ * Copies a page into another market.
+ *
+ * The whole page comes across — every section, in order, with its block type,
+ * content, design settings and media references, plus the layout flags and the
+ * SEO fields as an editing starting point. What deliberately does not come
+ * across is publication: the copy is always a DRAFT, so a duplicated page can
+ * never appear in search results as an unreviewed duplicate of another market's
+ * page. It is never the homepage either; that is a decision for the target
+ * market to make on purpose.
+ *
+ * An existing page at the same URL in the target market is never overwritten
+ * silently. The action refuses and reports the clash, and only replaces the
+ * target's sections when the caller comes back having explicitly confirmed it.
+ */
+export async function duplicatePageToCountry(
+  pageId: string,
+  targetCountryId: string,
+  options: { replaceExisting?: boolean } = {},
+): Promise<ActionResult<{ id: string; replaced: boolean }>> {
+  try {
+    const user = await authorize('pages.create');
+
+    const source = await prisma.page.findUnique({
+      where: { id: pageId },
+      include: { sections: { orderBy: { sortOrder: 'asc' } } },
+    });
+    if (!source || source.deletedAt) return failure('That page no longer exists.');
+    await assertPageAccess(user, source.countryId);
+
+    const target = await resolveActionCountry(user, targetCountryId);
+    if (target.id === source.countryId) {
+      return failure('That page already belongs to this country.');
+    }
+
+    const existing = await prisma.page.findUnique({
+      where: { countryId_slug: { countryId: target.id, slug: source.slug } },
+      select: { id: true, title: true, deletedAt: true },
+    });
+
+    if (existing && !existing.deletedAt && !options.replaceExisting) {
+      return failure(
+        `${target.name} already has a page at /${source.slug || ''} (“${existing.title}”). Confirm to replace its content.`,
+        { _confirm: ['exists'] },
+      );
+    }
+
+    const sectionData = source.sections.map((section) => ({
+      blockType: section.blockType,
+      name: section.name,
+      sortOrder: section.sortOrder,
+      isVisible: section.isVisible,
+      content: section.content as object,
+      settings: section.settings as object,
+    }));
+
+    const shared = {
+      title: source.title,
+      status: 'DRAFT' as const,
+      publishedAt: null,
+      isHomepage: false,
+      categoryId: source.categoryId,
+      showHeader: source.showHeader,
+      showFooter: source.showFooter,
+      seoTitle: source.seoTitle,
+      seoDescription: source.seoDescription,
+      // The canonical is intentionally not copied: a market canonicals to its
+      // own URL, and inheriting the source's would point the copy at the other
+      // market's page.
+      canonicalUrl: null,
+      noIndex: source.noIndex,
+      noFollow: source.noFollow,
+      ogTitle: source.ogTitle,
+      ogDescription: source.ogDescription,
+      ogImageId: source.ogImageId,
+      twitterTitle: source.twitterTitle,
+      twitterDescription: source.twitterDescription,
+      twitterImageId: source.twitterImageId,
+      updatedById: user.id,
+    };
+
+    const copy = await prisma.$transaction(async (tx) => {
+      if (existing) {
+        await tx.pageSection.deleteMany({ where: { pageId: existing.id } });
+        return tx.page.update({
+          where: { id: existing.id },
+          data: {
+            ...shared,
+            slug: source.slug,
+            deletedAt: null,
+            sections: { create: sectionData },
+          },
+        });
+      }
+      return tx.page.create({
+        data: {
+          ...shared,
+          countryId: target.id,
+          slug: source.slug,
+          createdById: user.id,
+          sections: { create: sectionData },
+        },
+      });
+    });
+
+    await recordAudit({
+      actor: user,
+      action: existing ? 'duplicated.replaced' : 'duplicated.country',
+      entity: 'Page',
+      entityId: copy.id,
+      summary: `Copied “${source.title}” to ${target.name} as a draft`,
+      before: existing ? { id: existing.id, title: existing.title } : undefined,
+      after: { slug: copy.slug, country: target.code, status: copy.status },
+    });
+
+    revalidatePath('/admin/pages');
+    await revalidatePage(target.id, copy.slug);
+    return success(
+      { id: copy.id, replaced: Boolean(existing) },
+      `Copied to ${target.name} as a draft.`,
+    );
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
 export async function deletePage(pageId: string): Promise<ActionResult> {
   try {
     const user = await authorize('pages.delete');
     const page = await prisma.page.findUnique({ where: { id: pageId } });
     if (!page) return failure('That page no longer exists.');
+    await assertPageAccess(user, page.countryId);
     if (page.isHomepage)
       return failure('Set another page as the homepage before deleting this one.');
 
@@ -299,7 +465,7 @@ export async function deletePage(pageId: string): Promise<ActionResult> {
     });
 
     revalidatePath('/admin/pages');
-    await revalidatePage(page.slug);
+    await revalidatePage(page.countryId, page.slug);
     return success(undefined, 'Page deleted.');
   } catch (error) {
     return toActionError(error);
@@ -319,8 +485,12 @@ export async function addSection(
     const definition = getBlock(blockType);
     if (!definition) return failure('Unknown block type.');
 
-    const page = await prisma.page.findUnique({ where: { id: pageId }, select: { slug: true } });
+    const page = await prisma.page.findUnique({
+      where: { id: pageId },
+      select: { slug: true, countryId: true },
+    });
     if (!page) return failure('That page no longer exists.');
+    await assertPageAccess(user, page.countryId);
 
     const last = await prisma.pageSection.findFirst({
       where: { pageId },
@@ -348,7 +518,7 @@ export async function addSection(
     });
 
     revalidatePath(`/admin/pages/${pageId}`);
-    await revalidatePage(page.slug);
+    await revalidatePage(page.countryId, page.slug);
     return success({ id: section.id }, `${definition.label} added.`);
   } catch (error) {
     return toActionError(error);
@@ -364,7 +534,7 @@ export async function updateSection(
 
     const section = await prisma.pageSection.findUnique({
       where: { id: sectionId },
-      include: { page: { select: { id: true, slug: true } } },
+      include: { page: { select: { id: true, slug: true, countryId: true } } },
     });
     if (!section) return failure('That section no longer exists.');
 
@@ -408,7 +578,7 @@ export async function updateSection(
     await prisma.page.update({ where: { id: section.page.id }, data: { updatedById: user.id } });
 
     revalidatePath(`/admin/pages/${section.page.id}`);
-    await revalidatePage(section.page.slug);
+    await revalidatePage(section.page.countryId, section.page.slug);
     return success(undefined, 'Section saved.');
   } catch (error) {
     return toActionError(error);
@@ -420,7 +590,7 @@ export async function duplicateSection(sectionId: string): Promise<ActionResult<
     await authorize('pages.edit');
     const source = await prisma.pageSection.findUnique({
       where: { id: sectionId },
-      include: { page: { select: { id: true, slug: true } } },
+      include: { page: { select: { id: true, slug: true, countryId: true } } },
     });
     if (!source) return failure('That section no longer exists.');
 
@@ -442,7 +612,7 @@ export async function duplicateSection(sectionId: string): Promise<ActionResult<
 
     await normaliseOrder(source.pageId);
     revalidatePath(`/admin/pages/${source.pageId}`);
-    await revalidatePage(source.page.slug);
+    await revalidatePage(source.page.countryId, source.page.slug);
     return success({ id: copy.id }, 'Section duplicated.');
   } catch (error) {
     return toActionError(error);
@@ -454,13 +624,13 @@ export async function deleteSection(sectionId: string): Promise<ActionResult> {
     await authorize('pages.edit');
     const section = await prisma.pageSection.findUnique({
       where: { id: sectionId },
-      include: { page: { select: { id: true, slug: true } } },
+      include: { page: { select: { id: true, slug: true, countryId: true } } },
     });
     if (!section) return failure('That section no longer exists.');
 
     await prisma.pageSection.delete({ where: { id: sectionId } });
     revalidatePath(`/admin/pages/${section.page.id}`);
-    await revalidatePage(section.page.slug);
+    await revalidatePage(section.page.countryId, section.page.slug);
     return success(undefined, 'Section removed.');
   } catch (error) {
     return toActionError(error);
@@ -472,7 +642,10 @@ export async function reorderSections(input: unknown): Promise<ActionResult> {
     await authorize('pages.edit');
     const { pageId, order } = sectionOrderSchema.parse(input);
 
-    const page = await prisma.page.findUnique({ where: { id: pageId }, select: { slug: true } });
+    const page = await prisma.page.findUnique({
+      where: { id: pageId },
+      select: { slug: true, countryId: true },
+    });
     if (!page) return failure('That page no longer exists.');
 
     // Reject ids that do not belong to this page.
@@ -487,7 +660,7 @@ export async function reorderSections(input: unknown): Promise<ActionResult> {
     );
 
     revalidatePath(`/admin/pages/${pageId}`);
-    await revalidatePage(page.slug);
+    await revalidatePage(page.countryId, page.slug);
     return success(undefined, 'Order saved.');
   } catch (error) {
     return toActionError(error);
@@ -515,7 +688,7 @@ export async function toggleSectionVisibility(sectionId: string): Promise<Action
     await authorize('pages.edit');
     const section = await prisma.pageSection.findUnique({
       where: { id: sectionId },
-      include: { page: { select: { id: true, slug: true } } },
+      include: { page: { select: { id: true, slug: true, countryId: true } } },
     });
     if (!section) return failure('That section no longer exists.');
 
@@ -525,7 +698,7 @@ export async function toggleSectionVisibility(sectionId: string): Promise<Action
     });
 
     revalidatePath(`/admin/pages/${section.page.id}`);
-    await revalidatePage(section.page.slug);
+    await revalidatePage(section.page.countryId, section.page.slug);
     return success(undefined, section.isVisible ? 'Section hidden.' : 'Section shown.');
   } catch (error) {
     return toActionError(error);
@@ -583,7 +756,7 @@ export async function bulkPageAction(input: unknown): Promise<ActionResult> {
     });
 
     revalidatePath('/admin/pages');
-    for (const page of targets) await revalidatePage(page.slug);
+    for (const page of targets) await revalidatePage(page.countryId, page.slug);
 
     const skipped = pages.length - targets.length;
     return success(

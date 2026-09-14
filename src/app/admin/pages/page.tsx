@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/card';
 import { ButtonLink, buttonClasses } from '@/components/ui/button';
 import Link from 'next/link';
 import { listPageCategoryOptions } from '@/lib/services/page-categories';
+import { resolveListCountry, countryFilterDefinition } from '@/lib/admin/country-filter';
 import type { Prisma } from '@prisma/client';
 
 export const metadata: Metadata = { title: 'Pages' };
@@ -21,13 +22,24 @@ const PER_PAGE = 20;
 export default async function PagesAdmin({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; category?: string; page?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    status?: string;
+    category?: string;
+    country?: string;
+    page?: string;
+  }>;
 }) {
   const user = await requirePermission('pages.view');
   const params = await searchParams;
 
+  // Pages belong to a market, so the list follows the market chosen in the
+  // topbar unless the editor explicitly asks for another or for all of them.
+  const country = await resolveListCountry(user, params.country);
+
   const page = Math.max(1, Number(params.page) || 1);
   const where: Prisma.PageWhereInput = { deletedAt: null };
+  if (country.countryId) where.countryId = country.countryId;
   if (params.q?.trim()) {
     where.OR = [
       { title: { contains: params.q.trim(), mode: 'insensitive' } },
@@ -53,6 +65,7 @@ export default async function PagesAdmin({
         status: true,
         isHomepage: true,
         updatedAt: true,
+        country: { select: { code: true, name: true, slug: true } },
         category: { select: { id: true, name: true } },
         _count: { select: { sections: true } },
       },
@@ -76,10 +89,14 @@ export default async function PagesAdmin({
     isHomepage: row.isHomepage,
     updatedAt: row.updatedAt.toISOString(),
     categoryName: row.category?.name ?? null,
+    countryName: row.country.name,
+    countryCode: row.country.code,
+    countrySlug: row.country.slug,
     sectionCount: row._count.sections,
   }));
 
   const definitions: FilterDefinition[] = [
+    ...countryFilterDefinition(country),
     {
       name: 'status',
       label: 'Status',
@@ -117,7 +134,11 @@ export default async function PagesAdmin({
     <>
       <AdminPageHeader
         title="Pages"
-        description="Every page on the website. Create, arrange sections and publish without touching code."
+        description={
+          country.multiCountry
+            ? `Every page on the website. You are working in ${country.countryId ? country.current.name : 'all countries'}.`
+            : 'Every page on the website. Create, arrange sections and publish without touching code.'
+        }
         crumbs={[{ label: 'Pages' }]}
         actions={
           <>
@@ -144,7 +165,15 @@ export default async function PagesAdmin({
       />
 
       <Card>
-        <PagesTable rows={tableRows} can={can} filtered={Boolean(params.q || params.status)} />
+        <PagesTable
+          rows={tableRows}
+          can={can}
+          showCountry={country.multiCountry}
+          countries={country.countries
+            .filter((row) => row.isActive)
+            .map((row) => ({ id: row.id, code: row.code, name: row.name }))}
+          filtered={Boolean(params.q || params.status)}
+        />
         {tableRows.length > 0 ? (
           <AdminPagination
             page={page}

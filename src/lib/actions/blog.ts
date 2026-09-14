@@ -11,11 +11,16 @@ import { uniqueSlug, slugify } from '@/lib/utils/slug';
 import { sanitizeHtml, sanitizeText } from '@/lib/utils/sanitize';
 import { readingTimeMinutes, plainExcerpt } from '@/lib/utils/format';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
+import { resolveActionCountry } from '@/lib/country/admin';
+import { assertCountryAccess } from '@/lib/country/access';
+import { getCountryById, listActiveCountries } from '@/lib/country/registry';
+import { revalidateCountryBlog } from '@/lib/country/revalidate';
 
-function revalidatePost(slug: string) {
-  revalidatePath('/blog', 'layout');
-  revalidatePath(`/blog/${slug}`);
-  revalidatePath('/sitemap.xml');
+/** Revalidates a market's blog surfaces. */
+async function revalidatePost(countryId: string, slug?: string | null) {
+  const country = await getCountryById(countryId);
+  if (!country) return;
+  revalidateCountryBlog(country, slug ?? null);
 }
 
 function readPostForm(formData: FormData) {
@@ -86,9 +91,14 @@ export async function createBlogPost(formData: FormData): Promise<ActionResult<{
     const input = readPostForm(formData);
     if (input.status === 'PUBLISHED') await authorize('blog.publish');
 
+    // The market comes from the admin's current selection unless the form names
+    // one, and is validated against the user's market access either way.
+    const country = await resolveActionCountry(user, formData.get('countryId')?.toString() || null);
+
+    // Article slugs are unique per market, so the same guide can exist in both.
     const slug = await uniqueSlug(input.slug || slugify(input.title), async (candidate) => {
       const existing = await prisma.blogPost.findUnique({
-        where: { slug: candidate },
+        where: { countryId_slug: { countryId: country.id, slug: candidate } },
         select: { id: true },
       });
       return Boolean(existing);
@@ -99,6 +109,7 @@ export async function createBlogPost(formData: FormData): Promise<ActionResult<{
 
     const post = await prisma.blogPost.create({
       data: {
+        countryId: country.id,
         title: sanitizeText(input.title),
         slug,
         status: input.status,
@@ -142,7 +153,7 @@ export async function createBlogPost(formData: FormData): Promise<ActionResult<{
     });
 
     revalidatePath('/admin/blog');
-    revalidatePost(slug);
+    await revalidatePost(post.countryId, slug);
     return success({ id: post.id }, 'Post created.');
   } catch (error) {
     return toActionError(error);
@@ -162,7 +173,7 @@ export async function updateBlogPost(postId: string, formData: FormData): Promis
     const slug = input.slug || before.slug;
     if (slug !== before.slug) {
       const clash = await prisma.blogPost.findFirst({
-        where: { slug, id: { not: postId } },
+        where: { slug, countryId: before.countryId, id: { not: postId } },
         select: { id: true },
       });
       if (clash)
@@ -230,8 +241,8 @@ export async function updateBlogPost(postId: string, formData: FormData): Promis
 
     revalidatePath('/admin/blog');
     revalidatePath(`/admin/blog/${postId}`);
-    revalidatePost(before.slug);
-    if (slug !== before.slug) revalidatePost(slug);
+    await revalidatePost(before.countryId, before.slug);
+    if (slug !== before.slug) await revalidatePost(before.countryId, slug);
     return success(undefined, 'Post saved.');
   } catch (error) {
     return toActionError(error);
@@ -265,7 +276,7 @@ export async function setBlogPostStatus(
     });
 
     revalidatePath('/admin/blog');
-    revalidatePost(post.slug);
+    await revalidatePost(post.countryId, post.slug);
     return success(undefined, `Post ${status.toLowerCase()}.`);
   } catch (error) {
     return toActionError(error);
@@ -280,10 +291,11 @@ export async function duplicateBlogPost(postId: string): Promise<ActionResult<{ 
       include: { tags: true },
     });
     if (!source) return failure('That post no longer exists.');
+    await assertCountryAccess(user, source.countryId);
 
     const slug = await uniqueSlug(`${source.slug}-copy`, async (candidate) => {
       const existing = await prisma.blogPost.findUnique({
-        where: { slug: candidate },
+        where: { countryId_slug: { countryId: source.countryId, slug: candidate } },
         select: { id: true },
       });
       return Boolean(existing);
@@ -291,6 +303,7 @@ export async function duplicateBlogPost(postId: string): Promise<ActionResult<{ 
 
     const copy = await prisma.blogPost.create({
       data: {
+        countryId: source.countryId,
         title: `${source.title} (copy)`,
         slug,
         status: 'DRAFT',
@@ -361,7 +374,7 @@ export async function deleteBlogPost(postId: string): Promise<ActionResult> {
     });
 
     revalidatePath('/admin/blog');
-    revalidatePost(post.slug);
+    await revalidatePost(post.countryId, post.slug);
     return success(undefined, 'Post deleted.');
   } catch (error) {
     return toActionError(error);
@@ -550,7 +563,9 @@ export async function bulkBlogAction(input: unknown): Promise<ActionResult> {
     });
 
     revalidatePath('/admin/blog');
-    revalidatePath('/blog');
+    for (const countryId of new Set(posts.map((post) => post.countryId))) {
+      await revalidatePost(countryId);
+    }
     return success(undefined, `${posts.length} post(s) updated.`);
   } catch (error) {
     return toActionError(error);

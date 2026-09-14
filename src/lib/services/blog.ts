@@ -7,11 +7,15 @@ import type { PostSource } from '@/lib/cms/blog-blocks';
 /**
  * Evaluated per call so `new Date()` reflects the current request rather than
  * the moment the module was first imported.
+ *
+ * Pass a market to scope the clause to it. Omitting it deliberately spans every
+ * market, which is what the hreflang and market-switcher lookups need.
  */
-export function publishedPostWhere() {
+export function publishedPostWhere(countryId?: string) {
   return {
     deletedAt: null,
     status: 'PUBLISHED' as const,
+    ...(countryId ? { countryId } : {}),
     OR: [{ publishedAt: null }, { publishedAt: { lte: new Date() } }],
   };
 }
@@ -70,7 +74,14 @@ export async function categoryIdsWithChildren(categoryId: string): Promise<strin
   return ids;
 }
 
-export const getCategoryBySlug = cache(async (slug: string) =>
+/**
+ * A blog category with, when one exists, the current market's overrides.
+ *
+ * The taxonomy itself is global — one tree, not one per market — but an archive
+ * can carry its own heading, description and SEO per market. A market with no
+ * override row simply renders the category's global values.
+ */
+export const getCategoryBySlug = cache(async (slug: string, countryId?: string) =>
   prisma.blogCategory.findUnique({
     where: { slug },
     include: {
@@ -78,6 +89,7 @@ export const getCategoryBySlug = cache(async (slug: string) =>
       image: { select: { url: true, altText: true, width: true, height: true } },
       ogImage: { select: { url: true } },
       parent: { select: { name: true, slug: true } },
+      countries: countryId ? { where: { countryId }, take: 1 } : false,
     },
   }),
 );
@@ -91,6 +103,8 @@ export const getTagBySlug = cache(async (slug: string) =>
 // ---------------------------------------------------------------------------
 
 export type ListPostsOptions = {
+  /** The market whose articles to list. Always supplied by public callers. */
+  countryId?: string;
   page?: number;
   categorySlug?: string;
   categoryIds?: string[];
@@ -127,7 +141,7 @@ function orderFor(options: ListPostsOptions): Prisma.BlogPostOrderByWithRelation
  * Postgres, so a blog with thousands of posts still only ships one page.
  */
 function postsWhere(options: ListPostsOptions): Prisma.BlogPostWhereInput {
-  const where: Prisma.BlogPostWhereInput = { ...publishedPostWhere() };
+  const where: Prisma.BlogPostWhereInput = { ...publishedPostWhere(options.countryId) };
   const and: Prisma.BlogPostWhereInput[] = [];
 
   if (options.categorySlug) where.category = { slug: options.categorySlug };
@@ -191,6 +205,7 @@ export async function countPosts(options: ListPostsOptions = {}): Promise<number
  * an administrator places them.
  */
 export async function resolvePostSource(
+  countryId: string,
   source: PostSource,
   context: { currentPostId?: string | null; currentCategoryId?: string | null } = {},
 ): Promise<BlogListItem[]> {
@@ -201,7 +216,7 @@ export async function resolvePostSource(
     if (source.postIds.length === 0) return [];
     const rows = await prisma.blogPost.findMany({
       where: {
-        ...publishedPostWhere(),
+        ...publishedPostWhere(countryId),
         id: { in: source.postIds.filter((id) => !excludeIds.includes(id)) },
       },
       select: listSelect,
@@ -216,6 +231,7 @@ export async function resolvePostSource(
 
   if (source.source === 'related') {
     return getRelatedPosts({
+      countryId,
       postId: context.currentPostId ?? null,
       categoryId: context.currentCategoryId ?? null,
       limit: source.limit,
@@ -231,6 +247,7 @@ export async function resolvePostSource(
       : undefined;
 
   const { posts } = await listPosts({
+    countryId,
     perPage: source.limit,
     categoryIds,
     tagId: source.source === 'tag' ? (source.tagId ?? undefined) : undefined,
@@ -269,11 +286,22 @@ const postInclude = {
 
 export type BlogPostDetail = Prisma.BlogPostGetPayload<{ include: typeof postInclude }>;
 
-export const getPublishedPost = cache(async (slug: string): Promise<BlogPostDetail | null> => {
-  return prisma.blogPost.findFirst({
+export const getPublishedPost = cache(
+  async (countryId: string, slug: string): Promise<BlogPostDetail | null> => {
+    return prisma.blogPost.findFirst({
+      where: { ...publishedPostWhere(countryId), slug },
+      include: postInclude,
+    });
+  },
+);
+
+/** Markets in which an article with this slug is published — for hreflang. */
+export const findLivePostCountries = cache(async (slug: string): Promise<string[]> => {
+  const rows = await prisma.blogPost.findMany({
     where: { ...publishedPostWhere(), slug },
-    include: postInclude,
+    select: { countryId: true },
   });
+  return rows.map((row) => row.countryId);
 });
 
 /** Any post by id, published or not — for the authenticated preview only. */
@@ -286,6 +314,7 @@ export const getPostForPreview = cache(async (id: string): Promise<BlogPostDetai
  * the same category, then shared tags, then recent articles.
  */
 export async function getRelatedPosts(input: {
+  countryId: string;
   postId: string | null;
   categoryId: string | null;
   limit?: number;
@@ -307,7 +336,7 @@ export async function getRelatedPosts(input: {
 
   if (input.postId) {
     const explicit = await prisma.blogPostRelation.findMany({
-      where: { sourceId: input.postId, target: publishedPostWhere() },
+      where: { sourceId: input.postId, target: publishedPostWhere(input.countryId) },
       orderBy: { sortOrder: 'asc' },
       take: limit,
       include: { target: { select: listSelect } },
@@ -318,7 +347,7 @@ export async function getRelatedPosts(input: {
   if (results.length < limit && input.categoryId) {
     const sameCategory = await prisma.blogPost.findMany({
       where: {
-        ...publishedPostWhere(),
+        ...publishedPostWhere(input.countryId),
         categoryId: input.categoryId,
         id: { notIn: Array.from(seen) },
       },
@@ -337,7 +366,7 @@ export async function getRelatedPosts(input: {
     if (tagIds.length > 0) {
       const sharedTags = await prisma.blogPost.findMany({
         where: {
-          ...publishedPostWhere(),
+          ...publishedPostWhere(input.countryId),
           id: { notIn: Array.from(seen) },
           tags: { some: { tagId: { in: tagIds } } },
         },
@@ -351,7 +380,7 @@ export async function getRelatedPosts(input: {
 
   if (results.length < limit) {
     const recent = await prisma.blogPost.findMany({
-      where: { ...publishedPostWhere(), id: { notIn: Array.from(seen) } },
+      where: { ...publishedPostWhere(input.countryId), id: { notIn: Array.from(seen) } },
       orderBy: [{ publishedAt: 'desc' }],
       take: limit - results.length,
       select: listSelect,
@@ -364,6 +393,7 @@ export async function getRelatedPosts(input: {
 
 /** The articles either side of this one, by publish date. */
 export async function getAdjacentPosts(input: {
+  countryId: string;
   postId: string;
   publishedAt: Date | null;
   categoryId: string | null;
@@ -371,7 +401,7 @@ export async function getAdjacentPosts(input: {
 }): Promise<{ previous: BlogListItem | null; next: BlogListItem | null }> {
   const pivot = input.publishedAt ?? new Date();
   const scope: Prisma.BlogPostWhereInput = {
-    ...publishedPostWhere(),
+    ...publishedPostWhere(input.countryId),
     id: { not: input.postId },
     ...(input.sameCategory && input.categoryId ? { categoryId: input.categoryId } : {}),
   };
@@ -412,7 +442,7 @@ export type BlogCategoryItem = {
  * Counts include descendants so a parent chip is never shown as empty when its
  * subcategories carry the articles.
  */
-export const getBlogCategories = cache(async (): Promise<BlogCategoryItem[]> => {
+export const getBlogCategories = cache(async (countryId: string): Promise<BlogCategoryItem[]> => {
   const rows = await prisma.blogCategory.findMany({
     where: { isActive: true },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
@@ -423,7 +453,9 @@ export const getBlogCategories = cache(async (): Promise<BlogCategoryItem[]> => 
       description: true,
       parentId: true,
       sortOrder: true,
-      _count: { select: { posts: { where: publishedPostWhere() } } },
+      // Counts are per market, so a category with only India articles does not
+      // advertise itself on the UAE archive.
+      _count: { select: { posts: { where: publishedPostWhere(countryId) } } },
     },
   });
 
@@ -453,7 +485,7 @@ export const getBlogCategories = cache(async (): Promise<BlogCategoryItem[]> => 
 
 export type BlogTagItem = { id: string; name: string; slug: string; count: number };
 
-export const getBlogTags = cache(async (limit = 40): Promise<BlogTagItem[]> => {
+export const getBlogTags = cache(async (countryId: string, limit = 40): Promise<BlogTagItem[]> => {
   const rows = await prisma.blogTag.findMany({
     where: { isActive: true },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
@@ -462,7 +494,7 @@ export const getBlogTags = cache(async (limit = 40): Promise<BlogTagItem[]> => {
       id: true,
       name: true,
       slug: true,
-      _count: { select: { posts: { where: { post: publishedPostWhere() } } } },
+      _count: { select: { posts: { where: { post: publishedPostWhere(countryId) } } } },
     },
   });
   return rows.map((row) => ({

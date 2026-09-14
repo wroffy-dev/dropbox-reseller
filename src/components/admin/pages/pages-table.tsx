@@ -20,6 +20,10 @@ export type PageRow = {
   updatedAt: string;
   /** Null when the page is uncategorised. */
   categoryName: string | null;
+  /** The market this page belongs to. */
+  countryName: string;
+  countryCode: string;
+  countrySlug: string;
   sectionCount: number;
 };
 
@@ -34,10 +38,16 @@ export function PagesTable({
   rows,
   can,
   filtered,
+  showCountry = false,
+  countries = [],
 }: {
   rows: PageRow[];
   can: PagePermissions;
   filtered: boolean;
+  /** Adds the Country column. Hidden on a single-market installation. */
+  showCountry?: boolean;
+  /** Markets a page can be copied into. */
+  countries?: Array<{ id: string; code: string; name: string }>;
 }) {
   const [selected, setSelected] = React.useState<string[]>([]);
 
@@ -100,6 +110,7 @@ export function PagesTable({
               ) : null}
               <Th>Title</Th>
               <Th>URL</Th>
+              {showCountry ? <Th>Country</Th> : null}
               <Th>Category</Th>
               <Th>Status</Th>
               <Th align="center">Sections</Th>
@@ -136,9 +147,12 @@ export function PagesTable({
                 </Td>
                 <Td>
                   <code className="rounded bg-muted/10 px-1.5 py-0.5 font-mono text-xs text-muted">
-                    /{row.slug}
+                    /{[row.countrySlug, row.slug].filter(Boolean).join('/')}
                   </code>
                 </Td>
+                {showCountry ? (
+                  <Td className="whitespace-nowrap text-sm text-content">{row.countryName}</Td>
+                ) : null}
                 <Td className="text-sm">
                   {row.categoryName ? (
                     <span className="text-content">{row.categoryName}</span>
@@ -161,6 +175,10 @@ export function PagesTable({
                     slug={row.slug}
                     status={row.status}
                     isHomepage={row.isHomepage}
+                    countrySlug={row.countrySlug}
+                    // A page is only offered to markets other than its own —
+                    // which is the row's market, not the one being filtered by.
+                    countries={countries.filter((country) => country.code !== row.countryCode)}
                     can={can}
                   />
                 </Td>

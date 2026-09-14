@@ -65,11 +65,14 @@ const TYPE_LABELS = FIELD_TYPE_LABELS;
 export function FormBuilder({
   initial,
   products,
+  countries = [],
   mode,
   canEdit,
 }: {
   initial: FormBuilderValues;
   products: Array<{ id: string; name: string }>;
+  /** Markets a form can be bound to. Empty on a single-market installation. */
+  countries?: Array<{ id: string; name: string }>;
   mode: 'create' | 'edit';
   canEdit: boolean;
 }) {
@@ -145,6 +148,7 @@ export function FormBuilder({
     const payload = {
       ...values,
       slug: values.slug || slugify(values.name),
+      countryId: values.countryId || null,
       defaultProductId: values.defaultProductId || null,
       redirectUrl: values.redirectUrl || null,
       leadSource: values.leadSource || null,
@@ -426,6 +430,27 @@ export function FormBuilder({
                   onChange={(e) => set('leadSource', e.target.value)}
                 />
               </Field>
+
+              {countries.length > 0 ? (
+                <Field
+                  label="Country"
+                  htmlFor="form-country"
+                  hint="Shared forms can be placed on any storefront. Choose a country to restrict this form to one market."
+                >
+                  <Select
+                    id="form-country"
+                    value={values.countryId}
+                    onChange={(e) => set('countryId', e.target.value)}
+                  >
+                    <option value="">All countries (shared)</option>
+                    {countries.map((country) => (
+                      <option key={country.id} value={country.id}>
+                        {country.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              ) : null}
 
               <Field
                 label="Default product"

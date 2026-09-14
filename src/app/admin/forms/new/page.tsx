@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { FormBuilder } from '@/components/admin/forms/form-builder';
 import { EMPTY_FORM, starterFields } from '@/lib/cms/form-model';
+import { getAdminCountryScope } from '@/lib/country/admin';
 
 export const metadata: Metadata = { title: 'New form' };
 export const dynamic = 'force-dynamic';
@@ -20,11 +21,14 @@ export const dynamic = 'force-dynamic';
 export default async function NewForm() {
   await requirePermission('forms.create');
 
-  const products = await prisma.product.findMany({
-    where: { deletedAt: null },
-    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    select: { id: true, name: true },
-  });
+  const [products, scope] = await Promise.all([
+    prisma.product.findMany({
+      where: { deletedAt: null },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true },
+    }),
+    getAdminCountryScope(),
+  ]);
 
   return (
     <>
@@ -36,6 +40,11 @@ export default async function NewForm() {
       <FormBuilder
         initial={{ ...EMPTY_FORM, fields: starterFields() }}
         products={products}
+        countries={
+          scope.canSwitch
+            ? scope.countries.map((country) => ({ id: country.id, name: country.name }))
+            : []
+        }
         mode="create"
         canEdit
       />

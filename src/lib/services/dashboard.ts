@@ -30,9 +30,17 @@ function startOfMonth(date = new Date()): Date {
   return d;
 }
 
-/** Single round-trip batch of the dashboard aggregates. */
-export async function getDashboardMetrics(days = 30): Promise<DashboardMetrics> {
-  const notDeleted = { deletedAt: null };
+/**
+ * Single round-trip batch of the dashboard aggregates.
+ *
+ * `countryId` scopes every figure to one storefront. Omitting it reports the
+ * whole business, which is what a single-market installation always gets.
+ */
+export async function getDashboardMetrics(
+  days = 30,
+  countryId?: string,
+): Promise<DashboardMetrics> {
+  const notDeleted = countryId ? { deletedAt: null, countryId } : { deletedAt: null };
   const since = startOfDay(new Date(Date.now() - (days - 1) * 86_400_000));
 
   const [total, today, month, grouped, productGroups, sourceGroups, recentLeads] =
@@ -155,8 +163,11 @@ export type ActionItem = {
  * Every entry is a real count from a real table with a link that applies the
  * matching filter — no invented health scores.
  */
-export async function getActionItems(): Promise<ActionItem[]> {
+export async function getActionItems(countryId?: string): Promise<ActionItem[]> {
   const notDeleted = { deletedAt: null };
+  // Scoped to one market when asked, so the "needs attention" list matches the
+  // storefront the admin is looking at rather than the whole business.
+  const scoped = countryId ? { deletedAt: null, countryId } : notDeleted;
   const endOfToday = new Date();
   endOfToday.setHours(23, 59, 59, 999);
 
@@ -164,23 +175,32 @@ export async function getActionItems(): Promise<ActionItem[]> {
     await Promise.all([
       prisma.lead.count({
         where: {
-          ...notDeleted,
+          ...scoped,
           assignedToId: null,
           status: { notIn: ['WON', 'LOST', 'SPAM'] },
         },
       }),
       prisma.lead.count({
         where: {
-          ...notDeleted,
+          ...scoped,
           followUpAt: { lte: endOfToday },
           status: { notIn: ['WON', 'LOST', 'SPAM'] },
         },
       }),
-      prisma.page.count({ where: { ...notDeleted, status: 'DRAFT' } }),
-      prisma.product.count({ where: { ...notDeleted, status: 'DRAFT' } }),
-      prisma.lead.count({ where: { ...notDeleted, status: 'NEW' } }),
+      prisma.page.count({ where: { ...scoped, status: 'DRAFT' } }),
+      prisma.productCountry.count({
+        where: {
+          status: 'DRAFT',
+          product: { deletedAt: null },
+          ...(countryId ? { countryId } : {}),
+        },
+      }),
+      prisma.lead.count({ where: { ...scoped, status: 'NEW' } }),
       prisma.formSubmission.count({
-        where: { createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) } },
+        where: {
+          createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) },
+          ...(countryId ? { countryId } : {}),
+        },
       }),
     ]);
 

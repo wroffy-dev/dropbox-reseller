@@ -34,10 +34,18 @@ const BLANK = { id: '', name: '', location: 'HEADER' };
 export function MenuManager({
   menus,
   targets,
+  countryId,
+  countryName,
+  showCountry = false,
   canEdit,
 }: {
   menus: MenuSummary[];
   targets: NavTargets;
+  /** The market new menus are created in — the one selected in the topbar. */
+  countryId: string;
+  countryName: string;
+  /** Names the market in the dialog. Hidden on a single-market installation. */
+  showCountry?: boolean;
   canEdit: boolean;
 }) {
   const router = useRouter();
@@ -62,6 +70,9 @@ export function MenuManager({
     const data = new FormData();
     data.set('name', editing.name);
     data.set('location', editing.location);
+    // Only read when creating: the action never moves an existing menu between
+    // markets, and validates this id against the user's access either way.
+    data.set('countryId', countryId);
 
     const result = await saveNavigation(editing.id || null, data);
     setPending(false);
@@ -183,6 +194,12 @@ export function MenuManager({
       >
         {editing ? (
           <div className="space-y-4">
+            {showCountry && !editing.id ? (
+              <p className="rounded-lg bg-muted/[0.06] px-3 py-2 text-xs text-muted">
+                This menu will belong to <strong className="text-content">{countryName}</strong>.
+                Switch country in the top bar to build another market&rsquo;s menus.
+              </p>
+            ) : null}
             <Field label="Menu name" htmlFor="menu-name" required error={errors.name}>
               <Input
                 id="menu-name"

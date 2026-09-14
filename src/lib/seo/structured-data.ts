@@ -1,51 +1,118 @@
 import 'server-only';
-import type { SeoSettings, WebsiteSettings } from '@prisma/client';
-import { absoluteUrl } from './metadata';
+import type { WebsiteSettings } from '@prisma/client';
+import { countryPath } from '@/lib/country/routing';
+import type { CountryContext, CountrySettingsView } from '@/lib/country/types';
+import { absoluteUrl, absoluteCountryUrl } from './metadata';
 
 type Json = Record<string, unknown>;
 
-export function organizationSchema(seo: SeoSettings, site: WebsiteSettings): Json {
+/**
+ * The organisation behind one market.
+ *
+ * Name, contact details, address and organisation type all come from that
+ * market's settings — which fall back to the global ones, so the root market
+ * emits exactly what it emitted before markets existed. `url` is the market's
+ * own home page, never the site root, so the UAE storefront never claims
+ * India's URL as its organisation page.
+ */
+export function organizationSchema(
+  country: CountryContext,
+  local: CountrySettingsView,
+  site: WebsiteSettings,
+): Json {
   const sameAs = [site.linkedinUrl, site.twitterUrl, site.facebookUrl, site.instagramUrl, site.youtubeUrl].filter(
     Boolean,
   );
+
+  const postalAddress =
+    local.addressLine1 || local.city || local.region || local.postalCode || local.address
+      ? {
+          address: {
+            '@type': 'PostalAddress',
+            ...(local.addressLine1 || local.address
+              ? { streetAddress: local.addressLine1 ?? local.address }
+              : {}),
+            ...(local.addressLine2 ? { addressLocality: local.addressLine2 } : {}),
+            ...(local.city ? { addressLocality: local.city } : {}),
+            ...(local.region ? { addressRegion: local.region } : {}),
+            ...(local.postalCode ? { postalCode: local.postalCode } : {}),
+            addressCountry: country.code,
+          },
+        }
+      : {};
+
   return {
     '@context': 'https://schema.org',
-    '@type': seo.organizationType || 'Organization',
-    name: seo.organizationName || site.siteName,
-    url: absoluteUrl('/'),
-    ...(seo.organizationLogoUrl || site.logoUrl
-      ? { logo: absoluteUrl(seo.organizationLogoUrl ?? site.logoUrl ?? '') }
+    '@type': local.localBusinessType || local.organizationType || 'Organization',
+    name: local.organizationName,
+    ...(local.legalName ? { legalName: local.legalName } : {}),
+    url: absoluteCountryUrl(country, '/'),
+    ...(local.organizationLogoUrl || site.logoUrl
+      ? { logo: absoluteUrl(local.organizationLogoUrl ?? site.logoUrl ?? '') }
       : {}),
     ...(site.siteDescription ? { description: site.siteDescription } : {}),
     ...(sameAs.length ? { sameAs } : {}),
-    ...(site.contactEmail || site.contactPhone
+    ...(local.salesEmail || local.salesPhone || local.supportPhone
       ? {
           contactPoint: [
-            {
-              '@type': 'ContactPoint',
-              contactType: 'sales',
-              ...(site.contactEmail ? { email: site.contactEmail } : {}),
-              ...(site.contactPhone ? { telephone: site.contactPhone } : {}),
-            },
+            ...(local.salesEmail || local.salesPhone
+              ? [
+                  {
+                    '@type': 'ContactPoint',
+                    contactType: 'sales',
+                    ...(local.salesEmail ? { email: local.salesEmail } : {}),
+                    ...(local.salesPhone ? { telephone: local.salesPhone } : {}),
+                    areaServed: country.code,
+                  },
+                ]
+              : []),
+            ...(local.supportPhone || local.supportEmail
+              ? [
+                  {
+                    '@type': 'ContactPoint',
+                    contactType: 'customer support',
+                    ...(local.supportEmail ? { email: local.supportEmail } : {}),
+                    ...(local.supportPhone ? { telephone: local.supportPhone } : {}),
+                    areaServed: country.code,
+                  },
+                ]
+              : []),
           ],
         }
       : {}),
-    ...(site.address ? { address: { '@type': 'PostalAddress', streetAddress: site.address } } : {}),
+    ...postalAddress,
+    ...(local.businessHours ? { openingHours: local.businessHours } : {}),
+    ...(local.taxNumber ? { taxID: local.taxNumber } : {}),
+    ...(local.latitude && local.longitude
+      ? { geo: { '@type': 'GeoCoordinates', latitude: local.latitude, longitude: local.longitude } }
+      : {}),
   };
 }
 
-export function websiteSchema(site: WebsiteSettings): Json {
+export function websiteSchema(country: CountryContext, site: WebsiteSettings): Json {
+  const blog = absoluteCountryUrl(country, 'blog');
   return {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     name: site.siteName,
-    url: absoluteUrl('/'),
+    url: absoluteCountryUrl(country, '/'),
+    inLanguage: country.locale,
     potentialAction: {
       '@type': 'SearchAction',
-      target: { '@type': 'EntryPoint', urlTemplate: `${absoluteUrl('/blog')}?q={search_term_string}` },
+      target: { '@type': 'EntryPoint', urlTemplate: `${blog}?q={search_term_string}` },
       'query-input': 'required name=search_term_string',
     },
   };
+}
+
+/** A market-relative breadcrumb trail. Paths are prefixed for the market. */
+export function countryBreadcrumbSchema(
+  country: CountryContext,
+  items: Array<{ name: string; path: string }>,
+): Json {
+  return breadcrumbSchema(
+    items.map((item) => ({ name: item.name, path: countryPath(country, item.path) })),
+  );
 }
 
 export function breadcrumbSchema(items: Array<{ name: string; path: string }>): Json {
@@ -64,7 +131,8 @@ export function breadcrumbSchema(items: Array<{ name: string; path: string }>): 
 export function productSchema(input: {
   name: string;
   description: string | null;
-  slug: string;
+  /** The product's absolute URL in the market being rendered. */
+  url: string;
   imageUrl: string | null;
   price: string | null;
   currency: string;
@@ -79,7 +147,7 @@ export function productSchema(input: {
     ...(input.imageUrl ? { image: absoluteUrl(input.imageUrl) } : {}),
     ...(input.sku ? { sku: input.sku } : {}),
     brand: { '@type': 'Brand', name: input.brand },
-    url: absoluteUrl(`/products/${input.slug}`),
+    url: input.url,
     ...(input.price
       ? {
           offers: {
@@ -87,7 +155,7 @@ export function productSchema(input: {
             price: input.price,
             priceCurrency: input.currency,
             availability: 'https://schema.org/InStock',
-            url: absoluteUrl(`/products/${input.slug}`),
+            url: input.url,
           },
         }
       : {}),
@@ -97,7 +165,7 @@ export function productSchema(input: {
 export function articleSchema(input: {
   title: string;
   description: string | null;
-  slug: string;
+  url: string;
   imageUrl: string | null;
   publishedAt: Date | null;
   updatedAt: Date;
@@ -119,7 +187,7 @@ export function articleSchema(input: {
       name: input.organizationName,
       ...(input.logoUrl ? { logo: { '@type': 'ImageObject', url: absoluteUrl(input.logoUrl) } } : {}),
     },
-    mainEntityOfPage: { '@type': 'WebPage', '@id': absoluteUrl(`/blog/${input.slug}`) },
+    mainEntityOfPage: { '@type': 'WebPage', '@id': input.url },
   };
 }
 
@@ -152,7 +220,10 @@ export function faqSchema(items: Array<{ question: string; answer: string }>): J
 export function blogPostingSchema(input: {
   title: string;
   description: string | null;
-  slug: string;
+  /** The article's absolute URL in the market being rendered. */
+  url: string;
+  /** BCP-47 tag of the market, e.g. en-AE. */
+  locale?: string;
   imageUrl: string | null;
   publishedAt: Date | null;
   updatedAt: Date;
@@ -163,7 +234,7 @@ export function blogPostingSchema(input: {
   organizationName: string;
   logoUrl: string | null;
 }): Json {
-  const url = absoluteUrl(`/blog/${input.slug}`);
+  const url = input.url;
   const keywords = (input.keywords ?? []).filter(Boolean);
 
   return {
@@ -194,7 +265,7 @@ export function blogPostingSchema(input: {
     ...(input.section ? { articleSection: input.section } : {}),
     ...(keywords.length > 0 ? { keywords: keywords.join(', ') } : {}),
     ...(input.wordCount && input.wordCount > 0 ? { wordCount: input.wordCount } : {}),
-    inLanguage: 'en',
+    inLanguage: input.locale ?? 'en',
     url,
     mainEntityOfPage: { '@type': 'WebPage', '@id': url },
   };

@@ -9,6 +9,7 @@ import { parseFormDesign } from '@/lib/forms/form-design';
 import { parseFieldSettings } from '@/lib/forms/field-settings';
 import { SubmissionsPanel } from '@/components/admin/forms/submissions-panel';
 import { Badge } from '@/components/ui/badge';
+import { getAdminCountryScope } from '@/lib/country/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,7 @@ export default async function EditForm({ params }: { params: Promise<{ id: strin
   const user = await requirePermission('forms.view');
   const { id } = await params;
 
-  const [form, products, submissions] = await Promise.all([
+  const [form, products, submissions, scope] = await Promise.all([
     prisma.form.findFirst({
       where: { id, deletedAt: null },
       include: { fields: { orderBy: { sortOrder: 'asc' } } },
@@ -49,6 +50,7 @@ export default async function EditForm({ params }: { params: Promise<{ id: strin
       take: 25,
       select: { id: true, data: true, createdAt: true, pageUrl: true, leadId: true },
     }),
+    getAdminCountryScope(),
   ]);
   if (!form) notFound();
 
@@ -87,6 +89,7 @@ export default async function EditForm({ params }: { params: Promise<{ id: strin
     successMessage: form.successMessage,
     redirectUrl: form.redirectUrl ?? '',
     leadSource: form.leadSource ?? '',
+    countryId: form.countryId ?? '',
     defaultProductId: form.defaultProductId ?? '',
     createsLead: form.createsLead,
     notifyEmails: form.notifyEmails ?? '',
@@ -111,6 +114,11 @@ export default async function EditForm({ params }: { params: Promise<{ id: strin
       <FormBuilder
         initial={initial}
         products={products}
+        countries={
+          scope.canSwitch
+            ? scope.countries.map((country) => ({ id: country.id, name: country.name }))
+            : []
+        }
         mode="edit"
         canEdit={userCan(user, 'forms.edit')}
       />

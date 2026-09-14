@@ -5,7 +5,9 @@ import { buildTableOfContents } from '@/lib/cms/blog-toc';
 import { parsePostOptions, resolveToggle, POST_TOGGLES } from '@/lib/cms/blog-settings';
 import type { BlogRenderContext } from '@/lib/cms/blog-render';
 import { sanitizeHtml } from '@/lib/utils/sanitize';
-import { absoluteUrl } from '@/lib/seo/metadata';
+import { absoluteCountryUrl } from '@/lib/seo/metadata';
+import { localiseHtml } from '@/lib/country/routing';
+import type { CountryContext } from '@/lib/country/types';
 import { SectionList, type RenderableSection } from '@/components/cms/section-renderer';
 import { BlogSidebar } from '@/components/cms/blog-sidebar';
 import { BlogRoot } from './blog-root';
@@ -24,7 +26,14 @@ import { cn } from '@/lib/utils/cn';
 /** Sections from here on sit below the sidebar on desktop's second row. */
 const TAIL_BLOCKS = new Set(['articleRelated', 'articlePrevNext']);
 
-export async function BlogArticle({ post }: { post: BlogPostDetail }) {
+export async function BlogArticle({
+  post,
+  country,
+}: {
+  post: BlogPostDetail;
+  /** The market the article belongs to; every link it renders stays inside it. */
+  country: CountryContext;
+}) {
   const [sections, settings, site] = await Promise.all([
     getBlogSections('ARTICLE'),
     getBlogSettings(),
@@ -57,16 +66,19 @@ export async function BlogArticle({ post }: { post: BlogPostDetail }) {
     POST_TOGGLES.map((key) => [key, resolveToggle(options[key], defaults[key])]),
   ) as Record<string, boolean>;
 
-  const { html, items } = buildTableOfContents(sanitizeHtml(post.content), { includeH3: true });
+  // Internal links an author typed into the body resolve inside this market.
+  const body = localiseHtml(sanitizeHtml(post.content), country);
+  const { html, items } = buildTableOfContents(body, { includeH3: true });
 
   const blog: BlogRenderContext = {
+    country,
     settings,
     archive: null,
     article: {
       post,
       html,
       toc: items,
-      shareUrl: absoluteUrl(`/blog/${post.slug}`),
+      shareUrl: absoluteCountryUrl(country, `blog/${post.slug}`),
       visible,
       forms: {
         cta: options.ctaFormSlug,

@@ -196,6 +196,135 @@ enum LeadMagnetKind {
 }
 
 // ---------------------------------------------------------------------------
+// COUNTRIES (multi-market)
+// ---------------------------------------------------------------------------
+
+/// One storefront market.
+///
+/// The market is the axis every piece of localised content hangs off. Exactly
+/// one row carries `isDefault`, and that market is served from the site root
+/// with an empty `slug` — which is what keeps the original single-country URLs
+/// (`/dropbox-business/`) working untouched. Every other market is served from
+/// its own prefix (`/ae/dropbox-business/`).
+///
+/// Nothing in the application hard-codes a market: routing, settings, pricing
+/// and SEO all read these rows, so adding Qatar is a database record plus its
+/// content, never a code change.
+model Country {
+  id   String @id @default(cuid())
+  name String
+  /// ISO 3166-1 alpha-2, upper case. Stable identity used by code and imports.
+  code String @unique
+  /// URL prefix. Empty string for the default market, "ae"/"qa"/... otherwise.
+  slug String @unique
+
+  /// BCP-47 tag used for hreflang and `<html lang>`, e.g. "en-IN".
+  locale         String  @default("en")
+  currency       String  @default("INR")
+  currencySymbol String  @default("₹")
+  phoneCode      String?
+  timezone       String  @default("Asia/Kolkata")
+
+  /// The root market. Exactly one row is true; the save action enforces it.
+  isDefault Boolean @default(false)
+  /// An inactive market stops resolving publicly — its prefix 404s rather than
+  /// serving a half-built storefront.
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settings       CountrySettings?
+  pages          Page[]
+  posts          BlogPost[]
+  navigations    Navigation[]
+  productConfigs ProductCountry[]
+  variantPricing ProductVariantCountry[]
+  blogCategories BlogCategoryCountry[]
+  leads          Lead[]
+  submissions    FormSubmission[]
+  forms          Form[]
+  popups         Popup[]
+  staffAccess    UserCountry[]
+
+  @@index([isActive, sortOrder])
+  @@index([slug])
+}
+
+/// Per-market company identity, contact details and schema data.
+///
+/// Deliberately separate from `WebsiteSettings`, which stays global: the logo,
+/// fonts, colours and layout are one brand across every market, while the
+/// phone number, address, VAT details and organisation schema are not. Every
+/// field is nullable and every reader falls back to the global value, so the
+/// default market renders exactly as it did before this table existed.
+model CountrySettings {
+  id        String @id @default(cuid())
+  countryId String @unique
+
+  /// Company name as shown in this market, when it differs from the site name.
+  companyName    String?
+  legalName      String?
+  salesPhone     String?
+  supportPhone   String?
+  whatsappNumber String?
+  salesEmail     String?
+  supportEmail   String?
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  /// State, emirate, province — whatever the market calls it.
+  region         String?
+  postalCode     String?
+  /// Free-text address used where a single line is rendered.
+  address        String? @db.Text
+  businessHours  String?
+  taxLabel       String?
+  taxNumber      String?
+
+  headerCtaLabel    String?
+  headerCtaUrl      String?
+  salesCtaText      String?
+  footerDescription String? @db.Text
+  copyrightText     String?
+
+  // --- SEO defaults for this market (fall back to the global SEO settings) ---
+  defaultTitle        String?
+  titleTemplate       String?
+  defaultDescription  String? @db.Text
+  defaultOgImageUrl   String?
+  organizationName    String?
+  organizationType    String?
+  organizationLogoUrl String?
+  /// Emitted as LocalBusiness structured data when filled in.
+  localBusinessType   String?
+  latitude            String?
+  longitude           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  country Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
+}
+
+/// Which markets a staff account may work in.
+///
+/// No rows means "every market", which is what every existing account has, so
+/// nothing changes for a site that never uses the restriction. Country access
+/// only ever narrows what a role already permits — it never grants anything.
+model UserCountry {
+  userId    String
+  countryId String
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  country Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@id([userId, countryId])
+  @@index([countryId])
+}
+
+// ---------------------------------------------------------------------------
 // AUTH / STAFF / RBAC
 // ---------------------------------------------------------------------------
 
@@ -283,6 +412,8 @@ model User {
   backups           Backup[]       @relation("BackupCreator")
   authSessions      AuthSession[]
   recoveryCodes     RecoveryCode[]
+  /// Markets this account may work in. No rows means every market.
+  countries         UserCountry[]
 
   @@index([email])
   @@index([roleId])
@@ -453,8 +584,11 @@ model PageCategory {
 
 model Page {
   id          String        @id @default(cuid())
+  /// The market this page belongs to. Unique per market, not globally, so
+  /// India and the UAE can each own a "dropbox-business" page.
+  countryId   String
   title       String
-  slug        String        @unique // "" is the homepage; nested allowed: "dropbox/business"
+  slug        String // "" is the homepage; nested allowed: "dropbox/business"
   status      ContentStatus @default(DRAFT)
   publishedAt DateTime?
   isHomepage  Boolean       @default(false)
@@ -486,6 +620,7 @@ model Page {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  country         Country           @relation(fields: [countryId], references: [id], onDelete: Restrict)
   category        PageCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   ogImage         Media?            @relation("PageOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
   twitterImage    Media?            @relation("PageTwitterImage", fields: [twitterImageId], references: [id], onDelete: SetNull)
@@ -494,7 +629,10 @@ model Page {
   popups          PopupPageTarget[]
   navigationItems NavigationItem[]
 
+  @@unique([countryId, slug])
   @@index([slug])
+  @@index([countryId])
+  @@index([countryId, status, publishedAt])
   @@index([categoryId])
   @@index([status, publishedAt])
   @@index([deletedAt])
@@ -629,6 +767,9 @@ model Product {
   ogImage          Media?            @relation("ProductOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
   ctaForm          Form?             @relation("ProductCtaForm", fields: [ctaFormId], references: [id], onDelete: SetNull)
   variants         ProductVariant[]
+  /// Per-market availability, pricing, copy and SEO. The row above stays the
+  /// single global master for the product's identity and shared specification.
+  countries        ProductCountry[]
   leads            Lead[]            @relation("LeadProduct")
   forms            Form[]            @relation("FormProduct")
   customerProducts CustomerProduct[]
@@ -658,9 +799,126 @@ model ProductVariant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product   Product                 @relation(fields: [productId], references: [id], onDelete: Cascade)
+  countries ProductVariantCountry[]
 
   @@index([productId, sortOrder])
+}
+
+/// One product as sold in one market.
+///
+/// The `Product` row stays the global master — name, SKU, brand, category,
+/// shared specification and imagery — because "Dropbox Business" is the same
+/// product everywhere. Everything that is genuinely local lives here: whether
+/// it is on sale at all, what it costs, in which currency, the local copy, the
+/// call to action and the market's own SEO.
+///
+/// Prices are always Decimal and always entered by an administrator. Nothing
+/// converts currency at render time: an exchange-rate-derived price would
+/// change under the visitor's feet and can never be quoted reliably.
+model ProductCountry {
+  id        String @id @default(cuid())
+  productId String
+  countryId String
+
+  status        ContentStatus @default(DRAFT)
+  publishedAt   DateTime?
+  isFeatured    Boolean       @default(false)
+  sortOrder     Int           @default(0)
+  featuredOrder Int           @default(0)
+
+  // Money — Decimal only.
+  currency        String   @default("INR")
+  monthlyPrice    Decimal? @db.Decimal(12, 2)
+  annualPrice     Decimal? @db.Decimal(12, 2)
+  compareAtPrice  Decimal? @db.Decimal(12, 2)
+  discountPercent Int?
+  priceSuffix     String?
+  priceNote       String?
+
+  shortDescription String? @db.Text
+  description      String? @db.Text
+
+  ctaLabel  String?
+  ctaUrl    String?
+  ctaFormId String?
+
+  seoTitle       String?
+  seoDescription String? @db.Text
+  canonicalUrl   String?
+  noIndex        Boolean @default(false)
+  ogImageId      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  country Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  ctaForm Form?   @relation("ProductCountryCtaForm", fields: [ctaFormId], references: [id], onDelete: SetNull)
+  ogImage Media?  @relation("ProductCountryOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
+
+  @@unique([productId, countryId])
+  @@index([countryId, status, publishedAt])
+  @@index([countryId, sortOrder])
+  @@index([countryId, isFeatured, featuredOrder])
+  @@index([productId])
+}
+
+/// A variant's price in one market.
+///
+/// Variants carry a global price for the default market; a row here overrides
+/// it where a market prices its tiers differently. Absent rows simply mean the
+/// variant is sold at its global price, so nothing had to be created during
+/// the migration.
+model ProductVariantCountry {
+  id        String @id @default(cuid())
+  variantId String
+  countryId String
+
+  currency     String?
+  monthlyPrice Decimal? @db.Decimal(12, 2)
+  annualPrice  Decimal? @db.Decimal(12, 2)
+  isAvailable  Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  country Country        @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@unique([variantId, countryId])
+  @@index([countryId])
+}
+
+/// Per-market archive copy and SEO for a globally shared blog category.
+///
+/// Categories are not duplicated per market — the taxonomy is one tree — but a
+/// market can give an archive its own heading, description, canonical and
+/// robots directives. Nothing here is required; an absent row means the
+/// category renders with its global values, exactly as it always has.
+model BlogCategoryCountry {
+  id         String @id @default(cuid())
+  categoryId String
+  countryId  String
+
+  archiveTitle       String?
+  archiveDescription String? @db.Text
+  seoTitle           String?
+  seoDescription     String? @db.Text
+  canonicalUrl       String?
+  ogTitle            String?
+  ogDescription      String? @db.Text
+  noIndex            Boolean @default(false)
+  noFollow           Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category BlogCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  country  Country      @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, countryId])
+  @@index([countryId])
 }
 
 // ---------------------------------------------------------------------------
@@ -704,10 +962,12 @@ model BlogCategory {
   bannerImage Media? @relation("BlogCategoryBanner", fields: [bannerImageId], references: [id], onDelete: SetNull)
   ogImage     Media? @relation("BlogCategoryOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
 
-  parent   BlogCategory?    @relation("BlogCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children BlogCategory[]   @relation("BlogCategoryTree")
-  posts    BlogPost[]
-  navItems NavigationItem[]
+  parent    BlogCategory?         @relation("BlogCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  BlogCategory[]        @relation("BlogCategoryTree")
+  posts     BlogPost[]
+  navItems  NavigationItem[]
+  /// Per-market archive copy and SEO. The category itself stays global.
+  countries BlogCategoryCountry[]
 
   @@index([slug])
   @@index([parentId])
@@ -737,8 +997,11 @@ model BlogTag {
 
 model BlogPost {
   id               String        @id @default(cuid())
+  /// The market this article belongs to. The same slug may exist once per
+  /// market, so /blog/x and /ae/blog/x are two independent articles.
+  countryId        String
   title            String
-  slug             String        @unique
+  slug             String
   subtitle         String?
   status           ContentStatus @default(DRAFT)
   publishedAt      DateTime?
@@ -785,6 +1048,7 @@ model BlogPost {
   thumbnail     Media?        @relation("PostThumbnail", fields: [thumbnailId], references: [id], onDelete: SetNull)
   ogImage       Media?        @relation("PostOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
   twitterImage  Media?        @relation("PostTwitterImage", fields: [twitterImageId], references: [id], onDelete: SetNull)
+  country       Country       @relation(fields: [countryId], references: [id], onDelete: Restrict)
   category      BlogCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   author        User?         @relation("PostAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   tags          BlogPostTag[]
@@ -795,7 +1059,10 @@ model BlogPost {
   sections    BlogSection[]
   leads       Lead[]             @relation("LeadBlogPost")
 
+  @@unique([countryId, slug])
   @@index([slug])
+  @@index([countryId])
+  @@index([countryId, status, publishedAt])
   @@index([status, publishedAt])
   @@index([categoryId])
   @@index([deletedAt])
@@ -938,23 +1205,24 @@ model Media {
   uploadedBy  User?        @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   mediaFolder MediaFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
-  pageOgImages         Page[]            @relation("PageOgImage")
-  pageTwitterImages    Page[]            @relation("PageTwitterImage")
-  productImages        Product[]         @relation("ProductImage")
-  productOgImages      Product[]         @relation("ProductOgImage")
-  categoryImages       ProductCategory[] @relation("CategoryImage")
-  brandLogos           Brand[]           @relation("BrandLogo")
-  postFeaturedImages   BlogPost[]        @relation("PostFeaturedImage")
-  postThumbnails       BlogPost[]        @relation("PostThumbnail")
-  postOgImages         BlogPost[]        @relation("PostOgImage")
-  postTwitterImages    BlogPost[]        @relation("PostTwitterImage")
-  blogCategoryImages   BlogCategory[]    @relation("BlogCategoryImage")
-  blogCategoryBanners  BlogCategory[]    @relation("BlogCategoryBanner")
-  blogCategoryOgImages BlogCategory[]    @relation("BlogCategoryOgImage")
-  blogSettingsOgImages BlogSettings[]    @relation("BlogSettingsOgImage")
-  leadMagnetImages     LeadMagnet[]      @relation("LeadMagnetImage")
-  leadMagnetFiles      LeadMagnet[]      @relation("LeadMagnetFile")
-  popupImages          Popup[]           @relation("PopupImage")
+  pageOgImages           Page[]            @relation("PageOgImage")
+  pageTwitterImages      Page[]            @relation("PageTwitterImage")
+  productImages          Product[]         @relation("ProductImage")
+  productOgImages        Product[]         @relation("ProductOgImage")
+  categoryImages         ProductCategory[] @relation("CategoryImage")
+  brandLogos             Brand[]           @relation("BrandLogo")
+  postFeaturedImages     BlogPost[]        @relation("PostFeaturedImage")
+  postThumbnails         BlogPost[]        @relation("PostThumbnail")
+  postOgImages           BlogPost[]        @relation("PostOgImage")
+  postTwitterImages      BlogPost[]        @relation("PostTwitterImage")
+  blogCategoryImages     BlogCategory[]    @relation("BlogCategoryImage")
+  blogCategoryBanners    BlogCategory[]    @relation("BlogCategoryBanner")
+  blogCategoryOgImages   BlogCategory[]    @relation("BlogCategoryOgImage")
+  blogSettingsOgImages   BlogSettings[]    @relation("BlogSettingsOgImage")
+  leadMagnetImages       LeadMagnet[]      @relation("LeadMagnetImage")
+  leadMagnetFiles        LeadMagnet[]      @relation("LeadMagnetFile")
+  popupImages            Popup[]           @relation("PopupImage")
+  productCountryOgImages ProductCountry[]  @relation("ProductCountryOgImage")
 
   @@index([kind])
   @@index([createdAt])
@@ -970,6 +1238,9 @@ model Form {
   id          String  @id @default(cuid())
   name        String
   slug        String  @unique
+  /// Null means the form is shared by every market, which is what every form
+  /// built before markets existed is. Setting it restricts the form to one.
+  countryId   String?
   description String? @db.Text
   isActive    Boolean @default(true)
 
@@ -999,15 +1270,18 @@ model Form {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  country        Country?         @relation(fields: [countryId], references: [id], onDelete: SetNull)
   defaultProduct Product?         @relation("FormProduct", fields: [defaultProductId], references: [id], onDelete: SetNull)
   fields         FormField[]
   submissions    FormSubmission[]
   leads          Lead[]           @relation("LeadForm")
   productCtas    Product[]        @relation("ProductCtaForm")
+  countryCtas    ProductCountry[] @relation("ProductCountryCtaForm")
   popups         Popup[]          @relation("PopupForm")
   leadMagnets    LeadMagnet[]     @relation("LeadMagnetForm")
 
   @@index([slug])
+  @@index([countryId])
 }
 
 model FormField {
@@ -1058,9 +1332,11 @@ model FormField {
 }
 
 model FormSubmission {
-  id     String @id @default(cuid())
-  formId String
-  data   Json   @default("{}")
+  id        String  @id @default(cuid())
+  formId    String
+  /// Which storefront produced this submission.
+  countryId String?
+  data      Json    @default("{}")
 
   ipHash    String?
   userAgent String? @db.Text
@@ -1071,11 +1347,13 @@ model FormSubmission {
 
   createdAt DateTime @default(now())
 
-  form Form  @relation(fields: [formId], references: [id], onDelete: Cascade)
-  lead Lead? @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  form    Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  lead    Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  country Country? @relation(fields: [countryId], references: [id], onDelete: SetNull)
 
   @@index([formId, createdAt])
   @@index([leadId])
+  @@index([countryId, createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -1085,6 +1363,10 @@ model FormSubmission {
 model Lead {
   id        String @id @default(cuid())
   reference Int    @default(autoincrement())
+
+  /// The storefront that generated this lead. Backfilled to the default market
+  /// for every lead captured before markets existed.
+  countryId String
 
   name     String
   email    String
@@ -1140,6 +1422,7 @@ model Lead {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  country     Country     @relation(fields: [countryId], references: [id], onDelete: Restrict)
   product     Product?    @relation("LeadProduct", fields: [productId], references: [id], onDelete: SetNull)
   landingPage Page?       @relation("LeadLandingPage", fields: [landingPageId], references: [id], onDelete: SetNull)
   blogPost    BlogPost?   @relation("LeadBlogPost", fields: [blogPostId], references: [id], onDelete: SetNull)
@@ -1161,6 +1444,8 @@ model Lead {
   @@index([deletedAt])
   @@index([customerId])
   @@index([blogPostId])
+  @@index([countryId, createdAt])
+  @@index([countryId, status])
 }
 
 model LeadNote {
@@ -1302,10 +1587,12 @@ model LeadMagnet {
 }
 
 model Popup {
-  id       String    @id @default(cuid())
-  name     String
-  type     PopupType @default(LEAD_FORM)
-  isActive Boolean   @default(false)
+  id        String    @id @default(cuid())
+  name      String
+  type      PopupType @default(LEAD_FORM)
+  isActive  Boolean   @default(false)
+  /// Null shows the popup in every market; setting it targets one market.
+  countryId String?
 
   heading      String?
   body         String? @db.Text
@@ -1329,12 +1616,14 @@ model Popup {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  country     Country?          @relation(fields: [countryId], references: [id], onDelete: SetNull)
   image       Media?            @relation("PopupImage", fields: [imageId], references: [id], onDelete: SetNull)
   form        Form?             @relation("PopupForm", fields: [formId], references: [id], onDelete: SetNull)
   leadMagnet  LeadMagnet?       @relation("PopupLeadMagnet", fields: [leadMagnetId], references: [id], onDelete: SetNull)
   pageTargets PopupPageTarget[]
 
   @@index([isActive])
+  @@index([countryId])
 }
 
 model PopupPageTarget {
@@ -1353,17 +1642,22 @@ model PopupPageTarget {
 // ---------------------------------------------------------------------------
 
 model Navigation {
-  id       String             @id @default(cuid())
-  name     String
-  slug     String             @unique
-  location NavigationLocation @default(HEADER)
+  id        String             @id @default(cuid())
+  /// Menus are per market: the UAE header is not forced to mirror India's.
+  countryId String
+  name      String
+  slug      String
+  location  NavigationLocation @default(HEADER)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  items NavigationItem[]
+  country Country          @relation(fields: [countryId], references: [id], onDelete: Restrict)
+  items   NavigationItem[]
 
+  @@unique([countryId, slug])
   @@index([location])
+  @@index([countryId, location])
 }
 
 model NavigationItem {

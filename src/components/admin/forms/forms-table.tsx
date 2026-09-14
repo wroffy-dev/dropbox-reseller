@@ -33,15 +33,20 @@ export type FormRow = {
   leadCount: number;
   /** Product whose button opens this form, when one is attached. */
   productName: string | null;
+  /** Null when the form is shared by every market. */
+  countryName: string | null;
   updatedAt: string;
 };
 
 export function FormsTable({
   rows,
   can,
+  showCountry = false,
 }: {
   rows: FormRow[];
   can: { edit: boolean; create: boolean; delete: boolean };
+  /** Adds the Country column. Hidden on a single-market installation. */
+  showCountry?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -174,6 +179,7 @@ export function FormsTable({
               <Th align="center">Submissions</Th>
               <Th align="center">Leads</Th>
               <Th>Used by</Th>
+              {showCountry ? <Th>Country</Th> : null}
               <Th>Status</Th>
               <Th>Updated</Th>
               <Th align="right">Actions</Th>
@@ -238,6 +244,12 @@ export function FormsTable({
                     {row.productName ?? '—'}
                   </span>
                 </Td>
+
+                {showCountry ? (
+                  <Td className="whitespace-nowrap text-sm text-muted">
+                    {row.countryName ?? 'All countries'}
+                  </Td>
+                ) : null}
 
                 <Td>
                   <span className="flex flex-wrap gap-1.5">

@@ -500,6 +500,40 @@ Accepts a `pg_dump -Fc` archive (what this app's own backup system produces) or
 a plain `.sql` file. If the dump already has every migration applied it says so
 and exits 0 rather than pretending to have tested anything.
 
+### From the deployed container
+
+The script ships in the runtime image, which already has the PostgreSQL client
+tools and the Prisma CLI, so a rehearsal against the real database needs nothing
+installed. In Coolify, open the application's **Terminal** and run:
+
+```bash
+cd /app
+
+# A libpq-safe copy of DATABASE_URL: psql rejects Prisma's ?schema=public.
+BASE=$(node -e 'const u=new URL(process.env.DATABASE_URL);
+  ["schema","connection_limit","pool_timeout","socket_timeout","pgbouncer"]
+    .forEach(p => u.searchParams.delete(p)); console.log(u.toString())')
+
+# 1. Dump production.
+pg_dump -Fc "$BASE" -f /app/backups/pre-migration.dump
+
+# 2. Create a scratch database on the same server and rehearse into it.
+psql "$BASE" -c 'CREATE DATABASE rehearsal'
+REHEARSAL_DATABASE_URL=$(node -e 'const u=new URL(process.argv[1]);
+  u.pathname="/rehearsal"; console.log(u.toString())' "$BASE") \
+  node scripts/rehearse-migration.mjs /app/backups/pre-migration.dump
+
+# 3. Only if it reports every check passed:
+psql "$BASE" -c 'DROP DATABASE rehearsal'
+```
+
+The database role in `DATABASE_URL` needs `CREATEDB` for step 2; if it does not
+have it, create the scratch database from the PostgreSQL service's own terminal
+instead. Step 2 adds a separate database alongside the live one — nothing writes
+to the production database itself: `pg_dump` only reads it, and the script
+refuses to start if the scratch URL names the same host and database as
+`DATABASE_URL`.
+
 ---
 
 ## How to add a country

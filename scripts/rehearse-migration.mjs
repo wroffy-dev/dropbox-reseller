@@ -23,6 +23,11 @@
 import { spawn } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/** The repository root, so this works from any working directory. */
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const schemaPath = path.join(repoRoot, 'prisma', 'schema.prisma');
 
 const dumpPath = process.argv[2];
 const scratchUrl = process.env.REHEARSAL_DATABASE_URL;
@@ -60,12 +65,57 @@ const scratch = new URL(scratchUrl);
 const scratchName = scratch.pathname.replace(/^\//, '');
 if (!scratchName) fail('REHEARSAL_DATABASE_URL must name a database.');
 
+/*
+ * Parameters Prisma understands and libpq does not.
+ *
+ * A Prisma connection string usually carries `?schema=public`, and psql and
+ * pg_restore reject the whole URL over it: `invalid URI query parameter`. The
+ * Prisma CLI still gets the URL as given; only the command-line tools get the
+ * trimmed one.
+ */
+const PRISMA_ONLY_PARAMS = [
+  'schema',
+  'connection_limit',
+  'pool_timeout',
+  'socket_timeout',
+  'pgbouncer',
+  'statement_cache_size',
+  'sslidentity',
+  'sslpassword',
+  'sslaccept',
+];
+
+function libpqUrl(url, database) {
+  const copy = new URL(url);
+  for (const param of PRISMA_ONLY_PARAMS) copy.searchParams.delete(param);
+  if (database) copy.pathname = `/${database}`;
+  return copy.toString();
+}
+
+/** The scratch database, as psql and pg_restore will accept it. */
+const psqlUrl = libpqUrl(scratchUrl);
+
 /** The same server, but connected to `postgres`, so the scratch DB can be dropped. */
-const adminUrl = (() => {
-  const url = new URL(scratchUrl);
-  url.pathname = '/postgres';
-  return url.toString();
-})();
+const adminUrl = libpqUrl(scratchUrl, 'postgres');
+
+/*
+ * The Prisma CLI, preferring the copy already installed.
+ *
+ * `npx prisma` turns a resolution miss into a registry fetch, which fails on a
+ * host with restricted egress — the same reason the container entrypoint calls
+ * the bundled CLI directly.
+ */
+const BUNDLED_PRISMA = path.join(repoRoot, 'node_modules', 'prisma', 'build', 'index.js');
+const prismaCommand = existsSync(BUNDLED_PRISMA)
+  ? { command: process.execPath, prefix: [BUNDLED_PRISMA] }
+  : { command: 'npx', prefix: ['prisma'] };
+
+/** Runs the Prisma CLI against the scratch database. */
+function prisma(args) {
+  return run(prismaCommand.command, [...prismaCommand.prefix, ...args], {
+    env: { DATABASE_URL: scratchUrl },
+  });
+}
 
 function run(command, args, { env = {}, input } = {}) {
   return new Promise((resolve) => {
@@ -86,7 +136,7 @@ function run(command, args, { env = {}, input } = {}) {
 
 /** One value from one query. */
 async function value(sql) {
-  const result = await run('psql', [scratchUrl, '-tAc', sql]);
+  const result = await run('psql', [psqlUrl, '-tAc', sql]);
   if (result.code !== 0) throw new Error(result.stderr.trim() || `query failed: ${sql}`);
   return result.stdout.trim();
 }
@@ -116,13 +166,13 @@ async function main() {
   console.log('2. Restoring the dump');
   const isPlainSql = /\.sql$/i.test(dumpPath);
   const restore = isPlainSql
-    ? await run('psql', [scratchUrl, '-v', 'ON_ERROR_STOP=1', '-q', '-f', dumpPath])
+    ? await run('psql', [psqlUrl, '-v', 'ON_ERROR_STOP=1', '-q', '-f', dumpPath])
     : await run('pg_restore', [
         '--no-owner',
         '--no-privileges',
         '--exit-on-error',
         '--dbname',
-        scratchUrl,
+        psqlUrl,
         dumpPath,
       ]);
   if (restore.code !== 0) fail(`Restore failed: ${restore.stderr.trim().split('\n').slice(0, 5).join('\n')}`);
@@ -144,9 +194,7 @@ async function main() {
     `   ${tables.map((t) => `${t}=${before[t]}`).join(' ')}`,
   );
 
-  const pendingBefore = await run('npx', ['prisma', 'migrate', 'status'], {
-    env: { DATABASE_URL: scratchUrl },
-  });
+  const pendingBefore = await prisma(['migrate', 'status', '--schema', schemaPath]);
   if (/Database schema is up to date/.test(pendingBefore.stdout)) {
     console.log('\n   Nothing to rehearse: this dump already has every migration applied.\n');
     process.exit(0);
@@ -155,9 +203,7 @@ async function main() {
   // --- 4. migrate -----------------------------------------------------------
   console.log('4. Applying migrations');
   const started = Date.now();
-  const migrate = await run('npx', ['prisma', 'migrate', 'deploy'], {
-    env: { DATABASE_URL: scratchUrl },
-  });
+  const migrate = await prisma(['migrate', 'deploy', '--schema', schemaPath]);
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
   if (migrate.code !== 0) {
     fail(`Migration failed after ${seconds}s:\n${migrate.stdout}\n${migrate.stderr}`);
@@ -261,11 +307,15 @@ async function main() {
   check('countryId is NOT NULL where it must be', nullable === '0');
 
   // The one check that proves the hand-written SQL and the Prisma schema agree.
-  const drift = await run(
-    'npx',
-    ['prisma', 'migrate', 'diff', '--from-url', scratchUrl, '--to-schema-datamodel', 'prisma/schema.prisma', '--script'],
-    { env: { DATABASE_URL: scratchUrl } },
-  );
+  const drift = await prisma([
+    'migrate',
+    'diff',
+    '--from-url',
+    scratchUrl,
+    '--to-schema-datamodel',
+    schemaPath,
+    '--script',
+  ]);
   check(
     'the migrated schema matches prisma/schema.prisma exactly',
     /This is an empty migration/.test(drift.stdout),

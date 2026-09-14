@@ -107,6 +107,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 # `migrate deploy` and, when asked, the one-time seed.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
+# The migration rehearsal, run from the container's own shell against a scratch
+# database before a migration reaches production. It needs no dependency of its
+# own: the pg client tools and the Prisma CLI it drives are already here.
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/rehearse-migration.mjs ./scripts/
+
 COPY --chown=nextjs:nodejs docker/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 

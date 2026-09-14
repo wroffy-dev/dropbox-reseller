@@ -19,7 +19,7 @@ export function AdminShell({
     isSuperAdmin: boolean;
     image?: string | null;
   };
-  branding: { siteName: string; logoUrl: string | null };
+  branding: { siteName: string; logoUrl: string | null; logoDarkUrl: string | null };
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
@@ -53,7 +53,7 @@ export function AdminShell({
 
   return (
     <SessionProvider>
-      <div className="min-h-screen bg-muted/[0.04]">
+      <div className="min-h-screen bg-admin-workspace">
         <a href="#admin-main" className="skip-link">
           Skip to content
         </a>
@@ -63,6 +63,7 @@ export function AdminShell({
           isSuperAdmin={user.isSuperAdmin}
           siteName={branding.siteName}
           logoUrl={branding.logoUrl}
+          logoDarkUrl={branding.logoDarkUrl}
           open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           collapsed={isCollapsed}

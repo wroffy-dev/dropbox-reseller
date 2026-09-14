@@ -219,14 +219,16 @@ export function AdminSearch({
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
         className={cn(
-          'flex h-9 w-full items-center gap-2 rounded-lg border border-hairline bg-muted/[0.04] px-3',
-          'text-sm text-muted transition-colors hover:border-brand/40 hover:bg-surface',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2',
+          // The trigger lives in the dark top bar; the palette it opens stays a
+          // light reading surface.
+          'admin-focus admin-focus-header flex h-9 w-full items-center gap-2 rounded-lg px-3',
+          'border border-admin-nav/[0.12] bg-admin-nav/[0.08] text-sm text-admin-nav/60',
+          'transition-colors hover:border-admin-nav/25 hover:bg-admin-nav/[0.12] hover:text-admin-nav/80',
         )}
       >
         <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-left">Search or jump to…</span>
-        <kbd className="hidden shrink-0 rounded border border-hairline bg-surface px-1.5 py-0.5 font-mono text-[0.625rem] sm:block">
+        <kbd className="hidden shrink-0 rounded border border-admin-nav/15 bg-admin-nav/10 px-1.5 py-0.5 font-mono text-[0.625rem] text-admin-nav/70 sm:block">
           ⌘K
         </kbd>
       </button>
@@ -239,7 +241,7 @@ export function AdminSearch({
           aria-label="Command palette"
         >
           <div
-            className="absolute inset-0 bg-[rgb(var(--brand-secondary))]/40 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-[rgb(var(--admin-header-bg))]/50 backdrop-blur-[2px]"
             onClick={() => setOpen(false)}
             aria-hidden="true"
           />

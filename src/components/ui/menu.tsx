@@ -15,12 +15,19 @@ export function Menu({
   label,
   align = 'left',
   width = 'w-56',
+  triggerClassName,
   children,
 }: {
   trigger: React.ReactNode;
   label: string;
   align?: 'left' | 'right';
   width?: string;
+  /**
+   * Extra classes for the trigger button. The admin topbar uses it to offset
+   * the focus ring against the dark chrome; on a light surface the default is
+   * already correct.
+   */
+  triggerClassName?: string;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(false);
@@ -74,7 +81,10 @@ export function Menu({
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label={label}
-        className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+        className={cn(
+          'block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2',
+          triggerClassName,
+        )}
       >
         {trigger}
       </button>

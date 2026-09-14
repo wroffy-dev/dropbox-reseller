@@ -213,7 +213,16 @@ export function NavigationEditor({
             }
           />
         ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <DndContext
+            // A stable id: dnd-kit otherwise derives one from a module-level
+            // counter that the server and the browser do not advance in step,
+            // so the generated aria-describedby differs between the two renders
+            // and React reports a hydration mismatch.
+            id={`nav-editor-${navigationId}`}
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={onDragEnd}
+          >
             <SortableContext items={items.map((i) => i.key)} strategy={verticalListSortingStrategy}>
               <ul className="space-y-2">
                 {items.map((item) => (

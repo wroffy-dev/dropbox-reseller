@@ -57,14 +57,14 @@ export function AdminTopbar({
   const createOptions = QUICK_CREATE.filter((option) => can(option.permission));
 
   return (
-    <header className="sticky top-0 z-topbar border-b border-hairline bg-surface/95 backdrop-blur supports-[backdrop-filter]:bg-surface/80">
+    <header className="sticky top-0 z-topbar border-b border-admin-nav/10 bg-admin-header text-admin-nav">
       <div className="flex h-16 items-center gap-2 px-4 sm:gap-3 sm:px-6">
         <button
           type="button"
           onClick={onOpenSidebar}
           aria-label="Open navigation"
           aria-controls="admin-sidebar"
-          className="-ml-1 rounded-lg p-2 text-muted transition-colors hover:bg-muted/10 hover:text-content lg:hidden"
+          className="admin-focus admin-focus-header -ml-1 rounded-lg p-2 text-admin-nav/70 transition-colors hover:bg-admin-nav/[0.08] hover:text-admin-nav lg:hidden"
         >
           <PanelLeft className="h-5 w-5" />
         </button>
@@ -81,6 +81,7 @@ export function AdminTopbar({
         {createOptions.length > 0 ? (
           <Menu
             align="right"
+            triggerClassName="admin-focus admin-focus-header"
             trigger={
               <span
                 className={cn(
@@ -109,27 +110,33 @@ export function AdminTopbar({
         <Menu
           align="right"
           label="Account menu"
+          triggerClassName="admin-focus admin-focus-header"
           trigger={
-            <span className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-muted/10">
+            <span className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-admin-nav/[0.08]">
               {user.image ? (
                 // eslint-disable-next-line @next/next/no-img-element -- storage URL, may be any host
                 <img
                   src={user.image}
                   alt=""
-                  className="h-8 w-8 rounded-full object-cover ring-1 ring-hairline"
+                  className="h-8 w-8 rounded-full object-cover ring-1 ring-admin-nav/20"
                 />
               ) : (
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white">
                   {initials(user.name)}
                 </span>
               )}
               <span className="hidden text-left xl:block">
-                <span className="block max-w-[9rem] truncate text-sm font-medium leading-tight text-content">
+                <span className="block max-w-[9rem] truncate text-sm font-medium leading-tight text-admin-nav">
                   {user.name}
                 </span>
-                <span className="block text-xs leading-tight text-muted">{user.roleName}</span>
+                <span className="block text-xs leading-tight text-admin-nav/60">
+                  {user.roleName}
+                </span>
               </span>
-              <ChevronDown className="hidden h-4 w-4 text-muted xl:block" aria-hidden="true" />
+              <ChevronDown
+                className="hidden h-4 w-4 text-admin-nav/60 xl:block"
+                aria-hidden="true"
+              />
             </span>
           }
         >
@@ -165,7 +172,7 @@ export function AdminTopbar({
       </div>
 
       {/* Breadcrumbs move below the bar on small screens so they stay readable. */}
-      <div className="border-t border-hairline px-4 py-2 lg:hidden">
+      <div className="border-t border-admin-nav/10 px-4 py-2 lg:hidden">
         <AdminBreadcrumbs />
       </div>
     </header>

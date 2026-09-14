@@ -33,6 +33,35 @@
   --font-button-size: 0.875rem;
   --font-heading-scale: 1;
 
+  /*
+    Admin shell tokens.
+
+    The admin's dark navigation chrome is defined once, here. Components never
+    write a hex value: they use the Tailwind colours mapped onto these channels
+    (`bg-admin-sidebar`, `text-admin-nav/70`, `border-admin-nav/10`), so
+    retuning the whole shell is a change to these four lines.
+
+    Channels rather than hex so Tailwind's alpha modifier works on all of them —
+    which is what lets every translucent overlay in the spec
+    (rgba(255,255,255,.08) and friends) stay token-driven.
+  */
+  --admin-sidebar-bg: 0 50 66;
+  /* A shade deeper than the sidebar so the header reads as its own band while
+     still belonging to the same surface. */
+  --admin-header-bg: 0 43 57;
+  --admin-nav-fg: 255 255 255;
+  --admin-workspace-bg: 246 248 250;
+
+  /* Named derivations, for the few places that need a value rather than a
+     Tailwind class (scrollbars, focus rings, the nested-nav guide). */
+  --admin-border: rgb(var(--admin-nav-fg) / 0.1);
+  --admin-nav-muted: rgb(var(--admin-nav-fg) / 0.7);
+  --admin-nav-subtle: rgb(var(--admin-nav-fg) / 0.55);
+  --admin-nav-hover: rgb(var(--admin-nav-fg) / 0.06);
+  --admin-nav-active: rgb(var(--admin-nav-fg) / 0.08);
+  --admin-nav-guide: rgb(var(--admin-nav-fg) / 0.12);
+  --admin-accent: rgb(var(--brand-primary));
+
   /* Global layout tokens — a section's own design panel overrides these. */
   --layout-container: 72rem;
   --layout-gutter: 1.5rem;
@@ -92,6 +121,47 @@
   .skip-link {
     @apply sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100]
            focus:rounded-md focus:bg-brand focus:px-4 focus:py-2 focus:text-white;
+  }
+
+  /*
+    Admin shell.
+
+    Only what Tailwind cannot express lives here — scrollbar styling and the
+    focus ring's offset colour. Everything else is a token-backed utility class
+    on the component itself, so the markup still says what it means.
+  */
+  .admin-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--admin-nav-fg) / 0.18) transparent;
+  }
+  .admin-scroll::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .admin-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .admin-scroll::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--admin-nav-fg) / 0.18);
+    border-radius: 9999px;
+  }
+  .admin-scroll:hover::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--admin-nav-fg) / 0.28);
+  }
+
+  /*
+    Focus ring for controls sitting on the dark chrome. Tailwind's default
+    offset colour is white, which halos on navy; this offsets against the
+    surface the control actually sits on.
+  */
+  .admin-focus {
+    @apply focus-visible:outline-none focus-visible:ring-2;
+    --tw-ring-color: rgb(var(--admin-nav-fg) / 0.65);
+    --tw-ring-offset-color: rgb(var(--admin-sidebar-bg));
+    @apply focus-visible:ring-offset-2;
+  }
+  .admin-focus-header {
+    --tw-ring-offset-color: rgb(var(--admin-header-bg));
   }
 
   /* Rich text rendered from the CMS */

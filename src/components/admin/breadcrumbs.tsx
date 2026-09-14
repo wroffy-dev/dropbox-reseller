@@ -9,6 +9,10 @@ import { cn } from '@/lib/utils/cn';
 /**
  * Breadcrumbs derived from the navigation tree.
  *
+ * Rendered only inside the admin's dark top bar, so the colours are the shell's
+ * rather than the page's: muted white for the trail, full white for the page
+ * you are on.
+ *
  * Because the trail comes from ADMIN_NAV, a page never has to restate where it
  * lives — moving an item between modules updates every breadcrumb for free.
  * `leaf` names the current record on a detail route (a page title, a lead name).
@@ -32,9 +36,12 @@ export function AdminBreadcrumbs({ leaf, className }: { leaf?: string; className
 
   return (
     <nav aria-label="Breadcrumb" className={cn('min-w-0', className)}>
-      <ol className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
+      <ol className="flex flex-wrap items-center gap-1.5 text-xs text-admin-nav/60">
         <li>
-          <Link href="/admin" className="transition-colors hover:text-brand">
+          <Link
+            href="/admin"
+            className="admin-focus admin-focus-header rounded transition-colors hover:text-admin-nav"
+          >
             Admin
           </Link>
         </li>
@@ -44,13 +51,16 @@ export function AdminBreadcrumbs({ leaf, className }: { leaf?: string; className
             <li key={`${crumb.label}-${index}`} className="flex min-w-0 items-center gap-1.5">
               <ChevronRight className="h-3 w-3 shrink-0 opacity-60" aria-hidden="true" />
               {crumb.href && !last ? (
-                <Link href={crumb.href} className="truncate transition-colors hover:text-brand">
+                <Link
+                  href={crumb.href}
+                  className="admin-focus admin-focus-header truncate rounded transition-colors hover:text-admin-nav"
+                >
                   {crumb.label}
                 </Link>
               ) : (
                 <span
                   {...(last ? { 'aria-current': 'page' as const } : {})}
-                  className={cn('truncate', last && 'font-medium text-content')}
+                  className={cn('truncate', last && 'font-medium text-admin-nav')}
                 >
                   {crumb.label}
                 </span>

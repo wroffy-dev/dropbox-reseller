@@ -36,7 +36,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         isSuperAdmin: user.role === 'super-admin',
         image: account?.image ?? null,
       }}
-      branding={{ siteName: site.siteName, logoUrl: site.logoUrl }}
+      branding={{
+        siteName: site.siteName,
+        logoUrl: site.logoUrl,
+        // The admin rail is dark, so it prefers the dark-surface logo when one
+        // has been uploaded — the same choice the public footer makes.
+        logoDarkUrl: site.logoDarkUrl,
+      }}
     >
       {children}
     </AdminShell>

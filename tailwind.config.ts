@@ -26,6 +26,13 @@ const config: Config = {
         content: 'rgb(var(--brand-text) / <alpha-value>)',
         muted: 'rgb(var(--brand-muted) / <alpha-value>)',
         hairline: 'rgb(var(--brand-border) / <alpha-value>)',
+        // Admin shell — see the --admin-* tokens in globals.css. Mapped as
+        // colours so every translucent overlay the dark chrome needs is an
+        // alpha modifier (`bg-admin-nav/[0.08]`) rather than a literal.
+        'admin-sidebar': 'rgb(var(--admin-sidebar-bg) / <alpha-value>)',
+        'admin-header': 'rgb(var(--admin-header-bg) / <alpha-value>)',
+        'admin-nav': 'rgb(var(--admin-nav-fg) / <alpha-value>)',
+        'admin-workspace': 'rgb(var(--admin-workspace-bg) / <alpha-value>)',
       },
       fontFamily: {
         heading: ['var(--font-heading)', 'ui-sans-serif', 'system-ui', 'sans-serif'],

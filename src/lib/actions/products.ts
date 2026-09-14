@@ -149,10 +149,9 @@ export async function createProduct(formData: FormData): Promise<ActionResult<{ 
     });
 
     // A new product goes on sale in the market the admin is working in, at the
-    // price they just entered. Without this a product would exist but be for
-    // sale nowhere, which is never what creating one means. Other markets stay
-    // untouched until somebody prices it there.
-    await sellInCurrentCountry(user, product.id, input);
+    // price they just entered. Other markets stay untouched until somebody
+    // prices it there.
+    await syncCountryPricing(user, product.id, pricingFrom(input, product.currency));
 
     await recordAudit({
       actor: user,
@@ -172,42 +171,63 @@ export async function createProduct(formData: FormData): Promise<ActionResult<{ 
 }
 
 /**
- * Puts a freshly created product on sale in the admin's current market.
+ * Mirrors a product's commercial fields into the market the admin is working in.
  *
- * Failure here is deliberately not fatal: the product exists, and the country
- * pricing panel on its edit screen can always add the market by hand.
+ * The product form, the catalogue list and the ordering screen each show one
+ * price, one status and one arrangement — and the admin is working in one
+ * market, so those controls edit *that* market. Other markets are reached
+ * through the Country pricing panel on the product's own screen. On a
+ * single-market installation this is exactly the behaviour these screens always
+ * had.
+ *
+ * Without this the global row and the market row drift apart: an admin would
+ * change a price, save, and see nothing change on the site, because the public
+ * pages read `ProductCountry`.
  */
-async function sellInCurrentCountry(
+async function syncCountryPricing(
   user: SessionUser,
   productId: string,
-  input: ReturnType<typeof readProductForm>,
+  patch: Prisma.ProductCountryUncheckedUpdateInput & { currency?: string },
+  defaults: Partial<Prisma.ProductCountryUncheckedCreateInput> = {},
 ): Promise<void> {
-  try {
-    const scope = await scopeForUser(user);
-    await prisma.productCountry.upsert({
-      where: { productId_countryId: { productId, countryId: scope.country.id } },
-      update: {},
-      create: {
-        productId,
-        countryId: scope.country.id,
-        status: input.status,
-        publishedAt:
-          input.status === 'PUBLISHED' ? (input.publishedAt ?? new Date()) : input.publishedAt,
-        isFeatured: input.isFeatured,
-        sortOrder: input.sortOrder,
-        featuredOrder: input.featuredOrder,
-        currency: input.currency || scope.country.currency,
-        monthlyPrice: toDecimal(input.monthlyPrice),
-        annualPrice: toDecimal(input.annualPrice),
-        compareAtPrice: toDecimal(input.compareAtPrice),
-        discountPercent: input.discountPercent ?? null,
-        priceSuffix: input.priceSuffix,
-        priceNote: input.priceNote,
-      },
-    });
-  } catch (error) {
-    console.error('[products] country pricing could not be created', error);
-  }
+  const scope = await scopeForUser(user);
+  const countryId = scope.country.id;
+
+  await prisma.productCountry.upsert({
+    where: { productId_countryId: { productId, countryId } },
+    update: patch,
+    // A market that does not sell the product yet starts from what was just
+    // entered, so saving a product never leaves it for sale nowhere.
+    create: {
+      currency: scope.country.currency,
+      ...defaults,
+      ...(patch as Prisma.ProductCountryUncheckedCreateInput),
+      productId,
+      countryId,
+    },
+  });
+}
+
+/** The commercial fields of the product form, as one market's configuration. */
+function pricingFrom(
+  input: ReturnType<typeof readProductForm>,
+  currency: string,
+): Prisma.ProductCountryUncheckedUpdateInput & { currency: string } {
+  return {
+    status: input.status,
+    publishedAt:
+      input.status === 'PUBLISHED' ? (input.publishedAt ?? new Date()) : input.publishedAt,
+    isFeatured: input.isFeatured,
+    sortOrder: input.sortOrder,
+    featuredOrder: input.featuredOrder,
+    currency: input.currency || currency,
+    monthlyPrice: toDecimal(input.monthlyPrice),
+    annualPrice: toDecimal(input.annualPrice),
+    compareAtPrice: toDecimal(input.compareAtPrice),
+    discountPercent: input.discountPercent ?? null,
+    priceSuffix: input.priceSuffix,
+    priceNote: input.priceNote,
+  };
 }
 
 export async function updateProduct(productId: string, formData: FormData): Promise<ActionResult> {
@@ -238,6 +258,16 @@ export async function updateProduct(productId: string, formData: FormData): Prom
             : input.publishedAt,
         updatedById: user.id,
       },
+    });
+
+    // The form edits the market the admin is in, so its price, status and
+    // ordering land where the public site reads them.
+    await syncCountryPricing(user, productId, {
+      ...pricingFrom(input, updated.currency),
+      publishedAt:
+        input.status === 'PUBLISHED'
+          ? (input.publishedAt ?? before.publishedAt ?? new Date())
+          : input.publishedAt,
     });
 
     await recordAudit({
@@ -279,14 +309,16 @@ export async function setProductStatus(
     const product = await prisma.product.findUnique({ where: { id: productId } });
     if (!product) return failure('That product no longer exists.');
 
+    const publishedAt =
+      status === 'PUBLISHED' ? (product.publishedAt ?? new Date()) : product.publishedAt;
+
     await prisma.product.update({
       where: { id: productId },
-      data: {
-        status,
-        publishedAt: status === 'PUBLISHED' ? (product.publishedAt ?? new Date()) : product.publishedAt,
-        updatedById: user.id,
-      },
+      data: { status, publishedAt, updatedById: user.id },
     });
+
+    // Publishing from the catalogue publishes it in the market being worked in.
+    await syncCountryPricing(user, productId, { status, publishedAt });
 
     await recordAudit({
       actor: user,
@@ -320,8 +352,11 @@ export async function toggleProductFeatured(productId: string): Promise<ActionRe
     let featuredOrder = product.featuredOrder;
 
     if (nextFeatured) {
-      const last = await prisma.product.findFirst({
-        where: { isFeatured: true, deletedAt: null },
+      // The end of the featured rail in the market being worked in — featured
+      // ordering is per market, so another market's rail is not consulted.
+      const scope = await scopeForUser(user);
+      const last = await prisma.productCountry.findFirst({
+        where: { isFeatured: true, countryId: scope.country.id, product: { deletedAt: null } },
         orderBy: { featuredOrder: 'desc' },
         select: { featuredOrder: true },
       });
@@ -332,6 +367,8 @@ export async function toggleProductFeatured(productId: string): Promise<ActionRe
       where: { id: productId },
       data: { isFeatured: nextFeatured, featuredOrder, updatedById: user.id },
     });
+
+    await syncCountryPricing(user, productId, { isFeatured: nextFeatured, featuredOrder });
 
     await recordAudit({
       actor: user,
@@ -384,6 +421,18 @@ export async function reorderProducts(input: unknown): Promise<ActionResult> {
         }),
       ),
     );
+
+    // The public catalogue orders by the market's own row, so the arrangement
+    // has to land there too — in the market the admin arranged it in.
+    for (const [index, id] of order.entries()) {
+      await syncCountryPricing(
+        user,
+        id,
+        scope === 'featured'
+          ? { featuredOrder: (index + 1) * 10 }
+          : { sortOrder: (index + 1) * 10 },
+      );
+    }
 
     await recordAudit({
       actor: user,
@@ -439,6 +488,26 @@ export async function duplicateProduct(productId: string): Promise<ActionResult<
         specs: source.specs as Prisma.InputJsonValue,
         galleryIds: source.galleryIds as Prisma.InputJsonValue,
       },
+    });
+
+    /*
+     * The copy carries the source's pricing into the market being worked in,
+     * as a draft. Duplicating a product to reprice it is the common case, and
+     * an empty Country pricing tab would make the copy look broken.
+     */
+    await syncCountryPricing(user, copy.id, {
+      status: 'DRAFT',
+      publishedAt: null,
+      isFeatured: false,
+      sortOrder: source.sortOrder,
+      featuredOrder: source.featuredOrder,
+      currency: source.currency,
+      monthlyPrice: source.monthlyPrice,
+      annualPrice: source.annualPrice,
+      compareAtPrice: source.compareAtPrice,
+      discountPercent: source.discountPercent,
+      priceSuffix: source.priceSuffix,
+      priceNote: source.priceNote,
     });
 
     if (source.variants.length > 0) {
@@ -624,39 +693,59 @@ export async function bulkProductAction(input: unknown): Promise<ActionResult> {
     } else if (action === 'feature' || action === 'unfeature') {
       if (action === 'feature') {
         // Append to the featured order so an existing arrangement is preserved.
-        const last = await prisma.product.findFirst({
-          where: { isFeatured: true, deletedAt: null },
+        const scope = await scopeForUser(user);
+        const last = await prisma.productCountry.findFirst({
+          where: { isFeatured: true, countryId: scope.country.id, product: { deletedAt: null } },
           orderBy: { featuredOrder: 'desc' },
           select: { featuredOrder: true },
         });
         let cursor = last?.featuredOrder ?? 0;
+        const promoted = products.filter((p) => !p.isFeatured);
+
         await prisma.$transaction(
-          products
-            .filter((p) => !p.isFeatured)
-            .map((product) => {
-              cursor += 10;
-              return prisma.product.update({
-                where: { id: product.id },
-                data: { isFeatured: true, featuredOrder: cursor, updatedById: user.id },
-              });
-            }),
+          promoted.map((product) => {
+            cursor += 10;
+            return prisma.product.update({
+              where: { id: product.id },
+              data: { isFeatured: true, featuredOrder: cursor, updatedById: user.id },
+            });
+          }),
         );
+
+        let mirror = last?.featuredOrder ?? 0;
+        for (const product of promoted) {
+          mirror += 10;
+          await syncCountryPricing(user, product.id, {
+            isFeatured: true,
+            featuredOrder: mirror,
+          });
+        }
       } else {
         await prisma.product.updateMany({
           where: { id: { in: products.map((p) => p.id) } },
           data: { isFeatured: false, updatedById: user.id },
         });
+        for (const product of products) {
+          await syncCountryPricing(user, product.id, { isFeatured: false });
+        }
       }
     } else {
       const status = action === 'publish' ? 'PUBLISHED' : action === 'draft' ? 'DRAFT' : 'ARCHIVED';
+      const publishedAt = status === 'PUBLISHED' ? new Date() : undefined;
+
       await prisma.product.updateMany({
         where: { id: { in: products.map((p) => p.id) } },
-        data: {
-          status,
-          ...(status === 'PUBLISHED' ? { publishedAt: new Date() } : {}),
-          updatedById: user.id,
-        },
+        data: { status, ...(publishedAt ? { publishedAt } : {}), updatedById: user.id },
       });
+
+      // Bulk publishing publishes into the market being worked in, the same way
+      // publishing one product from its row menu does.
+      for (const product of products) {
+        await syncCountryPricing(user, product.id, {
+          status,
+          ...(publishedAt ? { publishedAt } : {}),
+        });
+      }
     }
 
     await recordAudit({

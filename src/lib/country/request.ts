@@ -16,18 +16,31 @@ import { countryPath } from './routing';
  * `cache()` makes this one resolution per request no matter how many layouts,
  * pages and components ask for it.
  */
+/**
+ * The request path, or `/` where there is no request to read.
+ *
+ * `headers()` throws outside a request scope — a background job, a script, a
+ * test exercising an action directly. There is no market prefix in any of those
+ * cases, so the root market is not a guess but the only correct answer, and
+ * degrading to it is better than making every caller handle a throw.
+ */
+async function requestPath(): Promise<string> {
+  try {
+    const headerList = await headers();
+    return headerList.get('x-pathname') ?? '/';
+  } catch {
+    return '/';
+  }
+}
+
 export const getRequestCountry = cache(async (): Promise<CountryContext> => {
-  const headerList = await headers();
-  const pathname = headerList.get('x-pathname') ?? '/';
-  const { country } = await resolveCountryPath(pathname);
+  const { country } = await resolveCountryPath(await requestPath());
   return country;
 });
 
 /** The current request's path with its market prefix stripped. */
 export const getRequestCountryPath = cache(async (): Promise<string> => {
-  const headerList = await headers();
-  const pathname = headerList.get('x-pathname') ?? '/';
-  const { path } = await resolveCountryPath(pathname);
+  const { path } = await resolveCountryPath(await requestPath());
   return path;
 });
 

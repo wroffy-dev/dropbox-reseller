@@ -38,16 +38,33 @@ export const getAdminCountryScope = cache(async (): Promise<AdminCountryScope> =
   return scopeForUser(user);
 });
 
+/**
+ * The admin's stored preference, or none where there is no request to read it
+ * from.
+ *
+ * `cookies()` throws outside a request scope — a background job, a script, a
+ * test calling an action directly. A missing preference simply means "the
+ * default market", which is what an admin who has never switched also gets, so
+ * this degrades rather than throwing.
+ */
+async function preferredCountryCode(): Promise<string | null> {
+  try {
+    const store = await cookies();
+    return store.get(ADMIN_COUNTRY_COOKIE)?.value?.trim().toUpperCase() ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** The same resolution for a caller that already holds the user (Server Actions). */
 export async function scopeForUser(user: SessionUser): Promise<AdminCountryScope> {
-  const [countries, fallback, store] = await Promise.all([
+  const [countries, fallback, preferred] = await Promise.all([
     listAccessibleCountries(user),
     getDefaultCountry(),
-    cookies(),
+    preferredCountryCode(),
   ]);
 
   const available = countries.length > 0 ? countries : [fallback];
-  const preferred = store.get(ADMIN_COUNTRY_COOKIE)?.value?.trim().toUpperCase();
 
   const country =
     available.find((candidate) => candidate.code === preferred) ??

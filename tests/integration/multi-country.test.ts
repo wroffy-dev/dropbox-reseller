@@ -298,6 +298,34 @@ describe('product pricing is per market', () => {
     expect(inUae?.href).toBe(`/ae/products/${slug}`);
   });
 
+  it('keeps a hand-typed CTA and its copy inside the market being read', async () => {
+    /*
+     * Caught on a live deployment: the product page's own URL was built for the
+     * market, but the CTA configured next to it was rendered as typed, so the
+     * button on the UAE page opened India's page — at India's prices.
+     */
+    await prisma.productCountry.updateMany({
+      where: { productId, countryId: { in: [india, uae] } },
+      data: {
+        ctaUrl: '/contact',
+        shortDescription: 'Talk to <a href="/contact">our team</a> or read the <a href="https://example.com/docs">docs</a>.',
+      },
+    });
+
+    const { home, second } = await contexts();
+    const inIndia = await getPublicProduct(home, slug);
+    const inUae = await getPublicProduct(second, slug);
+
+    expect(inIndia?.ctaUrl).toBe('/contact');
+    expect(inUae?.ctaUrl).toBe('/ae/contact');
+
+    // Links written into the copy follow the same rule, and an external one is
+    // left exactly as it was.
+    expect(inUae?.shortDescription).toContain('href="/ae/contact"');
+    expect(inUae?.shortDescription).toContain('href="https://example.com/docs"');
+    expect(inIndia?.shortDescription).toContain('href="/contact"');
+  });
+
   it('withdraws the product from a market when its row is unpublished', async () => {
     const { home, second } = await contexts();
 

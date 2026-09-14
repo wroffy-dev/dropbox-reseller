@@ -109,7 +109,7 @@ export async function BlogHeroBlock({ content, ctx }: { content: BlogHeroContent
     <div className={cn('min-w-0', content.contentAlign === 'center' && 'text-center')}>
       {content.showBreadcrumb ? (
         <Breadcrumb
-          items={[{ label: 'Home', href: '/' }, { label: 'Blog' }]}
+          items={[{ label: 'Home', href: countryPath(ctx.country) }, { label: 'Blog' }]}
           inverted={ctx.inverted}
           className="mb-5"
         />

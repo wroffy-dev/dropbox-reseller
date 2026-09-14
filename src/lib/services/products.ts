@@ -2,7 +2,7 @@ import 'server-only';
 import { cache } from 'react';
 import { prisma } from '@/lib/db/prisma';
 import { decimalToString } from '@/lib/utils/money';
-import { countryPath } from '@/lib/country/routing';
+import { countryPath, countryHref, localiseHtml } from '@/lib/country/routing';
 import type { CountryContext } from '@/lib/country/types';
 import type { Prisma } from '@prisma/client';
 
@@ -125,6 +125,14 @@ const pick = (local: string | null, global: string | null): string | null => {
   return trimmed ? local : global;
 };
 
+/** A stored URL, resolved inside the market being rendered. */
+const localiseUrl = (value: string | null, country: CountryContext): string | null =>
+  value ? countryHref(country, value) : value;
+
+/** Prose, with any links inside it resolved inside the market being rendered. */
+const localise = (value: string | null, country: CountryContext): string | null =>
+  value ? localiseHtml(value, country) : value;
+
 /**
  * Merges a market's configuration over the global product.
  *
@@ -142,8 +150,10 @@ export function toPublicProduct(row: ProductCountryRow, country: CountryContext)
     slug: product.slug,
     href: countryPath(country, `products/${product.slug}`),
     sku: product.sku,
-    shortDescription: pick(row.shortDescription, product.shortDescription),
-    description: pick(row.description, product.description),
+    // Copy can carry links the editor typed by hand, and a market's page must
+    // not send its visitor into another market's.
+    shortDescription: localise(pick(row.shortDescription, product.shortDescription), country),
+    description: localise(pick(row.description, product.description), country),
     storage: product.storage,
     minUsers: product.minUsers,
     maxUsers: product.maxUsers,
@@ -159,7 +169,12 @@ export function toPublicProduct(row: ProductCountryRow, country: CountryContext)
     benefits: toStringArray(product.benefits),
     specs: toSpecs(product.specs),
     ctaLabel: pick(row.ctaLabel, product.ctaLabel) || 'Get Started',
-    ctaUrl: pick(row.ctaUrl, product.ctaUrl),
+    /*
+     * The configured CTA is a link like any other. `href` above is built for
+     * this market; a hand-typed `/contact` has to be too, or the button walks
+     * the visitor out of the market they are reading.
+     */
+    ctaUrl: localiseUrl(pick(row.ctaUrl, product.ctaUrl), country),
     ctaFormSlug: ctaForm?.slug ?? null,
     imageUrl: product.image?.url ?? null,
     imageAlt: product.image?.altText ?? product.name,

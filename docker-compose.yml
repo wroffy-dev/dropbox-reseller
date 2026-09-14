@@ -6,7 +6,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-dropbox}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dropbox}
+      # No default. A password that ships in the repository is a published
+      # credential, and `dropbox/dropbox` on an exposed port is the whole
+      # database — leads, accounts, password hashes and MFA secrets included.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-dropbox_reseller}
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -15,8 +18,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    # Bound to loopback, never to every interface.
+    #
+    # `- '5432:5432'` publishes the database on 0.0.0.0, which on a server with
+    # a public IP means the internet can reach it directly — the application
+    # itself does not need this at all, it talks to `db:5432` over the compose
+    # network. The explicit 127.0.0.1 keeps a psql or TablePlus session working
+    # on the machine running the stack, and nowhere else.
     ports:
-      - '${POSTGRES_PORT:-5432}:5432'
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
 
   app:
     build:
@@ -27,7 +37,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-dropbox}:${POSTGRES_PASSWORD:-dropbox}@db:5432/${POSTGRES_DB:-dropbox_reseller}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dropbox}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-dropbox_reseller}?schema=public
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}

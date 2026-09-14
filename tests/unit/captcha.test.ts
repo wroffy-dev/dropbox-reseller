@@ -86,9 +86,21 @@ describe('math captcha', () => {
     const [version, a, b, operation, expiry, signature] = challenge.token.split('.');
     const answer = solve(challenge.question);
 
-    // Operands swapped for easier ones, signature left alone.
-    const forgedOperands = ['c1', '1', '1', 'add', expiry, signature].join('.');
-    expect(verifyCaptcha(forgedOperands, 2)).toEqual({ ok: false, reason: 'malformed' });
+    /*
+     * Operands swapped for easier ones, signature left alone.
+     *
+     * They are derived from the real operand so the forgery is always a
+     * forgery. Hard-coding `1 + 1` meant that roughly one run in 162 — when the
+     * genuine challenge happened to be 1 + 1 — forged a token identical to the
+     * real one, which verifies correctly and failed the test for the one reason
+     * it is not testing.
+     */
+    const easy = Number(a) === 1 ? '2' : '1';
+    const forgedOperands = [version, easy, easy, 'add', expiry, signature].join('.');
+    expect(verifyCaptcha(forgedOperands, Number(easy) * 2)).toEqual({
+      ok: false,
+      reason: 'malformed',
+    });
 
     // Expiry pushed into the far future.
     const forgedExpiry = [version, a, b, operation, String(Date.now() + 10 ** 9), signature].join(

@@ -11,7 +11,7 @@
  * read the same value — moving the screen again means editing this one line
  * and renaming the matching directory under `src/app`.
  */
-export const LOGIN_PATH = '/auth-wroffy/admin';
+export const LOGIN_PATH = '/auth-control-panel/admin';
 
 /**
  * The first path segment `LOGIN_PATH` occupies.
@@ -19,4 +19,4 @@ export const LOGIN_PATH = '/auth-wroffy/admin';
  * Kept next to it so the reserved-segment list and the no-index header cannot
  * drift away from the path they are meant to cover.
  */
-export const LOGIN_PATH_SEGMENT = 'auth-wroffy';
+export const LOGIN_PATH_SEGMENT = 'auth-control-panel';

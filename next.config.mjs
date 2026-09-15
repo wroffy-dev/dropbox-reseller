@@ -81,7 +81,7 @@ const nextConfig = {
         // only a crawler that already found the page will read it. The path
         // itself is defined in src/lib/auth/routes.ts; this config cannot
         // import TypeScript, so the two must be changed together.
-        source: '/auth-wroffy/:path*',
+        source: '/auth-control-panel/:path*',
         headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
       },
     ];

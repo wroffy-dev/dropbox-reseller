@@ -118,7 +118,7 @@ describe('countryHref', () => {
     expect(countryHref(uae, '/admin/pages')).toBe('/admin/pages');
     expect(countryHref(uae, '/api/health')).toBe('/api/health');
     expect(countryHref(uae, '/uploads/2026/01/logo.png')).toBe('/uploads/2026/01/logo.png');
-    expect(countryHref(uae, '/auth-wroffy/admin')).toBe('/auth-wroffy/admin');
+    expect(countryHref(uae, '/auth-control-panel/admin')).toBe('/auth-control-panel/admin');
     expect(countryHref(uae, '/favicon.ico')).toBe('/favicon.ico');
   });
 
@@ -170,7 +170,7 @@ describe('splitCountryPath', () => {
     for (const path of [
       '/admin',
       '/api/health',
-      '/auth-wroffy/admin',
+      '/auth-control-panel/admin',
       '/uploads/x.png',
       '/robots.txt',
     ]) {
@@ -201,7 +201,7 @@ describe('reserved segments', () => {
       'auth',
       // The sign-in screen's own segment: a market slug that shadowed it would
       // take the admin offline.
-      'auth-wroffy',
+      'auth-control-panel',
       'login',
       'preview',
       'uploads',

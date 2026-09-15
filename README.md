@@ -131,8 +131,8 @@ npm run dev
 ```
 
 The site runs at <http://localhost:3000>. Sign in at
-<http://localhost:3000/auth-wroffy/admin>, which is the only way in — the
-admin does not advertise itself.
+<http://localhost:3000/auth-control-panel/admin>, which is the only way in —
+the admin does not advertise itself.
 
 **The sign-in screen is not on `/login`,** because `/login` is the first path
 a credential-stuffing bot tries. Its path is defined once, as `LOGIN_PATH` in
@@ -550,8 +550,8 @@ build falls back to on-demand rendering. It is only fatal at runtime.
 **Uploads disappear after a deploy.** `STORAGE_PROVIDER=local` without a
 persistent volume. Mount `/app/public/uploads`, or switch to S3/R2.
 
-**Sign-in loops back to `/auth-wroffy/admin`.** `NEXTAUTH_URL` does not match
-the URL you are actually visiting, so the session cookie is scoped to a
+**Sign-in loops back to `/auth-control-panel/admin`.** `NEXTAUTH_URL` does not
+match the URL you are actually visiting, so the session cookie is scoped to a
 different origin.
 
 **Emails are not arriving.** Check that email is switched on in Admin →

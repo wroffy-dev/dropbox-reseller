@@ -141,7 +141,8 @@ src/
 │   ├── api/
 │   │   ├── auth/          Auth.js route handler
 │   │   └── health/        Container health check
-│   ├── auth-wroffy/admin/ Sign-in screen; path from lib/auth/routes.ts
+│   ├── auth-control-panel/
+│   │   └── admin/         Sign-in screen; path from lib/auth/routes.ts
 │   ├── sitemap.ts         Generated from published content
 │   └── robots.ts          Generated from SEO settings
 │

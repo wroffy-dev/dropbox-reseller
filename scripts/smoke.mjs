@@ -7,7 +7,7 @@
  */
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:3100';
 /** Mirrors LOGIN_PATH in src/lib/auth/routes.ts — a plain script cannot import it. */
-const LOGIN_PATH = '/auth-wroffy/admin';
+const LOGIN_PATH = '/auth-control-panel/admin';
 const EMAIL = process.env.SEED_ADMIN_EMAIL || 'admin@example.com';
 const PASSWORD = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe!2024';
 

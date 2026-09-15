@@ -1,10 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import { BLOCKS, BLOCK_PICKER_LIST, getBlock, blockDefaults, parseBlockContent } from '@/lib/cms/blocks';
 import { SLIDER_BLOCKS } from '@/lib/cms/slider-blocks';
+import { productSourceShape } from '@/lib/cms/product-source';
+import { postSourceSchema } from '@/lib/cms/blog-blocks';
 import { sliderSettingsSchema, sliderSettingsShape, SLIDER_FIELDS, readSliderSettings } from '@/lib/cms/slider';
 import type { FieldDescriptor } from '@/lib/cms/fields';
 
 const SLIDER_TYPES = [
+  'logoSlider',
+  'imageSlider',
+  'testimonialSlider',
+  'contentSlider',
+  'textBoxSlider',
+  'productSlider',
+  'blogSlider',
+] as const;
+
+/** The sliders whose slides an editor types in, rather than querying for. */
+const ITEM_SLIDER_TYPES = [
   'logoSlider',
   'imageSlider',
   'testimonialSlider',
@@ -62,7 +75,7 @@ describe('slider blocks', () => {
   });
 
   it('starts every slider empty and valid, with no slides configured', () => {
-    for (const type of SLIDER_TYPES) {
+    for (const type of ITEM_SLIDER_TYPES) {
       const defaults = blockDefaults(type) as { items: unknown[] };
       expect(Array.isArray(defaults.items), `${type} needs an items array`).toBe(true);
       expect(defaults.items).toHaveLength(0);
@@ -84,6 +97,45 @@ describe('slider blocks', () => {
       const names = new Set(allFields(BLOCKS[type]!.fields).map((field) => field.name));
       const orphans = stored.filter((key) => !names.has(key));
       expect(orphans, `${type} stores fields the editor cannot reach: ${orphans.join(', ')}`).toEqual([]);
+    }
+  });
+});
+
+describe('source-driven sliders', () => {
+  it('runs the product grid\u2019s own source rather than a second one', () => {
+    const defaults = blockDefaults('productSlider') as Record<string, unknown>;
+    for (const key of Object.keys(productSourceShape)) {
+      expect(key in defaults, `productSlider is missing ${key}`).toBe(true);
+    }
+    const names = new Set(allFields(BLOCKS.productSlider!.fields).map((field) => field.name));
+    expect(names.has('source')).toBe(true);
+    expect(names.has('productIds')).toBe(true);
+  });
+
+  it('runs the article grid\u2019s own source rather than a second one', () => {
+    const defaults = blockDefaults('blogSlider') as Record<string, unknown>;
+    for (const key of Object.keys(postSourceSchema)) {
+      expect(key in defaults, `blogSlider is missing ${key}`).toBe(true);
+    }
+    const names = new Set(allFields(BLOCKS.blogSlider!.fields).map((field) => field.name));
+    expect(names.has('source')).toBe(true);
+    expect(names.has('categoryId')).toBe(true);
+    expect(names.has('tagId')).toBe(true);
+  });
+
+  it('offers the article slider on ordinary pages, not only on the blog', () => {
+    // A home page that shows the latest three articles is the common case.
+    expect(BLOCKS.blogSlider!.surfaces).toContain('page');
+    expect(
+      BLOCK_PICKER_LIST.some((block) => block.type === 'blogSlider'),
+      'the article slider is not offered in the page picker',
+    ).toBe(true);
+  });
+
+  it('keeps the article slider on the blog card settings, with per-section overrides', () => {
+    const names = new Set(allFields(BLOCKS.blogSlider!.fields).map((field) => field.name));
+    for (const override of ['cardImage', 'cardExcerpt', 'cardAuthor', 'cardCta']) {
+      expect(names.has(override), `blogSlider has no ${override} override`).toBe(true);
     }
   });
 });

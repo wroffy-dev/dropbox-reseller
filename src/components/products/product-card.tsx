@@ -32,6 +32,7 @@ export function ProductCard({
   ctaLabel,
   highlight,
   ctaLocation = 'product-card',
+  className,
 }: {
   product: PublicProduct;
   billing?: 'monthly' | 'annual';
@@ -51,6 +52,8 @@ export function ProductCard({
   ctaLabel?: string;
   highlight?: boolean;
   ctaLocation?: string;
+  /** Lets a container stretch the card — a slider slide, for one. */
+  className?: string;
 }) {
   const price = billing === 'annual' ? product.annualPrice : product.monthlyPrice;
   const period = billing === 'annual' ? '/year' : '/month';
@@ -65,6 +68,7 @@ export function ProductCard({
         highlight
           ? 'border-brand shadow-lg ring-1 ring-brand/20'
           : 'border-hairline shadow-sm hover:shadow-md',
+        className,
       )}
     >
       {highlight ? (

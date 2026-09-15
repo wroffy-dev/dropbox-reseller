@@ -107,8 +107,12 @@ SMTP_PASSWORD=                     # SECRET → smtp-password
 SMTP_ENCRYPTION=tls
 MAIL_FROM=
 
-# --- Media storage (must NOT be local on Azure) -----------------------------
-STORAGE_PROVIDER=r2
+# --- Media storage ----------------------------------------------------------
+# Two supported shapes on Azure. Either this (a bucket), or STORAGE_DRIVER=local
+# with an Azure Files share mounted at /data/uploads and every S3_* left empty.
+# What is NOT supported is `local` with no mount: the container filesystem is
+# ephemeral and is not shared between replicas.
+STORAGE_DRIVER=r2
 S3_ENDPOINT=                       # https://ACCOUNT_ID.r2.cloudflarestorage.com
 S3_REGION=auto
 S3_BUCKET=
@@ -116,7 +120,10 @@ S3_ACCESS_KEY=                     # SECRET → media-access-key
 S3_SECRET_KEY=                     # SECRET → media-secret-key
 S3_PUBLIC_URL=                     # https://pub-xxxxx.r2.dev or your CDN domain
 S3_FORCE_PATH_STYLE=true
-MAX_UPLOAD_KB=150
+
+# Largest file the uploader accepts. Applies to every driver. Unset keeps the
+# deliberately small 150 KB default.
+MAX_UPLOAD_SIZE_MB=10
 
 # --- Analytics (optional) ---------------------------------------------------
 NEXT_PUBLIC_GA_ID=
@@ -181,15 +188,20 @@ pages, products, blog posts and fake leads.
 
 ### Media storage
 
-| `STORAGE_PROVIDER` | Use for |
+| `STORAGE_DRIVER` | Use for |
 | --- | --- |
-| `local` | Local development, and Docker/Coolify with a persistent volume |
+| `local` | Local development, and any deployment with a persistent volume mounted at `UPLOAD_DIR` — including Azure, with an Azure Files share |
 | `r2` | Cloudflare R2 — needs `S3_ENDPOINT` |
 | `s3` | AWS S3 — leave `S3_ENDPOINT` empty, set a real `S3_REGION` |
 
-On Azure Container Apps this must be `r2` or `s3`. With `local`, a file uploaded
-through one replica is invisible to the others and is destroyed by the next
-deployment.
+`STORAGE_PROVIDER` is the previous name and is still read when `STORAGE_DRIVER`
+is unset.
+
+On Azure Container Apps, `local` needs a share mounted at `UPLOAD_DIR`
+(`/data/uploads`) — see
+[MEDIA-STORAGE.md](MEDIA-STORAGE.md#azure-container-apps). Without one, a file
+uploaded through one replica is invisible to the others and is destroyed by the
+next deployment.
 
 `S3_PUBLIC_URL` is the address browsers load images from — the R2 public domain
 or your CDN — not the API endpoint.
@@ -230,7 +242,7 @@ Store it with your disaster-recovery notes, not only in Azure.
 - [ ] All 12 secrets created, none typed directly into a variable
 - [ ] `NEXTAUTH_URL` and `NEXT_PUBLIC_SITE_URL` both use `https://` and your real
       domain, with no trailing slash
-- [ ] `STORAGE_PROVIDER` is `r2` or `s3`, never `local`
+- [ ] `STORAGE_DRIVER` is `r2`/`s3`, **or** `local` with a share mounted at `/data/uploads`
 - [ ] `BACKUP_STORAGE_DRIVER` is `s3`, never `local`
 - [ ] The backup bucket has public access switched **off**
 - [ ] Media and backup buckets use **different** API tokens

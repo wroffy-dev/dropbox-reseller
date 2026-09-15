@@ -16,6 +16,9 @@ next-env.d.ts
 /public/uploads/*
 !/public/uploads/.gitkeep
 
+# Local media, when UPLOAD_DIR points inside the project. Production data.
+/data/
+
 # Local backup archives. Never committed: an archive contains the database.
 /backups/
 

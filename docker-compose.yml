@@ -42,14 +42,18 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
-      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      # Filesystem storage by default: no bucket, no account, no key.
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      UPLOAD_DIR: ${UPLOAD_DIR:-/data/uploads}
+      MEDIA_PUBLIC_PATH: ${MEDIA_PUBLIC_PATH:-/media}
+      # Only read when STORAGE_DRIVER is s3 or r2. Empty is correct otherwise.
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-auto}
       S3_BUCKET: ${S3_BUCKET:-}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
       S3_PUBLIC_URL: ${S3_PUBLIC_URL:-}
-      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-12}
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -77,7 +81,13 @@ services:
     ports:
       - '${APP_PORT:-3000}:3000'
     volumes:
-      # Only needed for STORAGE_PROVIDER=local. With S3/R2 this can be dropped.
+      # The media library. This is production data, not a cache: without it,
+      # every uploaded image is destroyed by the next `docker compose up
+      # --build`. Needed for STORAGE_DRIVER=local; droppable only with S3/R2.
+      - media-data:/data/uploads
+      # Where uploads were written before /data/uploads. Mounted read-write but
+      # never written to, so a stack upgraded from an older version keeps
+      # serving the files it already had — nothing has to be migrated.
       - uploads:/app/public/uploads
       # Backup archives. Keep this even with S3 backup storage: restores and
       # imports stage archives here before they are read.
@@ -85,5 +95,6 @@ services:
 
 volumes:
   postgres-data:
+  media-data:
   uploads:
   backups:

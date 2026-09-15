@@ -3,7 +3,8 @@ import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { MediaLibrary } from '@/components/admin/media/media-library';
-import type { MediaDto } from '@/lib/actions/media';
+import { MEDIA_DTO_SELECT, toMediaDto, type MediaDto } from '@/lib/media/dto';
+import { maxUploadLabel } from '@/lib/services/upload';
 
 export const metadata: Metadata = { title: 'Media' };
 export const dynamic = 'force-dynamic';
@@ -22,27 +23,11 @@ export default async function MediaAdmin({
     where: { deletedAt: null },
     orderBy: { createdAt: 'desc' },
     take: PAGE_SIZE + 1,
-    select: {
-      id: true,
-      url: true,
-      filename: true,
-      mimeType: true,
-      kind: true,
-      size: true,
-      width: true,
-      height: true,
-      altText: true,
-      title: true,
-      folderId: true,
-      createdAt: true,
-    },
+    select: MEDIA_DTO_SELECT,
   });
 
   const hasMore = rows.length > PAGE_SIZE;
-  const items: MediaDto[] = (hasMore ? rows.slice(0, PAGE_SIZE) : rows).map((row) => ({
-    ...row,
-    createdAt: row.createdAt.toISOString(),
-  }));
+  const items: MediaDto[] = (hasMore ? rows.slice(0, PAGE_SIZE) : rows).map(toMediaDto);
 
   // Folder tree and the two synthetic buckets, counted on the server so the
   // sidebar shows real totals rather than only what this page happened to load.
@@ -92,6 +77,7 @@ export default async function MediaAdmin({
           delete: userCan(user, 'media.delete'),
         }}
         selectedId={params.selected}
+        maxUploadLabel={maxUploadLabel()}
       />
     </>
   );

@@ -22,7 +22,13 @@ const TABS = [
  * The active tab lives in the query string so the account menu can link
  * straight to Security and so a link to a specific tab survives a reload.
  */
-export function ProfileWorkspace({ data }: { data: ProfileData }) {
+export function ProfileWorkspace({
+  data,
+  maxUploadLabel,
+}: {
+  data: ProfileData;
+  maxUploadLabel: string;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -43,7 +49,7 @@ export function ProfileWorkspace({ data }: { data: ProfileData }) {
       <AdminTabs tabs={TABS} active={active} onChange={select} className="mb-5" />
 
       <TabPanel id="profile" active={active}>
-        <ProfileTab data={data} />
+        <ProfileTab data={data} maxUploadLabel={maxUploadLabel} />
       </TabPanel>
       <TabPanel id="security" active={active}>
         <SecurityTab data={data} />

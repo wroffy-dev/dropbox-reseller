@@ -33,13 +33,29 @@ export const ACCEPT_IMAGES = [
   ...ALLOWED_EXTENSIONS.filter((ext) => ext !== 'pdf').map((ext) => `.${ext}`),
 ].join(',');
 
-/** 150 KB. The ceiling for every upload. */
+/**
+ * The ceiling when nothing is configured.
+ *
+ * Deliberately small, and deliberately unchanged by the move to a configurable
+ * limit: an installation that was enforcing 150 KB keeps enforcing it after an
+ * upgrade. `MAX_UPLOAD_SIZE_MB` is how a deployment that wants room for
+ * photographs and PDFs asks for it — see `.env.example`, which ships 10 MB for
+ * a new install.
+ */
 export const DEFAULT_MAX_UPLOAD_KB = 150;
 
 export const UNSUPPORTED_TYPE_MESSAGE =
   'Only JPG, JPEG, WEBP, PNG, PDF, SVG and GIF files are allowed.';
 
-export const TOO_LARGE_MESSAGE = 'File size must be 150 KB or less.';
+/** "150 KB", "10 MB" — for hint text and for the rejection message. */
+export function formatUploadLimit(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    const mb = bytes / (1024 * 1024);
+    return `${Number.isInteger(mb) ? mb : mb.toFixed(1)} MB`;
+  }
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
-/** "150 KB" — for hint text next to an upload control. */
-export const MAX_UPLOAD_LABEL = `${DEFAULT_MAX_UPLOAD_KB} KB`;
+export function tooLargeMessage(bytes: number): string {
+  return `File size must be ${formatUploadLimit(bytes)} or less.`;
+}

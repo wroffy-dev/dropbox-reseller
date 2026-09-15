@@ -15,6 +15,7 @@ import {
   listMedia,
   uploadMedia,
   updateMediaMetadata,
+  renameMedia,
   deleteMedia,
   type MediaDto,
 } from '@/lib/actions/media';
@@ -26,7 +27,7 @@ import { EmptyState, Skeleton } from '@/components/ui/states';
 import { useToast } from '@/components/ui/toast';
 import { Spinner } from '@/components/ui/icons';
 import { formatBytes, formatDate } from '@/lib/utils/format';
-import { ACCEPT_ATTRIBUTE, MAX_UPLOAD_LABEL } from '@/lib/media/constants';
+import { ACCEPT_ATTRIBUTE } from '@/lib/media/constants';
 import {
   listMediaFolders,
   moveMediaToFolder,
@@ -46,6 +47,7 @@ export function MediaLibrary({
   initialUncategorisedCount,
   can,
   selectedId,
+  maxUploadLabel,
 }: {
   initialItems: MediaDto[];
   initialCursor: string | null;
@@ -54,6 +56,8 @@ export function MediaLibrary({
   initialUncategorisedCount: number;
   can: { upload: boolean; edit: boolean; delete: boolean };
   selectedId?: string;
+  /** The configured ceiling, resolved on the server. */
+  maxUploadLabel: string;
 }) {
   const { toast } = useToast();
   const [items, setItems] = React.useState(initialItems);
@@ -326,7 +330,7 @@ export function MediaLibrary({
               title={query ? `No files match “${query}”` : 'No files yet'}
               description={
                 can.upload
-                  ? `Drag files here, or use the upload button. JPG, PNG, WEBP, GIF, SVG or PDF, up to ${MAX_UPLOAD_LABEL} each.`
+                  ? `Drag files here, or use the upload button. JPG, PNG, WEBP, GIF, SVG or PDF, up to ${maxUploadLabel} each.`
                   : 'Ask an administrator to upload files.'
               }
               action={
@@ -537,6 +541,8 @@ function MediaDetail({
   const [copied, setCopied] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [values, setValues] = React.useState({
+    filename: '',
+    slug: '',
     altText: '',
     title: '',
     caption: '',
@@ -546,6 +552,8 @@ function MediaDetail({
   React.useEffect(() => {
     if (media) {
       setValues({
+        filename: media.filename,
+        slug: media.slug,
         altText: media.altText ?? '',
         title: media.title ?? '',
         caption: '',
@@ -560,14 +568,40 @@ function MediaDetail({
   async function save() {
     if (!media) return;
     setPending(true);
-    const result = await updateMediaMetadata({ id: media.id, ...values });
-    setPending(false);
+
+    const { filename, slug, ...metadata } = values;
+    const result = await updateMediaMetadata({ id: media.id, ...metadata });
     if (!result.ok) {
+      setPending(false);
       toast(result.error, 'error');
       return;
     }
-    toast(result.message ?? 'Saved.');
-    onUpdated({ ...media, altText: values.altText || null, title: values.title || null });
+
+    let next: MediaDto = {
+      ...media,
+      altText: metadata.altText || null,
+      title: metadata.title || null,
+    };
+    let message = result.message ?? 'Saved.';
+
+    // Only when something actually changed: a rename moves the stored file, so
+    // it is not something to do on every save of an alt text.
+    if (filename.trim() !== media.filename || slug.trim() !== media.slug) {
+      const renamed = await renameMedia({ id: media.id, filename, slug });
+      if (!renamed.ok) {
+        setPending(false);
+        toast(renamed.error, 'error');
+        return;
+      }
+      // Re-read from the row the action returned, so the new URL and slug are
+      // what the dialog and the grid show without a reload.
+      if (renamed.data) next = renamed.data;
+      message = renamed.message ?? message;
+    }
+
+    setPending(false);
+    toast(message);
+    onUpdated(next);
   }
 
   async function remove() {
@@ -682,6 +716,28 @@ function MediaDetail({
             </Field>
 
             <fieldset disabled={!can.edit} className="space-y-4">
+              <Field
+                label="File name"
+                htmlFor="media-filename"
+                hint="Shown in the library and in search. Does not affect the URL."
+              >
+                <Input
+                  id="media-filename"
+                  value={values.filename}
+                  onChange={(e) => setValues({ ...values, filename: e.target.value })}
+                />
+              </Field>
+              <Field
+                label="URL slug"
+                htmlFor="media-slug"
+                hint="Changing this moves the file and changes its public URL. Pickers follow it automatically; a link typed by hand into content will not."
+              >
+                <Input
+                  id="media-slug"
+                  value={values.slug}
+                  onChange={(e) => setValues({ ...values, slug: e.target.value })}
+                />
+              </Field>
               <Field
                 label="Alt text"
                 htmlFor="media-alt"

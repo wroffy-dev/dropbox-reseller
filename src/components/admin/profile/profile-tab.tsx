@@ -9,7 +9,6 @@ import { Field, Input, Select } from '@/components/ui/field';
 import { Alert } from '@/components/ui/states';
 import { useToast } from '@/components/ui/toast';
 import { initials } from '@/lib/utils/format';
-import { MAX_UPLOAD_LABEL } from '@/lib/media/constants';
 import {
   updateMyProfile,
   changeMyEmail,
@@ -25,7 +24,14 @@ import type { ProfileData } from '@/lib/services/profile';
  * else's decision, and the server actions behind this form cannot write them
  * even if the markup were tampered with.
  */
-export function ProfileTab({ data }: { data: ProfileData }) {
+export function ProfileTab({
+  data,
+  maxUploadLabel,
+}: {
+  data: ProfileData;
+  /** The configured upload ceiling, resolved on the server. */
+  maxUploadLabel: string;
+}) {
   const router = useRouter();
   const { toast } = useToast();
 
@@ -116,7 +122,7 @@ export function ProfileTab({ data }: { data: ProfileData }) {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader title="Profile photo" description={`JPG, PNG or WEBP, up to ${MAX_UPLOAD_LABEL}.`} />
+        <CardHeader title="Profile photo" description={`JPG, PNG or WEBP, up to ${maxUploadLabel}.`} />
         <CardBody>
           <div className="flex flex-wrap items-center gap-4">
             {data.profile.image ? (

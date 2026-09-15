@@ -15,7 +15,7 @@ import {
   buildStorageKey,
   readImageDimensions,
   maxUploadBytes,
-  TOO_LARGE_MESSAGE,
+  tooLargeError,
 } from '@/lib/services/upload';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
 
@@ -261,7 +261,7 @@ export async function updateMyAvatar(formData: FormData): Promise<ActionResult<{
     if (!AVATAR_TYPES.has(file.type)) {
       return failure('Choose a JPG, PNG or WEBP image.');
     }
-    if (file.size > maxUploadBytes()) return failure(TOO_LARGE_MESSAGE);
+    if (file.size > maxUploadBytes()) return failure(tooLargeError());
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const validation = validateUpload(file.type, buffer, buffer.byteLength);

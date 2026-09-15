@@ -106,7 +106,9 @@ When `CRON_SECRET` is unset or shorter than 16 characters the endpoint is
 1. **Persistent volume** — Application → *Storages* → *Add*:
    - Name: `backups`
    - Destination path: `/app/backups`
-   (Keep the existing `/app/public/uploads` volume as well.)
+   (Keep the media volume at `/data/uploads` as well — see
+   [MEDIA-STORAGE.md](MEDIA-STORAGE.md). A backup covers the database and the
+   media library, and a restore needs both.)
 
 2. **Environment variables** — Application → *Environment Variables*: add the
    `BACKUP_*` values above plus `CRON_SECRET`. Generate the secret with

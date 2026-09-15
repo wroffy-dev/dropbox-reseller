@@ -7,7 +7,7 @@ import {
 } from '@/lib/services/upload';
 import {
   DEFAULT_MAX_UPLOAD_KB,
-  TOO_LARGE_MESSAGE,
+  tooLargeMessage,
   UNSUPPORTED_TYPE_MESSAGE,
   ALLOWED_MIME_TYPES,
   ACCEPT_ATTRIBUTE,
@@ -100,21 +100,38 @@ describe('validateUpload', () => {
     // …one byte over is not.
     const over = validateUpload('image/png', PNG_HEADER, LIMIT + 1);
     expect(over.ok).toBe(false);
-    expect(over.ok === false && over.error).toBe(TOO_LARGE_MESSAGE);
+    expect(over.ok === false && over.error).toBe(tooLargeMessage(LIMIT));
   });
 
   it('falls back to 150 KB when the environment is missing or nonsense', () => {
-    const original = process.env.MAX_UPLOAD_KB;
-    try {
+    withUploadEnv({}, () => {
       for (const value of [undefined, '', 'abc', '0', '-5']) {
-        if (value === undefined) delete process.env.MAX_UPLOAD_KB;
-        else process.env.MAX_UPLOAD_KB = value;
-        expect(maxUploadBytes(), `MAX_UPLOAD_KB=${value}`).toBe(LIMIT);
+        withUploadEnv({ MAX_UPLOAD_KB: value, MAX_UPLOAD_SIZE_MB: undefined }, () => {
+          expect(maxUploadBytes(), `MAX_UPLOAD_KB=${value}`).toBe(LIMIT);
+        });
+        withUploadEnv({ MAX_UPLOAD_SIZE_MB: value, MAX_UPLOAD_KB: undefined }, () => {
+          expect(maxUploadBytes(), `MAX_UPLOAD_SIZE_MB=${value}`).toBe(LIMIT);
+        });
       }
-    } finally {
-      if (original === undefined) delete process.env.MAX_UPLOAD_KB;
-      else process.env.MAX_UPLOAD_KB = original;
-    }
+    });
+  });
+
+  it('reads MAX_UPLOAD_SIZE_MB, and prefers it over the kilobyte name', () => {
+    withUploadEnv({ MAX_UPLOAD_SIZE_MB: '10', MAX_UPLOAD_KB: undefined }, () => {
+      expect(maxUploadBytes()).toBe(10 * 1024 * 1024);
+      expect(tooLargeMessage(maxUploadBytes())).toBe('File size must be 10 MB or less.');
+    });
+
+    // Both set: the megabyte name wins, so a deployment that adds the new one
+    // is not silently held at the old limit.
+    withUploadEnv({ MAX_UPLOAD_SIZE_MB: '5', MAX_UPLOAD_KB: '150' }, () => {
+      expect(maxUploadBytes()).toBe(5 * 1024 * 1024);
+    });
+
+    // Only the legacy name: an existing deployment keeps its limit.
+    withUploadEnv({ MAX_UPLOAD_SIZE_MB: undefined, MAX_UPLOAD_KB: '512' }, () => {
+      expect(maxUploadBytes()).toBe(512 * 1024);
+    });
   });
 
   it('accepts every allowed type and nothing else', () => {
@@ -236,3 +253,26 @@ describe('readImageDimensions', () => {
     expect(readImageDimensions(Buffer.from('not an image'), 'application/pdf')).toBeNull();
   });
 });
+
+/** Runs `body` with the upload-size variables set, then restores them. */
+function withUploadEnv(
+  values: Partial<Record<'MAX_UPLOAD_KB' | 'MAX_UPLOAD_SIZE_MB', string | undefined>>,
+  body: () => void,
+): void {
+  const names = ['MAX_UPLOAD_KB', 'MAX_UPLOAD_SIZE_MB'] as const;
+  const original = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  try {
+    for (const name of names) {
+      const value = name in values ? values[name] : original[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    body();
+  } finally {
+    for (const name of names) {
+      const value = original[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+}

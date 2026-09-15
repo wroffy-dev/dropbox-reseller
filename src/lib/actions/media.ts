@@ -1,5 +1,6 @@
 'use server';
 
+import path from 'node:path';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
@@ -9,46 +10,19 @@ import { recordAudit } from '@/lib/services/audit';
 import {
   validateUpload,
   buildStorageKey,
+  mediaSlug,
   readImageDimensions,
   maxUploadBytes,
-  TOO_LARGE_MESSAGE,
+  tooLargeError,
 } from '@/lib/services/upload';
+import { randomToken } from '@/lib/utils/crypto';
+import { safeStorageKey } from '@/lib/storage';
+import { MEDIA_DTO_SELECT, slugOfKey, toMediaDto, type MediaDto } from '@/lib/media/dto';
 import { sanitizeText } from '@/lib/utils/sanitize';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
 import type { MediaKind } from '@prisma/client';
 
-export type MediaDto = {
-  id: string;
-  url: string;
-  filename: string;
-  mimeType: string;
-  kind: MediaKind;
-  size: number;
-  width: number | null;
-  height: number | null;
-  altText: string | null;
-  title: string | null;
-  /** Null means the item is not in any folder (Uncategorised). */
-  folderId: string | null;
-  createdAt: string;
-};
-
-function toDto(row: {
-  id: string;
-  url: string;
-  filename: string;
-  mimeType: string;
-  kind: MediaKind;
-  size: number;
-  width: number | null;
-  height: number | null;
-  altText: string | null;
-  title: string | null;
-  folderId: string | null;
-  createdAt: Date;
-}): MediaDto {
-  return { ...row, createdAt: row.createdAt.toISOString() };
-}
+export type { MediaDto } from '@/lib/media/dto';
 
 export async function uploadMedia(formData: FormData): Promise<ActionResult<MediaDto>> {
   try {
@@ -58,7 +32,7 @@ export async function uploadMedia(formData: FormData): Promise<ActionResult<Medi
     if (!(file instanceof File)) return failure('No file was received.');
     // Early reject on the declared size so an oversized body is not buffered
     // into memory; validateUpload re-checks the real byte length after read.
-    if (file.size > maxUploadBytes()) return failure(TOO_LARGE_MESSAGE);
+    if (file.size > maxUploadBytes()) return failure(tooLargeError());
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const validation = validateUpload(file.type, buffer, buffer.byteLength);
@@ -95,7 +69,7 @@ export async function uploadMedia(formData: FormData): Promise<ActionResult<Medi
     });
 
     revalidatePath('/admin/media');
-    return success(toDto(media), 'File uploaded.');
+    return success(toMediaDto(media), 'File uploaded.');
   } catch (error) {
     return toActionError(error);
   }
@@ -127,6 +101,156 @@ export async function updateMediaMetadata(input: unknown): Promise<ActionResult>
     await recordAudit({ actor: user, action: 'updated', entity: 'Media', entityId: data.id });
     revalidatePath('/admin/media');
     return success(undefined, 'Details saved.');
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+const renameSchema = z.object({
+  id: z.string().min(1),
+  filename: z.string().trim().min(1, 'A file name is required').max(200),
+  slug: z.string().trim().min(1, 'A URL slug is required').max(120),
+});
+
+/**
+ * A storage key in the same directory as `currentKey`, carrying `slug`.
+ *
+ * The extension is taken from the existing key and never from the name typed
+ * in: the extension decides the Content-Type the file is served with, so
+ * letting it be edited would let a PNG be re-labelled as an SVG and served as
+ * one. The directory is kept too, so a rename never reshuffles the date-based
+ * layout the uploader builds.
+ *
+ * Returns null when no safe, free key could be formed.
+ */
+async function uniqueStorageKey(
+  currentKey: string,
+  slug: string,
+  mediaId: string,
+): Promise<string | null> {
+  const extension = path.posix.extname(currentKey);
+  const directory = path.posix.dirname(currentKey);
+  const prefix = directory === '.' || directory === '' ? '' : `${directory}/`;
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    // The plain slug first, so the admin gets the URL they asked for; a
+    // suffix only appears when that name is genuinely taken.
+    const stem = attempt === 0 ? slug : `${slug}-${randomToken(6)}`;
+    const candidate = `${prefix}${stem}${extension}`;
+
+    // The same allowlist the uploader and the serving route use. A name that
+    // cannot survive it never reaches the disk.
+    if (!safeStorageKey(candidate)) return null;
+
+    const clash = await prisma.media.findFirst({
+      where: { storageKey: candidate, NOT: { id: mediaId } },
+      select: { id: true },
+    });
+    if (clash) continue;
+
+    // A file with no row is still somebody's file — never overwrite it.
+    if (await storage().exists(candidate)) continue;
+
+    return candidate;
+  }
+
+  return null;
+}
+
+/**
+ * Renames a media item.
+ *
+ * Two different things, saved together because they are one intention: the
+ * name shown in the library, and the slug the public URL is built from.
+ * Changing the slug moves the stored object and rewrites the row, so the old
+ * URL stops resolving — every CMS reference made through the media picker is
+ * by id and follows automatically, but a URL typed by hand into rich text does
+ * not, which is what the returned message warns about.
+ *
+ * The object is moved before the row is written, and moved back if the write
+ * fails. The alternative ordering leaves a row pointing at a key with no file
+ * behind it, which is the one outcome that shows up as a broken image on a
+ * live page.
+ */
+export async function renameMedia(input: unknown): Promise<ActionResult<MediaDto>> {
+  try {
+    const user = await authorize('media.edit');
+    const data = renameSchema.parse(input);
+
+    const media = await prisma.media.findFirst({ where: { id: data.id, deletedAt: null } });
+    if (!media) return failure('That file no longer exists.');
+
+    const filename = sanitizeText(data.filename).slice(0, 200) || media.filename;
+    const slug = mediaSlug(data.slug);
+    if (!slug) return failure('The URL slug needs at least one letter or number.');
+
+    const currentSlug = slugOfKey(media.storageKey);
+    const slugChanged = slug !== currentSlug;
+
+    if (!slugChanged && filename === media.filename) {
+      return success(toMediaDto(media), 'Nothing to change.');
+    }
+
+    let storageKey = media.storageKey;
+    let url = media.url;
+
+    if (slugChanged) {
+      const service = storage();
+      if (media.provider !== service.provider) {
+        return failure(
+          `This file is stored on ${media.provider} and ${service.provider} is configured, ` +
+            'so it cannot be moved from here. Its name can still be changed.',
+        );
+      }
+
+      const nextKey = await uniqueStorageKey(media.storageKey, slug, media.id);
+      if (!nextKey) return failure('That slug cannot be used for a file name.');
+
+      await service.move(media.storageKey, nextKey);
+      storageKey = nextKey;
+      url = service.publicUrl(nextKey);
+    }
+
+    let updated;
+    try {
+      updated = await prisma.media.update({
+        where: { id: media.id },
+        data: { filename, storageKey, url },
+        select: MEDIA_DTO_SELECT,
+      });
+    } catch (error) {
+      if (slugChanged) {
+        // Put the object back, so the row and the disk still agree.
+        await storage()
+          .move(storageKey, media.storageKey)
+          .catch(() => undefined);
+      }
+      throw error;
+    }
+
+    await recordAudit({
+      actor: user,
+      action: 'renamed',
+      entity: 'Media',
+      entityId: media.id,
+      summary: slugChanged
+        ? `Renamed ${media.filename} to ${filename}; URL slug ${currentSlug} → ${slug}`
+        : `Renamed ${media.filename} to ${filename}`,
+    });
+
+    revalidatePath('/admin/media');
+    if (slugChanged) {
+      // A media URL can appear on any published page, so there is no narrower
+      // path to invalidate than the site.
+      revalidatePath('/', 'layout');
+    }
+
+    return success(
+      toMediaDto(updated),
+      slugChanged
+        ? 'Renamed. The previous URL no longer works — update any link you typed in by hand.'
+        : 'Renamed.',
+    );
   } catch (error) {
     return toActionError(error);
   }
@@ -203,24 +327,11 @@ export async function listMedia(input: {
     orderBy: { createdAt: 'desc' },
     take: take + 1,
     ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
-    select: {
-      id: true,
-      url: true,
-      filename: true,
-      mimeType: true,
-      kind: true,
-      size: true,
-      width: true,
-      height: true,
-      altText: true,
-      title: true,
-      folderId: true,
-      createdAt: true,
-    },
+    select: MEDIA_DTO_SELECT,
   });
 
   const hasMore = rows.length > take;
-  const items = (hasMore ? rows.slice(0, take) : rows).map(toDto);
+  const items = (hasMore ? rows.slice(0, take) : rows).map(toMediaDto);
   return { items, nextCursor: hasMore ? (items[items.length - 1]?.id ?? null) : null };
 }
 
@@ -230,20 +341,7 @@ export async function getMediaById(ids: string[]): Promise<MediaDto[]> {
   if (unique.length === 0) return [];
   const rows = await prisma.media.findMany({
     where: { id: { in: unique }, deletedAt: null },
-    select: {
-      id: true,
-      url: true,
-      filename: true,
-      mimeType: true,
-      kind: true,
-      size: true,
-      width: true,
-      height: true,
-      altText: true,
-      title: true,
-      folderId: true,
-      createdAt: true,
-    },
+    select: MEDIA_DTO_SELECT,
   });
-  return rows.map(toDto);
+  return rows.map(toMediaDto);
 }

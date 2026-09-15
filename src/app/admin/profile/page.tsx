@@ -4,6 +4,7 @@ import { requireUser } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { ProfileWorkspace } from '@/components/admin/profile/profile-workspace';
 import { getMyProfile } from '@/lib/services/profile';
+import { maxUploadLabel } from '@/lib/services/upload';
 import { FormPageSkeleton } from '@/components/admin/loading-skeletons';
 
 export const metadata: Metadata = { title: 'My profile' };
@@ -29,7 +30,7 @@ export default async function ProfilePage() {
         crumbs={[{ label: 'My profile' }]}
       />
       <Suspense fallback={<FormPageSkeleton />}>
-        <ProfileWorkspace data={data} />
+        <ProfileWorkspace data={data} maxUploadLabel={maxUploadLabel()} />
       </Suspense>
     </div>
   );

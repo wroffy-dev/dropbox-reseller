@@ -2,6 +2,13 @@ import { z } from 'zod';
 import type { FieldDescriptor } from './fields';
 import type { BlockDefinition } from './block-types';
 import { sliderSettingsShape, SLIDER_FIELDS } from './slider';
+import { productSourceShape, productSourceFields } from './product-source';
+import {
+  postSourceSchema,
+  postSourceFields,
+  cardOverrideSchema,
+  cardOverrideFields,
+} from './blog-blocks';
 
 /**
  * The slider sections.
@@ -167,7 +174,35 @@ const textBoxSliderSchema = z.object({
   cardPadding: z.coerce.number().int().min(0).max(64).catch(20).default(20),
 });
 
+// --- 5. product slider ------------------------------------------------------
+const productSliderSchema = z.object({
+  ...introShape,
+  ...sliderSettingsShape,
+  ...productSourceShape,
+  billing: z.enum(['monthly', 'annual']).catch('monthly').default('monthly'),
+  ctaLabel: z.string().max(80).default(''),
+  showImage: z.coerce.boolean().catch(true).default(true),
+  showDescription: z.coerce.boolean().catch(true).default(true),
+  showPrice: z.coerce.boolean().catch(true).default(true),
+  showFeatures: z.coerce.boolean().catch(true).default(true),
+  showName: z.coerce.boolean().catch(true).default(true),
+  linkName: z.coerce.boolean().catch(true).default(true),
+  showActions: z.coerce.boolean().catch(true).default(true),
+  showCta: z.coerce.boolean().catch(true).default(true),
+  showDetailsLink: z.coerce.boolean().catch(true).default(true),
+});
+
+// --- 6. blog slider ---------------------------------------------------------
+const blogSliderSchema = z.object({
+  ...introShape,
+  ...sliderSettingsShape,
+  ...postSourceSchema,
+  ...cardOverrideSchema,
+});
+
 export type LogoSliderContent = z.infer<typeof logoSliderSchema>;
+export type ProductSliderContent = z.infer<typeof productSliderSchema>;
+export type BlogSliderContent = z.infer<typeof blogSliderSchema>;
 export type ImageSliderContent = z.infer<typeof imageSliderSchema>;
 export type TestimonialSliderContent = z.infer<typeof testimonialSliderSchema>;
 export type ContentSliderContent = z.infer<typeof contentSliderSchema>;
@@ -500,6 +535,75 @@ export const SLIDER_BLOCKS: Record<string, BlockDefinition> = {
       { kind: 'number', name: 'radius', label: 'Corner radius', width: 'third', min: 0, max: 48 },
       { kind: 'number', name: 'cardPadding', label: 'Card padding', width: 'half', min: 0, max: 64 },
       { kind: 'boolean', name: 'shadow', label: 'Card shadow', width: 'half' },
+      ...SLIDER_FIELDS,
+    ],
+  },
+  productSlider: {
+    type: 'productSlider',
+    label: 'Product slider',
+    description: 'Product plans on a track that scrolls, from any product source.',
+    group: 'Products',
+    icon: 'package',
+    surfaces: ['page', 'blogListing', 'blogArticle'],
+    schema: productSliderSchema,
+    fields: [
+      ...INTRO_FIELDS,
+      // The same source controls the product grid and comparison table use, so
+      // "Featured", "By category" and "Hand-picked" mean the same thing here.
+      ...productSourceFields,
+      {
+        kind: 'select',
+        name: 'billing',
+        label: 'Show price for',
+        width: 'half',
+        options: [
+          { value: 'monthly', label: 'Monthly' },
+          { value: 'annual', label: 'Annual' },
+        ],
+      },
+      { kind: 'text', name: 'ctaLabel', label: 'Button label', width: 'half' },
+      { kind: 'boolean', name: 'showImage', label: 'Show product image', width: 'half' },
+      { kind: 'boolean', name: 'showDescription', label: 'Show description', width: 'half' },
+      { kind: 'boolean', name: 'showPrice', label: 'Show pricing', width: 'half' },
+      { kind: 'boolean', name: 'showFeatures', label: 'Show feature list', width: 'half' },
+      { kind: 'boolean', name: 'showName', label: 'Show product name', width: 'half' },
+      {
+        kind: 'boolean',
+        name: 'linkName',
+        label: 'Product name links to the product',
+        width: 'half',
+        help: 'Off renders the name as plain text.',
+      },
+      {
+        kind: 'boolean',
+        name: 'showActions',
+        label: 'Show all actions',
+        width: 'half',
+        help: 'Off hides the button and the details link together.',
+      },
+      { kind: 'boolean', name: 'showCta', label: 'Show primary button', width: 'half' },
+      { kind: 'boolean', name: 'showDetailsLink', label: 'Show \u201cView full details\u201d', width: 'half' },
+      ...SLIDER_FIELDS,
+    ],
+  },
+
+  blogSlider: {
+    type: 'blogSlider',
+    label: 'Article slider',
+    description: 'Blog articles on a track that scrolls, from any post source.',
+    group: 'Blog',
+    icon: 'newspaper',
+    // Offered on ordinary pages too: a home page showing the latest three
+    // articles is the common case, and it needs no blog surface to work.
+    surfaces: ['page', 'blogListing', 'blogArticle'],
+    schema: blogSliderSchema,
+    fields: [
+      ...INTRO_FIELDS,
+      // The article grid's own source controls, so "Latest", "A category",
+      // "A tag" and "Related to this article" behave identically in both.
+      ...postSourceFields,
+      // And the same per-section card overrides, resolved against Blog \u2192 Design.
+      ...cardOverrideFields,
       ...SLIDER_FIELDS,
     ],
   },

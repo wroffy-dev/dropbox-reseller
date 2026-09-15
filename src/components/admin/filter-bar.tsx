@@ -172,7 +172,18 @@ export function FilterBar({
 
         {primary.map((definition) =>
           definition.kind === 'date' ? null : (
-            <div key={definition.name} className="min-w-0">
+            /*
+             * Its own row on a phone, inline from `sm` up.
+             *
+             * The select below is already `w-full sm:w-auto`, but the wrapper
+             * was a flex item with an auto basis — and a select's intrinsic
+             * width comes from its longest option, so on a narrow screen it
+             * won and squeezed the search box beside it down to fifty pixels,
+             * with the two boxes ending up on top of each other. `basis-full`
+             * makes the wrap explicit at the width where they cannot share a
+             * line.
+             */
+            <div key={definition.name} className="min-w-0 basis-full sm:basis-auto">
               <label htmlFor={`filter-${definition.name}`} className="sr-only">
                 {definition.label}
               </label>
@@ -476,14 +487,23 @@ function AdvancedFilterDrawer({
   );
   const panelRef = React.useRef<HTMLDivElement>(null);
 
+  const onCloseRef = React.useRef(onClose);
+  React.useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') onCloseRef.current();
     };
     document.addEventListener('keydown', onKey);
     panelRef.current?.querySelector<HTMLElement>('select, input, button')?.focus();
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    // Mounting is what this is for. `onClose` is an inline arrow from a parent
+    // that also owns the search box above the drawer, so listing it here moved
+    // focus into the drawer's first control every time that parent
+    // re-rendered — including on each keystroke in that search box.
+  }, []);
 
   const activeInDraft = Object.values(draft).filter(Boolean).length;
 

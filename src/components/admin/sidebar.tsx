@@ -78,6 +78,11 @@ export function AdminSidebar({
   const [extraOpen, setExtraOpen] = React.useState<string[]>([]);
 
   // Restore the admin's own expand/collapse choices.
+  const onCloseRef = React.useRef(onClose);
+  React.useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   React.useEffect(() => {
     try {
       const raw = window.localStorage.getItem('admin:nav');
@@ -114,7 +119,7 @@ export function AdminSidebar({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== 'Tab') return;
@@ -144,7 +149,13 @@ export function AdminSidebar({
       document.body.style.overflow = previousOverflow;
       trigger?.focus?.();
     };
-  }, [open, onClose]);
+    // `onClose` is read through a ref rather than listed here. It arrives as an
+    // inline arrow, so it changes identity on every render of the shell, and
+    // with it in the dependencies this effect tore down and set up again on
+    // each one — restoring focus to the trigger and then moving it to the
+    // drawer's first link, while the drawer just sat there open. It belongs to
+    // opening and closing, and now runs only for those.
+  }, [open]);
 
   const isExpanded = (moduleId: string) =>
     moduleId === activeModuleId ? !manuallyClosed.includes(moduleId) : extraOpen.includes(moduleId);

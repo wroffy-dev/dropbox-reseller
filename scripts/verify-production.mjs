@@ -97,7 +97,7 @@ const checks = [
     name: 'Admin login page',
     // Mirrors LOGIN_PATH in src/lib/auth/routes.ts — a plain script cannot
     // import it, so the two are changed together.
-    path: '/auth-wroffy/admin',
+    path: '/auth-control-panel/admin',
     // 200 signed out; a redirect if the request somehow carries a session.
     expect: [200, 302, 307],
     required: true,

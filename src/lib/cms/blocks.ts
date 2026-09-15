@@ -11,6 +11,7 @@ import {
   type BlockSurface,
 } from './block-types';
 import { BLOG_BLOCKS } from './blog-blocks';
+import { SLIDER_BLOCKS } from './slider-blocks';
 
 /**
  * Block registry.
@@ -19,9 +20,10 @@ import { BLOG_BLOCKS } from './blog-blocks';
  * list (drives the generated admin editor). Adding a block here plus a renderer
  * in components/cms/blocks makes it immediately available in the page builder.
  *
- * Blog blocks live in `blog-blocks.ts` but land in the same registry, so the
- * page builder and the blog builder share one lookup, one editor and one
- * renderer dispatch rather than growing a competing system.
+ * Blog blocks live in `blog-blocks.ts` and the slider sections in
+ * `slider-blocks.ts`, but all of them land in the same registry, so the page
+ * builder and the blog builder share one lookup, one editor and one renderer
+ * dispatch rather than growing a competing system.
  */
 
 export {
@@ -1735,7 +1737,11 @@ const PAGE_BLOCKS: Record<string, BlockDefinition> = {
   },
 };
 
-export const BLOCKS: Record<string, BlockDefinition> = { ...PAGE_BLOCKS, ...BLOG_BLOCKS };
+export const BLOCKS: Record<string, BlockDefinition> = {
+  ...PAGE_BLOCKS,
+  ...SLIDER_BLOCKS,
+  ...BLOG_BLOCKS,
+};
 
 export type BlockType = keyof typeof BLOCKS;
 

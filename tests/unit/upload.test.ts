@@ -93,14 +93,19 @@ describe('validateUpload', () => {
   });
 
   it('enforces 150 KB exactly, at the boundary', () => {
-    expect(maxUploadBytes()).toBe(LIMIT);
+    // Pinned to the built-in default rather than the ambient environment:
+    // .env.example ships MAX_UPLOAD_SIZE_MB, so a developer who copied it
+    // would otherwise see this fail for a perfectly valid local setup.
+    withUploadEnv({ MAX_UPLOAD_KB: undefined, MAX_UPLOAD_SIZE_MB: undefined }, () => {
+      expect(maxUploadBytes()).toBe(LIMIT);
 
-    // Exactly at the limit is accepted…
-    expect(validateUpload('image/png', PNG_HEADER, LIMIT).ok).toBe(true);
-    // …one byte over is not.
-    const over = validateUpload('image/png', PNG_HEADER, LIMIT + 1);
-    expect(over.ok).toBe(false);
-    expect(over.ok === false && over.error).toBe(tooLargeMessage(LIMIT));
+      // Exactly at the limit is accepted…
+      expect(validateUpload('image/png', PNG_HEADER, LIMIT).ok).toBe(true);
+      // …one byte over is not.
+      const over = validateUpload('image/png', PNG_HEADER, LIMIT + 1);
+      expect(over.ok).toBe(false);
+      expect(over.ok === false && over.error).toBe(tooLargeMessage(LIMIT));
+    });
   });
 
   it('falls back to 150 KB when the environment is missing or nonsense', () => {

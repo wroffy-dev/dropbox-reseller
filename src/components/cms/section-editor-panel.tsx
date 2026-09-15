@@ -1,17 +1,46 @@
 'use client';
 
 import * as React from 'react';
-import { X } from 'lucide-react';
+import { X, Undo2, RotateCcw } from 'lucide-react';
 import { getBlock } from '@/lib/cms/blocks';
 import type { SectionDesign } from '@/lib/cms/design';
 import { AdminTabs, TabPanel } from '@/components/admin/admin-tabs';
 import { SaveStateIndicator, type SaveState } from '@/components/admin/save-state';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/dialog';
 import { Field, Input } from '@/components/ui/field';
 import { FieldList, type FieldValues } from './field-renderer';
 import { writeFieldPath } from '@/lib/cms/fields';
 import { DesignPanel } from './design-panel';
 import type { BuilderSection } from './section-builder';
+
+/** Everything in this panel a person can change. */
+type Draft = {
+  name: string;
+  content: FieldValues;
+  settings: FieldValues;
+};
+
+/**
+ * How far back Undo reaches.
+ *
+ * Bounded because a section's content and settings are whole objects and each
+ * step keeps one of each; fifty is far more than anyone steps back through and
+ * still nothing next to the page being edited.
+ */
+const HISTORY_LIMIT = 50;
+
+/**
+ * Whether two drafts hold the same values.
+ *
+ * Compared as JSON because that is what these are: content and settings come
+ * out of a JSON column and go back into one, so there is no class, no Date and
+ * no undefined to trip it up. It decides only whether Reset has anything to
+ * undo, so a false "different" would cost a redundant button, not correctness.
+ */
+function same(a: Draft, b: Draft): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 
 /**
  * Editor for the selected section.
@@ -40,10 +69,32 @@ export function SectionEditorPanel({
   const definition = getBlock(section.blockType);
 
   const [tab, setTab] = React.useState('content');
-  const [name, setName] = React.useState(section.name ?? '');
-  const [content, setContent] = React.useState<FieldValues>(section.content);
-  const [settings, setSettings] = React.useState<FieldValues>(section.settings);
+  const [draft, setDraft] = React.useState<Draft>(() => ({
+    name: section.name ?? '',
+    content: section.content,
+    settings: section.settings,
+  }));
+  /** Snapshots to step back through. Oldest first, newest last. */
+  const [history, setHistory] = React.useState<Draft[]>([]);
+  /** What the database holds, as far as this panel knows. Reset returns here. */
+  const [saved, setSaved] = React.useState<Draft>(() => ({
+    name: section.name ?? '',
+    content: section.content,
+    settings: section.settings,
+  }));
   const [state, setState] = React.useState<SaveState>('idle');
+  const [confirmReset, setConfirmReset] = React.useState(false);
+
+  /**
+   * Which control the last edit came from.
+   *
+   * Consecutive edits to the same one collapse into a single history entry, so
+   * Undo steps back a field at a time rather than a character at a time — no
+   * timer involved, just the identity of the control being edited.
+   */
+  const lastEdited = React.useRef<string | null>(null);
+
+  const { name, content, settings } = draft;
 
   /*
    * There is deliberately no effect re-syncing this form from `section`.
@@ -65,13 +116,50 @@ export function SectionEditorPanel({
    * clobber what the user is still editing.
    */
 
-  const markDirty = () => setState('dirty');
+  /** Applies an edit, remembering what it replaced. */
+  function edit(control: string, next: Draft) {
+    if (lastEdited.current !== control) {
+      setHistory((past) => [...past, draft].slice(-HISTORY_LIMIT));
+      lastEdited.current = control;
+    }
+    setDraft(next);
+    setState('dirty');
+  }
+
+  /** Steps back one edit. */
+  function undo() {
+    const previous = history[history.length - 1];
+    if (!previous) return;
+    setHistory(history.slice(0, -1));
+    setDraft(previous);
+    // The next edit starts a new step, whichever control it comes from.
+    lastEdited.current = null;
+    setState(same(previous, saved) ? 'idle' : 'dirty');
+  }
+
+  /** Throws away every unsaved change and returns to the stored version. */
+  function reset() {
+    setDraft(saved);
+    setHistory([]);
+    lastEdited.current = null;
+    setState('idle');
+    setConfirmReset(false);
+  }
 
   async function save() {
     setState('saving');
-    const ok = await onSave({ name: name || null, content, settings });
+    const submitted = draft;
+    const ok = await onSave({
+      name: submitted.name || null,
+      content: submitted.content,
+      settings: submitted.settings,
+    });
     setState(ok ? 'saved' : 'error');
     if (ok) {
+      // Reset now returns here rather than to the version loaded on mount.
+      // History is kept: stepping back past a save is a reasonable thing to
+      // want, and doing so simply makes the panel dirty again.
+      setSaved(submitted);
       // Fade the confirmation so the panel does not keep shouting "Saved".
       window.setTimeout(
         () => setState((current) => (current === 'saved' ? 'idle' : current)),
@@ -94,8 +182,11 @@ export function SectionEditorPanel({
 
   const dirty = state === 'dirty' || state === 'error';
 
+  const changed = !same(draft, saved);
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <>
+      <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-start justify-between gap-2 border-b border-hairline px-3 py-2.5">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold text-content">
@@ -134,10 +225,12 @@ export function SectionEditorPanel({
               fields={definition.fields}
               values={content}
               idPrefix={`c-${section.id}`}
-              onChange={(field, value) => {
-                setContent((current) => writeFieldPath(current, field, value) as FieldValues);
-                markDirty();
-              }}
+              onChange={(field, value) =>
+                edit(`content:${field}`, {
+                  ...draft,
+                  content: writeFieldPath(content, field, value) as FieldValues,
+                })
+              }
             />
           </TabPanel>
 
@@ -147,10 +240,9 @@ export function SectionEditorPanel({
               view="design"
               idPrefix={`d-${section.id}`}
               takenAnchors={takenAnchors}
-              onChange={(next: SectionDesign) => {
-                setSettings(next as unknown as FieldValues);
-                markDirty();
-              }}
+              onChange={(next: SectionDesign) =>
+                edit('settings:design', { ...draft, settings: next as unknown as FieldValues })
+              }
             />
           </TabPanel>
 
@@ -160,10 +252,9 @@ export function SectionEditorPanel({
               view="responsive"
               idPrefix={`r-${section.id}`}
               takenAnchors={takenAnchors}
-              onChange={(next: SectionDesign) => {
-                setSettings(next as unknown as FieldValues);
-                markDirty();
-              }}
+              onChange={(next: SectionDesign) =>
+                edit('settings:responsive', { ...draft, settings: next as unknown as FieldValues })
+              }
             />
           </TabPanel>
 
@@ -177,10 +268,7 @@ export function SectionEditorPanel({
                 id={`name-${section.id}`}
                 value={name}
                 placeholder={definition.label}
-                onChange={(event) => {
-                  setName(event.target.value);
-                  markDirty();
-                }}
+                onChange={(event) => edit('name', { ...draft, name: event.target.value })}
               />
             </Field>
 
@@ -189,23 +277,58 @@ export function SectionEditorPanel({
               view="advanced"
               idPrefix={`a-${section.id}`}
               takenAnchors={takenAnchors}
-              onChange={(next: SectionDesign) => {
-                setSettings(next as unknown as FieldValues);
-                markDirty();
-              }}
+              onChange={(next: SectionDesign) =>
+                edit('settings:advanced', { ...draft, settings: next as unknown as FieldValues })
+              }
             />
           </TabPanel>
         </fieldset>
       </div>
 
       {canEdit ? (
-        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-hairline bg-muted/[0.03] px-3 py-2.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-hairline bg-muted/[0.03] px-3 py-2.5">
           <SaveStateIndicator state={state} />
-          <Button size="sm" onClick={save} disabled={!dirty}>
-            {state === 'saving' ? 'Saving…' : 'Save section'}
-          </Button>
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={undo}
+              disabled={history.length === 0 || state === 'saving'}
+              title="Step back one change"
+            >
+              <Undo2 className="h-4 w-4" aria-hidden="true" />
+              Undo
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmReset(true)}
+              disabled={!changed || state === 'saving'}
+              title="Go back to the last saved version of this section"
+            >
+              <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              Reset
+            </Button>
+            <Button size="sm" onClick={save} disabled={!dirty}>
+              {state === 'saving' ? 'Saving…' : 'Save section'}
+            </Button>
+          </div>
         </div>
       ) : null}
-    </div>
+      </div>
+
+      {/*
+        * Reset throws work away, so it asks first. Undo does not: it is one
+        * step, and stepping back is itself undoable by editing again.
+        */}
+      <ConfirmDialog
+        open={confirmReset}
+        onClose={() => setConfirmReset(false)}
+        onConfirm={reset}
+        title="Reset this section to the last saved version?"
+        message="Every change made since the last save is discarded. The section stays where it is, with the content it was last saved with."
+        confirmLabel="Reset section"
+      />
+    </>
   );
 }

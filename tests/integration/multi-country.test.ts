@@ -435,6 +435,27 @@ describe('the market switcher only offers somewhere to land', () => {
       },
     });
     qatar = country.id;
+
+    /*
+     * The UAE needs a home page of its own, created here rather than assumed.
+     * The assertion below is that a market with somewhere to land is still
+     * offered while Qatar is not, and a freshly migrated database has no
+     * content at all — so a suite that inherited one was really asserting
+     * against seed data, and failed wherever that data was absent.
+     */
+    const created = await createPage(
+      formData({
+        title: `Home AE ${suffix}`,
+        slug: `mc-home-ae-${suffix}`,
+        status: 'PUBLISHED',
+        countryId: uae,
+      }),
+    );
+    if (!created.ok) throw new Error(`UAE home page: ${JSON.stringify(created)}`);
+    const homeId = (created as { data: { id: string } }).data.id;
+    homeIds.push(homeId);
+    await prisma.page.update({ where: { id: homeId }, data: { isHomepage: true } });
+
     invalidateCountryCache();
   });
 

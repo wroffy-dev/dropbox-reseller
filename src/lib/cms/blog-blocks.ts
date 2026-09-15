@@ -30,7 +30,7 @@ const POST_SOURCES = [
 ] as const;
 
 /** The query a post list runs. Shared by every grid, carousel and widget. */
-const postSourceSchema = {
+export const postSourceSchema = {
   source: z.enum(POST_SOURCES).catch('latest').default('latest'),
   categoryId: z.string().max(40).nullable().catch(null).default(null),
   /** Include posts filed under the chosen category's subcategories. */
@@ -47,7 +47,7 @@ const postSourceSchema = {
   excludeIds: z.array(z.string().max(40)).max(24).catch([]).default([]),
 };
 
-const postSourceFields: FieldDescriptor[] = [
+export const postSourceFields: FieldDescriptor[] = [
   {
     kind: 'select',
     name: 'source',
@@ -126,7 +126,7 @@ const postSourceFields: FieldDescriptor[] = [
 ];
 
 /** Per-section overrides for the global blog card settings. */
-const cardOverrideSchema = {
+export const cardOverrideSchema = {
   /** `inherit` uses Blog → Design. The others force the item on or off. */
   cardImage: z.enum(['inherit', 'show', 'hide']).catch('inherit').default('inherit'),
   cardCategory: z.enum(['inherit', 'show', 'hide']).catch('inherit').default('inherit'),
@@ -144,7 +144,7 @@ const OVERRIDE_OPTIONS = [
   { label: 'Hide', value: 'hide' },
 ];
 
-const cardOverrideFields: FieldDescriptor[] = (
+export const cardOverrideFields: FieldDescriptor[] = (
   [
     ['cardImage', 'Card image'],
     ['cardCategory', 'Card category'],

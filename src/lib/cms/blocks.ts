@@ -12,6 +12,7 @@ import {
 } from './block-types';
 import { BLOG_BLOCKS } from './blog-blocks';
 import { SLIDER_BLOCKS } from './slider-blocks';
+import { productSourceFields } from './product-source';
 
 /**
  * Block registry.
@@ -564,28 +565,6 @@ const MARKER_OPTIONS = [
   { label: 'None', value: 'none' },
 ];
 
-const productSourceFields: FieldDescriptor[] = [
-  {
-    kind: 'select',
-    name: 'source',
-    label: 'Which products?',
-    width: 'half',
-    options: [
-      { label: 'Featured products', value: 'featured' },
-      { label: 'All published products', value: 'all' },
-      { label: 'By category', value: 'category' },
-      { label: 'Hand-picked', value: 'selected' },
-      { label: 'Latest products', value: 'latest' },
-    ],
-  },
-  { kind: 'number', name: 'limit', label: 'Maximum products', width: 'half', min: 1, max: 12 },
-  {
-    kind: 'products',
-    name: 'productIds',
-    label: 'Products',
-    help: 'Used when "Hand-picked" is selected. Also sets the category filter.',
-  },
-];
 
 const PAGE_BLOCKS: Record<string, BlockDefinition> = {
   hero: {

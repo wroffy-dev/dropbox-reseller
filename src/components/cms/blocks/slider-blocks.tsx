@@ -8,7 +8,15 @@ import type {
   TestimonialSliderContent,
   ContentSliderContent,
   TextBoxSliderContent,
+  ProductSliderContent,
+  BlogSliderContent,
 } from '@/lib/cms/slider-blocks';
+import { selectProducts } from '@/lib/services/products';
+import { resolvePostSource } from '@/lib/services/blog';
+import { getBlogSettings } from '@/lib/services/blog-cms';
+import { resolveCard } from '@/lib/cms/blog-render';
+import { ProductCard } from '@/components/products/product-card';
+import { PostCard } from '@/components/blog/post-card';
 import { safeUrl } from '@/lib/utils/sanitize';
 import { cn } from '@/lib/utils/cn';
 import { SectionHeading, CtaLink, type BlockContext } from './shared';
@@ -529,5 +537,126 @@ export async function TextBoxSliderBlock({
         })}
       </SliderCore>
     </>
+  );
+}
+
+/**
+ * Products on a track.
+ *
+ * It runs the same `selectProducts` the product grid and comparison table run,
+ * with the same source settings, so a plan's market ordering, its featured
+ * order and a hand-picked arrangement are identical whichever section an
+ * administrator reaches for. The card is the same `ProductCard` too — one
+ * pricing card in this codebase, not a slider-shaped copy of it.
+ */
+export async function ProductSliderBlock({
+  content,
+  ctx,
+}: {
+  content: ProductSliderContent;
+  ctx: BlockContext;
+}) {
+  const settings = readSliderSettings(content);
+  const products = await selectProducts(ctx.country, {
+    source: content.source,
+    productIds: content.productIds,
+    categoryId: content.categoryId,
+    limit: content.limit,
+  });
+
+  if (products.length === 0) return null;
+
+  return (
+    <div className="space-y-8">
+      <SectionHeading
+        eyebrow={content.eyebrow}
+        heading={content.heading}
+        description={content.description}
+        inverted={ctx.inverted}
+        as={ctx.isFirst ? 'h1' : 'h2'}
+      />
+      <SliderCore
+        settings={settings}
+        label={content.heading || 'Products'}
+        slideClassName="flex"
+      >
+        {products.map((product) => (
+          <ProductCard
+            key={product.id}
+            product={product}
+            billing={content.billing}
+            ctaLabel={content.ctaLabel || undefined}
+            showImage={content.showImage}
+            showDescription={content.showDescription}
+            showPrice={content.showPrice}
+            showFeatures={content.showFeatures}
+            showName={content.showName}
+            linkName={content.linkName}
+            showActions={content.showActions}
+            showCta={content.showCta}
+            showDetailsLink={content.showDetailsLink}
+            ctaLocation="product-slider"
+            className="w-full"
+          />
+        ))}
+      </SliderCore>
+    </div>
+  );
+}
+
+/**
+ * Articles on a track.
+ *
+ * Offered on ordinary pages as well as the blog, which is why the card
+ * settings are read from the blog's own design when the section is not on a
+ * blog surface: a "Latest articles" slider on the home page should look like
+ * the blog it links into, without the editor configuring a second card style.
+ */
+export async function BlogSliderBlock({
+  content,
+  ctx,
+}: {
+  content: BlogSliderContent;
+  ctx: BlockContext;
+}) {
+  const settings = readSliderSettings(content);
+  const posts = await resolvePostSource(ctx.country.id, content, {
+    currentPostId: ctx.blog?.article?.post.id ?? null,
+    currentCategoryId: ctx.blog?.article?.post.categoryId ?? null,
+  });
+
+  if (posts.length === 0) return null;
+
+  const blogSettings = ctx.blog?.settings ?? (await getBlogSettings());
+  const card = resolveCard(blogSettings.card, content);
+
+  return (
+    <div className="space-y-8">
+      <SectionHeading
+        eyebrow={content.eyebrow}
+        heading={content.heading}
+        description={content.description}
+        inverted={ctx.inverted}
+        as={ctx.isFirst ? 'h1' : 'h2'}
+      />
+      <SliderCore
+        settings={settings}
+        label={content.heading || 'Articles'}
+        slideClassName="flex"
+      >
+        {posts.map((post, index) => (
+          <PostCard
+            key={post.id}
+            post={post}
+            country={ctx.country}
+            card={card}
+            // Only a first section's first slide is worth pre-loading; the
+            // rest are below the fold or off to the side of the track.
+            priority={ctx.isFirst && index === 0}
+            className="w-full"
+          />
+        ))}
+      </SliderCore>
+    </div>
   );
 }

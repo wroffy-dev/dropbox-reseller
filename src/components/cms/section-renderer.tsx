@@ -37,6 +37,8 @@ import type {
   TestimonialSliderContent,
   ContentSliderContent,
   TextBoxSliderContent,
+  ProductSliderContent,
+  BlogSliderContent,
 } from '@/lib/cms/slider-blocks';
 import type {
   BlogHeroContent,
@@ -93,6 +95,8 @@ import {
   TestimonialSliderBlock,
   ContentSliderBlock,
   TextBoxSliderBlock,
+  ProductSliderBlock,
+  BlogSliderBlock,
 } from './blocks/slider-blocks';
 import {
   BlogHeroBlock,
@@ -212,6 +216,10 @@ async function BlockBody({ section, ctx }: { section: RenderableSection; ctx: Bl
       return <ContentSliderBlock content={parse<ContentSliderContent>()} ctx={ctx} />;
     case 'textBoxSlider':
       return <TextBoxSliderBlock content={parse<TextBoxSliderContent>()} ctx={ctx} />;
+    case 'productSlider':
+      return <ProductSliderBlock content={parse<ProductSliderContent>()} ctx={ctx} />;
+    case 'blogSlider':
+      return <BlogSliderBlock content={parse<BlogSliderContent>()} ctx={ctx} />;
 
     // --- blog listing ---
     case 'blogHero':

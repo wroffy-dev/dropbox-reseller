@@ -12,14 +12,25 @@ export class LocalStorage implements StorageService {
 
   constructor(private readonly dir: string = process.env.LOCAL_UPLOAD_DIR || 'public/uploads') {}
 
-  private absolute(key: string): string {
+  /**
+   * The absolute path a key maps to, or null when the key escapes the upload
+   * directory.
+   *
+   * Public because the route that serves these files needs the same guard, and
+   * two copies of a traversal check are one copy too many.
+   */
+  resolve(key: string): string | null {
     // Defence in depth: never allow a key to escape the upload directory.
     const safeKey = key.replace(/\\/g, '/').replace(/\.\.+/g, '').replace(/^\/+/, '');
     const root = path.resolve(process.cwd(), this.dir);
     const target = path.resolve(root, safeKey);
-    if (!target.startsWith(root + path.sep) && target !== root) {
-      throw new Error('Invalid storage key');
-    }
+    if (!target.startsWith(root + path.sep) && target !== root) return null;
+    return target;
+  }
+
+  private absolute(key: string): string {
+    const target = this.resolve(key);
+    if (!target) throw new Error('Invalid storage key');
     return target;
   }
 

@@ -1,3 +1,4 @@
+import type * as React from 'react';
 import Link from 'next/link';
 import { Mail, Phone, MapPin } from 'lucide-react';
 import {
@@ -52,7 +53,25 @@ export function SiteFooter({
   return (
     <footer className="border-t border-hairline bg-[rgb(var(--brand-secondary))] text-white/70">
       <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
-        <div className="grid gap-10 lg:grid-cols-[1.4fr_repeat(auto-fit,minmax(9rem,1fr))]">
+        {/*
+          * One column per menu, plus a wider first one for the brand block.
+          *
+          * The count is a custom property because the number of menus is
+          * whatever the admin configured, and a class name cannot be built from
+          * data. It only takes effect from `lg` up, so the footer still stacks
+          * on a phone. The class it replaces was
+          * `lg:grid-cols-[1.4fr_repeat(auto-fit,minmax(9rem,1fr))]`,
+          * which is invalid CSS: `repeat(auto-fit, …)` cannot be combined with
+          * a flexible `fr` track, so browsers dropped the whole declaration and
+          * the footer rendered as a single stacked column on every desktop.
+          *
+          * `minmax(0, …)` on each track is what stops a long menu label pushing
+          * the footer wider than the page.
+          */}
+        <div
+          className="grid gap-10 lg:[grid-template-columns:minmax(0,1.4fr)_repeat(var(--footer-cols),minmax(0,1fr))]"
+          style={{ '--footer-cols': columns.length || 1 } as React.CSSProperties}
+        >
           <div className="max-w-sm">
             <Link href={homeUrl} className="inline-flex items-center gap-2">
               {settings.logoDarkUrl || settings.logoUrl ? (

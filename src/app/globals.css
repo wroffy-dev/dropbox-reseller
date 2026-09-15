@@ -76,6 +76,30 @@
 }
 
 @layer base {
+  /*
+   * A grid with no explicit columns must still fit its container.
+   *
+   * `grid gap-5 lg:grid-cols-3` is the shape used all over this codebase, and
+   * below `lg` it leaves `grid-template-columns: none` — so the single
+   * implicit column is auto-sized, and an item whose min-content is wide (a
+   * long lead name beside a "View all" link, a card of nowrap rows) makes the
+   * column wider than the page. The admin dashboard was 502px wide in a 320px
+   * viewport because of it, and the page scrolled sideways.
+   *
+   * `minmax(0, 1fr)` caps that column at the container's width, which is what
+   * `grid-cols-1` would have given each of those 159 grids. Declaring it once
+   * in the base layer fixes them together and covers the next grid written
+   * without a base column count, and every `grid-cols-*` utility still wins —
+   * utilities are a later layer, so a breakpoint's columns override this
+   * exactly as they did before.
+   *
+   * Safe because nothing here uses `grid-flow-col`, which is the one case that
+   * wants wide implicit columns.
+   */
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   html {
     font-size: var(--font-base-size);
     -webkit-text-size-adjust: 100%;

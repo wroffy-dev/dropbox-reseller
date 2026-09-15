@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { loadSession, touchSession } from '@/lib/auth/session.service';
+import { LOGIN_PATH } from '@/lib/auth/routes';
 import type { PermissionKey } from '@/lib/auth/permissions';
 
 export type SessionUser = {
@@ -90,7 +91,7 @@ export const getAuthState = cache(async (): Promise<AuthState> => {
 
 /** Where a half-authenticated request should be sent. */
 export function authRedirectPath(state: AuthState): string | null {
-  if (state.status === 'anonymous') return '/login';
+  if (state.status === 'anonymous') return LOGIN_PATH;
   if (state.status === 'mfa-setup') return '/auth/setup-2fa';
   if (state.status === 'mfa-pending') return '/auth/verify-2fa';
   return null;
@@ -115,7 +116,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
 export async function requireUser(): Promise<SessionUser> {
   const state = await getAuthState();
   if (state.status === 'authenticated') return state.user;
-  redirect(authRedirectPath(state) ?? '/login');
+  redirect(authRedirectPath(state) ?? LOGIN_PATH);
 }
 
 /**
@@ -127,7 +128,7 @@ export async function requirePartialUser(): Promise<{
   status: AuthState['status'];
 }> {
   const state = await getAuthState();
-  if (state.status === 'anonymous') redirect('/login');
+  if (state.status === 'anonymous') redirect(LOGIN_PATH);
   return { user: state.user, status: state.status };
 }
 

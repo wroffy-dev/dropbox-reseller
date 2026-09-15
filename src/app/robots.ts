@@ -26,7 +26,11 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
       {
         userAgent: '*',
         allow: '/',
-        disallow: ['/admin', '/admin/', '/api/', '/login', '/preview', ...extra],
+        // The sign-in screen is deliberately absent: robots.txt is public, so
+        // listing its path here would publish the one thing moving it off
+        // /login was meant to keep quiet. The page carries `noindex, nofollow`
+        // in its own metadata and in a response header (next.config.mjs).
+        disallow: ['/admin', '/admin/', '/api/', '/preview', ...extra],
       },
     ],
     sitemap: seo?.sitemapEnabled === false ? undefined : `${base}/sitemap.xml`,

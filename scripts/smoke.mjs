@@ -6,6 +6,8 @@
  * route respond correctly.
  */
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:3100';
+/** Mirrors LOGIN_PATH in src/lib/auth/routes.ts — a plain script cannot import it. */
+const LOGIN_PATH = '/auth-wroffy/admin';
 const EMAIL = process.env.SEED_ADMIN_EMAIL || 'admin@example.com';
 const PASSWORD = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe!2024';
 
@@ -89,9 +91,11 @@ async function main() {
   check('/admin redirects when signed out', guarded.status === 307 || guarded.status === 302,
     `got ${guarded.status}`);
   check(
-    '/admin redirect targets /login',
-    (guarded.headers.get('location') ?? '').includes('/login'),
+    `/admin redirect targets ${LOGIN_PATH}`,
+    (guarded.headers.get('location') ?? '').includes(LOGIN_PATH),
   );
+  await expectStatus(LOGIN_PATH, 200, 'sign-in screen is served');
+  await expectStatus('/login', 404, '/login is gone');
 
   console.log('\nSign in');
   const csrfResponse = await request('/api/auth/csrf');

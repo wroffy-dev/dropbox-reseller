@@ -141,7 +141,7 @@ src/
 │   ├── api/
 │   │   ├── auth/          Auth.js route handler
 │   │   └── health/        Container health check
-│   ├── login/
+│   ├── auth-wroffy/admin/ Sign-in screen; path from lib/auth/routes.ts
 │   ├── sitemap.ts         Generated from published content
 │   └── robots.ts          Generated from SEO settings
 │
@@ -249,7 +249,7 @@ Three entry points, by context:
 
 | Function | Use | On failure |
 | --- | --- | --- |
-| `requireUser()` | Layouts | Redirect to `/login` |
+| `requireUser()` | Layouts | Redirect to `LOGIN_PATH` (`/auth-wroffy/admin`) |
 | `requirePermission(key)` | Page components | Redirect to `/admin?denied=…` |
 | `authorize(key)` | Server Actions | Throw `AuthorizationError` |
 

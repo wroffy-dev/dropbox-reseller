@@ -114,9 +114,11 @@ const checks = [
   {
     name: 'Admin is gated',
     path: '/admin',
-    // Anonymous access must not reach the dashboard. A 200 here would mean the
-    // authentication middleware is not running.
-    expect: [302, 307, 401, 403],
+    // Anonymous access must not reach the dashboard, and must not be told
+    // where the sign-in screen is either — a redirect would carry that path in
+    // a Location header. So the only acceptable answer is the one any URL that
+    // does not exist gets. A 200 here would mean the guard is not running.
+    expect: [404],
     required: true,
     followRedirects: false,
   },

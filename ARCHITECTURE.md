@@ -249,14 +249,15 @@ Three entry points, by context:
 
 | Function | Use | On failure |
 | --- | --- | --- |
-| `requireUser()` | Layouts | Redirect to `LOGIN_PATH` (`/auth-wroffy/admin`) |
+| `requireUser()` | Layouts | 404 when anonymous; redirect to the MFA step still owed |
 | `requirePermission(key)` | Page components | Redirect to `/admin?denied=…` |
 | `authorize(key)` | Server Actions | Throw `AuthorizationError` |
 
-Middleware gating `/admin` is a convenience, not the boundary. The admin layout
-re-checks authentication and every action re-checks its own specific permission.
-A Server Action reached directly, without ever loading a page, is checked just
-the same.
+These guards are the boundary, and the only one — middleware does not gate
+`/admin` at all, because a redirect from there would have named the sign-in
+screen in a Location header. The admin layout authenticates, every page
+re-checks its own permission, and a Server Action reached directly, without
+ever loading a page, is checked just the same.
 
 Role hierarchy is enforced by `rank` — lower is more privileged. Staff can only
 create or edit accounts with a strictly higher rank than their own, which stops

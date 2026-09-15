@@ -19,7 +19,7 @@ Screens: **/admin/profile**, and the enrolment and verification steps at
 | Guards used by every page, action and API route | `src/lib/auth/guards.ts` |
 | Permission keys and seeded roles | `src/lib/auth/permissions.ts` |
 | bcrypt hashing (cost 12) and the password policy | `src/lib/auth/password.ts` |
-| Coarse route gate | `src/middleware.ts` |
+| Signed-in bounce off the sign-in screen | `src/middleware.ts` |
 
 ### Why there is a session table under a JWT strategy
 
@@ -55,11 +55,16 @@ could forget.
 
 `src/middleware.ts` deliberately does **not** decide this. Middleware runs on
 the edge with no database access, so it could only read the claim from the
-token — which is exactly what must not be trusted. It does one cheap thing:
-bounce requests with no token at all.
+token — which is exactly what must not be trusted.
+
+It no longer turns anonymous requests away either. It used to redirect them to
+the sign-in screen, which put that screen's path in a Location header, so
+anything probing `/admin` was handed it. The guards answer instead, and what
+they answer an anonymous request with is a 404 — the same answer a URL that
+does not exist gets.
 
 ```
-anonymous            -> /auth-wroffy/admin
+anonymous            -> 404 (never a redirect: it would name the sign-in screen)
 password only, no authenticator -> /auth/setup-2fa
 password only, enrolled         -> /auth/verify-2fa
 verified                        -> the route proceeds

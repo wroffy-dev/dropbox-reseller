@@ -88,12 +88,17 @@ async function main() {
 
   console.log('\nAuthorisation');
   const guarded = await request('/admin');
-  check('/admin redirects when signed out', guarded.status === 307 || guarded.status === 302,
-    `got ${guarded.status}`);
+  check('/admin is a 404 when signed out', guarded.status === 404, `got ${guarded.status}`);
+  // The point of the 404: a redirect would put the sign-in screen's path in a
+  // Location header, so probing /admin would reveal it.
+  const guardedBody = await guarded.text();
   check(
-    `/admin redirect targets ${LOGIN_PATH}`,
-    (guarded.headers.get('location') ?? '').includes(LOGIN_PATH),
+    '/admin never names the sign-in screen',
+    !guardedBody.includes(LOGIN_PATH) &&
+      !(guarded.headers.get('location') ?? '').includes(LOGIN_PATH),
   );
+  await expectStatus('/preview/any-id', 404, '/preview is a 404 when signed out');
+  await expectStatus('/auth/verify-2fa', 404, '/auth/verify-2fa is a 404 when signed out');
   await expectStatus(LOGIN_PATH, 200, 'sign-in screen is served');
   await expectStatus('/login', 404, '/login is gone');
 

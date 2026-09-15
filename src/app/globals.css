@@ -75,6 +75,81 @@
   --btn-transform: none;
 }
 
+@layer components {
+  /*
+   * The slider track.
+   *
+   * A scroll-snap container rather than a transformed strip: touch swiping,
+   * momentum, and the fact that a keyboard and a screen reader can already
+   * reach every slide all come from the browser, which is why no slider
+   * library is needed for any of this.
+   *
+   * How many slides are visible is three custom properties set per section,
+   * read here so the count changes at the breakpoints without a resize
+   * listener and without a re-render.
+   */
+  .cms-slider-track {
+    display: flex;
+    gap: var(--cms-slider-gap, 24px);
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    /* The track scrolls; the page never does. */
+    overscroll-behavior-x: contain;
+    padding-bottom: 2px;
+  }
+
+  .cms-slider-track::-webkit-scrollbar {
+    display: none;
+  }
+
+  .cms-slider-track > * {
+    flex: 0 0
+      calc(
+        (100% - (var(--cms-slider-mobile, 1) - 1) * var(--cms-slider-gap, 24px)) /
+          var(--cms-slider-mobile, 1)
+      );
+    scroll-snap-align: start;
+    /* Without this a wide slide refuses to shrink and the track overflows. */
+    min-width: 0;
+  }
+
+  @media (min-width: 768px) {
+    .cms-slider-track > * {
+      flex-basis: calc(
+        (100% - (var(--cms-slider-tablet, 2) - 1) * var(--cms-slider-gap, 24px)) /
+          var(--cms-slider-tablet, 2)
+      );
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .cms-slider-track > * {
+      flex-basis: calc(
+        (100% - (var(--cms-slider-desktop, 3) - 1) * var(--cms-slider-gap, 24px)) /
+          var(--cms-slider-desktop, 3)
+      );
+    }
+  }
+
+  /* A dragged track must not also select the text inside it. */
+  .cms-slider-track.is-dragging {
+    cursor: grabbing;
+    user-select: none;
+    /*
+     * Mandatory snapping re-snaps the track on every write to `scrollLeft`,
+     * so a drag would jump a slide at a time instead of following the pointer.
+     * It comes back the moment the pointer is released, which is what settles
+     * the track on a slide edge.
+     */
+    scroll-snap-type: none;
+  }
+
+  .cms-slider-track.is-dragging * {
+    pointer-events: none;
+  }
+}
+
 @layer base {
   /*
    * A grid with no explicit columns must still fit its container.

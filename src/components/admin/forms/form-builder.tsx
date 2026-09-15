@@ -34,6 +34,7 @@ import {
   NUMERIC_FIELD_TYPES,
   STRUCTURAL_FIELD_TYPES,
   EMPTY_FORM,
+  toFieldPayload,
   type BuilderField,
   type FormBuilderValues,
 } from '@/lib/cms/form-model';
@@ -155,21 +156,7 @@ export function FormBuilder({
       notifyEmails: values.notifyEmails || null,
       consentText: values.consentText || null,
       description: values.description || null,
-      fields: values.fields.map((field) => ({
-        id: field.id,
-        type: field.type,
-        label: field.label,
-        name: field.name || slugify(field.label).replace(/-/g, '_'),
-        placeholder: field.placeholder || null,
-        helpText: field.helpText || null,
-        defaultValue: field.defaultValue || null,
-        isRequired: field.isRequired,
-        width: field.width,
-        options: field.options.filter((o) => o.value),
-        minLength: field.minLength ? Number(field.minLength) : null,
-        maxLength: field.maxLength ? Number(field.maxLength) : null,
-        pattern: field.pattern || null,
-      })),
+      fields: values.fields.map(toFieldPayload),
     };
 
     const result = await saveForm(initial.id ?? null, payload);

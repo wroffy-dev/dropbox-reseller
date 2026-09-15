@@ -10,6 +10,7 @@
 
 import { DEFAULT_FORM_DESIGN, type FormDesign } from '@/lib/forms/form-design';
 import { DEFAULT_FIELD_SETTINGS, type FieldSettings } from '@/lib/forms/field-settings';
+import { slugify } from '@/lib/utils/slug';
 
 export type BuilderField = {
   /** Stable React key. For a saved field this is its database id. */
@@ -195,4 +196,44 @@ export function uniqueFieldName(base: string, fields: BuilderField[]): string {
     candidate = `${root}_${n}`;
   }
   return candidate;
+}
+
+/**
+ * One builder row, as the save action expects it.
+ *
+ * It lives here rather than inline in the builder because of what went wrong
+ * when it did: the mapping was an allowlist that stopped at `pattern`, so
+ * `showLabel`, `isEnabled`, `isHidden`, `isReadOnly`, `colSpan`, `cssClass`
+ * and the whole `settings` object were never sent. Every one of them has a
+ * default in `formFieldSchema`, so the defaults were filled in and written
+ * over the stored values — opening a form and pressing Save without touching
+ * anything turned hidden labels back on and discarded per-field settings.
+ *
+ * Out here it is a pure function with a test (tests/unit/form-payload.test.ts)
+ * that round-trips a field through the schema and fails if any property is
+ * lost, so the next property added to `BuilderField` cannot go missing quietly.
+ */
+export function toFieldPayload(field: BuilderField) {
+  return {
+    id: field.id,
+    type: field.type,
+    label: field.label,
+    name: field.name || slugify(field.label).replace(/-/g, '_'),
+    placeholder: field.placeholder || null,
+    helpText: field.helpText || null,
+    defaultValue: field.defaultValue || null,
+    isRequired: field.isRequired,
+    width: field.width,
+    options: field.options.filter((option) => option.value),
+    minLength: field.minLength ? Number(field.minLength) : null,
+    maxLength: field.maxLength ? Number(field.maxLength) : null,
+    pattern: field.pattern || null,
+    showLabel: field.showLabel,
+    isEnabled: field.isEnabled,
+    isHidden: field.isHidden,
+    isReadOnly: field.isReadOnly,
+    colSpan: field.colSpan ? Number(field.colSpan) : null,
+    cssClass: field.cssClass,
+    settings: field.settings,
+  };
 }

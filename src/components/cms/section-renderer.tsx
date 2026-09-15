@@ -32,6 +32,13 @@ import type {
   StatisticsContent,
 } from '@/lib/cms/blocks';
 import type {
+  LogoSliderContent,
+  ImageSliderContent,
+  TestimonialSliderContent,
+  ContentSliderContent,
+  TextBoxSliderContent,
+} from '@/lib/cms/slider-blocks';
+import type {
   BlogHeroContent,
   BlogBreadcrumbContent,
   BlogCategoryFilterContent,
@@ -80,6 +87,13 @@ import {
   TextListImageBlock,
   StatisticsBlock,
 } from './blocks/card-blocks';
+import {
+  LogoSliderBlock,
+  ImageSliderBlock,
+  TestimonialSliderBlock,
+  ContentSliderBlock,
+  TextBoxSliderBlock,
+} from './blocks/slider-blocks';
 import {
   BlogHeroBlock,
   BlogBreadcrumbBlock,
@@ -186,6 +200,18 @@ async function BlockBody({ section, ctx }: { section: RenderableSection; ctx: Bl
       return <TextListImageBlock content={parse<TextListImageContent>()} ctx={ctx} />;
     case 'statistics':
       return <StatisticsBlock content={parse<StatisticsContent>()} ctx={ctx} />;
+
+    // --- sliders ---
+    case 'logoSlider':
+      return <LogoSliderBlock content={parse<LogoSliderContent>()} ctx={ctx} />;
+    case 'imageSlider':
+      return <ImageSliderBlock content={parse<ImageSliderContent>()} ctx={ctx} />;
+    case 'testimonialSlider':
+      return <TestimonialSliderBlock content={parse<TestimonialSliderContent>()} ctx={ctx} />;
+    case 'contentSlider':
+      return <ContentSliderBlock content={parse<ContentSliderContent>()} ctx={ctx} />;
+    case 'textBoxSlider':
+      return <TextBoxSliderBlock content={parse<TextBoxSliderContent>()} ctx={ctx} />;
 
     // --- blog listing ---
     case 'blogHero':

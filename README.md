@@ -131,7 +131,15 @@ npm run dev
 ```
 
 The site runs at <http://localhost:3000> and the admin at
-<http://localhost:3000/admin>.
+<http://localhost:3000/admin>, which bounces you to the sign-in screen at
+<http://localhost:3000/auth-wroffy/admin>.
+
+**The sign-in screen is not on `/login`.** Its path is defined once, as
+`LOGIN_PATH` in `src/lib/auth/routes.ts`, and every redirect, guard, sign-out
+and script reads it from there — so moving it again is a one-line change plus
+renaming the matching directory under `src/app`. `/login` itself 404s, which
+is the point: the conventional path is the first thing a credential-stuffing
+bot tries.
 
 Generate the two secrets with:
 
@@ -534,8 +542,9 @@ build falls back to on-demand rendering. It is only fatal at runtime.
 **Uploads disappear after a deploy.** `STORAGE_PROVIDER=local` without a
 persistent volume. Mount `/app/public/uploads`, or switch to S3/R2.
 
-**Sign-in loops back to `/login`.** `NEXTAUTH_URL` does not match the URL you
-are actually visiting, so the session cookie is scoped to a different origin.
+**Sign-in loops back to `/auth-wroffy/admin`.** `NEXTAUTH_URL` does not match
+the URL you are actually visiting, so the session cookie is scoped to a
+different origin.
 
 **Emails are not arriving.** Check that email is switched on in Admin →
 Settings → Email, then use **Test connection** followed by **Send test** — the

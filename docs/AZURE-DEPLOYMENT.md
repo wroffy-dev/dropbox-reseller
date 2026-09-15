@@ -476,7 +476,8 @@ When it finishes green, open your Application URL. You should see the site.
 
 The first deployment ran the seed, which created your admin account.
 
-1. Go to `https://YOUR-APP-URL/login`.
+1. Go to `https://YOUR-APP-URL/auth-wroffy/admin` — the sign-in screen is not
+   on `/login`; see `LOGIN_PATH` in `src/lib/auth/routes.ts`.
 2. Sign in with `SEED_ADMIN_EMAIL` and your admin password.
 3. You are immediately asked to set up Microsoft Authenticator — this is required
    and cannot be skipped:

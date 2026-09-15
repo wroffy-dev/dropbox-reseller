@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { initials } from '@/lib/utils/format';
 import type { PermissionKey } from '@/lib/auth/permissions';
+import { LOGIN_PATH } from '@/lib/auth/routes';
 import { cn } from '@/lib/utils/cn';
 import { AdminSearch } from './admin-search';
 import { AdminBreadcrumbs } from './breadcrumbs';
@@ -174,7 +175,7 @@ export function AdminTopbar({
           <MenuItem
             tone="danger"
             icon={<LogOut className="h-4 w-4" />}
-            onClick={() => signOut({ callbackUrl: '/login' })}
+            onClick={() => signOut({ callbackUrl: LOGIN_PATH })}
           >
             Sign out
           </MenuItem>

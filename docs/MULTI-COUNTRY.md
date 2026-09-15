@@ -103,10 +103,11 @@ For `/dropbox-business` the first segment matches no country, so the default
 market owns the whole path — which is why the original URLs are unchanged.
 
 Reserved first segments can never be read as a market: `admin`, `api`, `_next`,
-`auth`, `login`, `preview`, `uploads`, `media`, `static`, `assets`, `health`,
-`ready`, and anything containing a dot (so `robots.txt` and `sitemap.xml` are
-files, not markets). The country form validates a new prefix against the same
-list, so a market cannot be created that would shadow a system route.
+`auth`, `auth-wroffy` (the sign-in screen), `login`, `preview`, `uploads`,
+`media`, `static`, `assets`, `health`, `ready`, and anything containing a dot
+(so `robots.txt` and `sitemap.xml` are files, not markets). The country form
+validates a new prefix against the same list, so a market cannot be created
+that would shadow a system route.
 
 **An inactive country is not a storefront.** Its prefix stops resolving, the
 path falls through to the default market, and the page 404s. Its content is
@@ -364,7 +365,9 @@ Everything else follows from the same helpers:
   prefix, listing only published, non-`noindex` content. A new market appears
   automatically as soon as it has published content.
 - **robots.txt** is unchanged: the disallow list is path-based and already
-  covers `/admin`, `/api`, `/login` and `/preview` for every market.
+  covers `/admin`, `/api` and `/preview` for every market. The sign-in screen
+  is deliberately absent from it — robots.txt is public, and it carries
+  `noindex, nofollow` in its own metadata and in a response header instead.
 
 ---
 

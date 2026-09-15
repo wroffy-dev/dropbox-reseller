@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import NextAuth from 'next-auth';
 import { authConfig } from '@/lib/auth/config';
+import { LOGIN_PATH } from '@/lib/auth/routes';
 import { decideAttribution, parseTouch, touchFromVisit, UTM_KEYS } from '@/lib/analytics/touch';
 
 const { auth } = NextAuth(authConfig);
@@ -37,14 +38,14 @@ export default auth((request) => {
   const isLoggedIn = Boolean(request.auth?.user);
 
   if ((isAdmin || isTwoStep) && !isLoggedIn) {
-    const url = new URL('/login', nextUrl.origin);
+    const url = new URL(LOGIN_PATH, nextUrl.origin);
     if (isAdmin) url.searchParams.set('callbackUrl', nextUrl.pathname + nextUrl.search);
     return NextResponse.redirect(url);
   }
 
-  // A signed-in visitor at /login goes to /admin, which redirects onward to
-  // whichever step they still owe.
-  if (nextUrl.pathname === '/login' && isLoggedIn) {
+  // A signed-in visitor at the sign-in screen goes to /admin, which redirects
+  // onward to whichever step they still owe.
+  if (nextUrl.pathname === LOGIN_PATH && isLoggedIn) {
     return NextResponse.redirect(new URL('/admin', nextUrl.origin));
   }
 

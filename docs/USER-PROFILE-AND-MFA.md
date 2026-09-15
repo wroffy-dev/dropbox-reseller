@@ -59,7 +59,7 @@ token — which is exactly what must not be trusted. It does one cheap thing:
 bounce requests with no token at all.
 
 ```
-anonymous            -> /login
+anonymous            -> /auth-wroffy/admin
 password only, no authenticator -> /auth/setup-2fa
 password only, enrolled         -> /auth/verify-2fa
 verified                        -> the route proceeds

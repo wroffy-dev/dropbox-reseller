@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from 'next-auth';
+import { LOGIN_PATH } from '@/lib/auth/routes';
 
 /**
  * Edge-safe slice of the Auth.js configuration.
@@ -7,7 +8,7 @@ import type { NextAuthConfig } from 'next-auth';
 export const authConfig = {
   trustHost: true,
   session: { strategy: 'jwt', maxAge: 60 * 60 * 8 },
-  pages: { signIn: '/login', error: '/login' },
+  pages: { signIn: LOGIN_PATH, error: LOGIN_PATH },
   cookies: {
     sessionToken: {
       name:

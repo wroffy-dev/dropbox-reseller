@@ -75,6 +75,15 @@ const nextConfig = {
         source: '/admin/:path*',
         headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
       },
+      {
+        // The sign-in screen. Kept out of robots.txt on purpose — that file is
+        // public — so the no-index instruction is given here instead, where
+        // only a crawler that already found the page will read it. The path
+        // itself is defined in src/lib/auth/routes.ts; this config cannot
+        // import TypeScript, so the two must be changed together.
+        source: '/auth-wroffy/:path*',
+        headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+      },
     ];
   },
 };

@@ -118,7 +118,7 @@ describe('countryHref', () => {
     expect(countryHref(uae, '/admin/pages')).toBe('/admin/pages');
     expect(countryHref(uae, '/api/health')).toBe('/api/health');
     expect(countryHref(uae, '/uploads/2026/01/logo.png')).toBe('/uploads/2026/01/logo.png');
-    expect(countryHref(uae, '/login')).toBe('/login');
+    expect(countryHref(uae, '/auth-wroffy/admin')).toBe('/auth-wroffy/admin');
     expect(countryHref(uae, '/favicon.ico')).toBe('/favicon.ico');
   });
 
@@ -167,7 +167,13 @@ describe('splitCountryPath', () => {
   });
 
   it('never captures a system route', () => {
-    for (const path of ['/admin', '/api/health', '/login', '/uploads/x.png', '/robots.txt']) {
+    for (const path of [
+      '/admin',
+      '/api/health',
+      '/auth-wroffy/admin',
+      '/uploads/x.png',
+      '/robots.txt',
+    ]) {
       const result = splitCountryPath(path, countries);
       expect(result.matchedPrefix).toBe(false);
       expect(result.country).toBe(india);
@@ -188,7 +194,18 @@ describe('splitCountryPath', () => {
 
 describe('reserved segments', () => {
   it('covers the application surfaces a market must never shadow', () => {
-    for (const segment of ['admin', 'api', '_next', 'auth', 'login', 'preview', 'uploads']) {
+    for (const segment of [
+      'admin',
+      'api',
+      '_next',
+      'auth',
+      // The sign-in screen's own segment: a market slug that shadowed it would
+      // take the admin offline.
+      'auth-wroffy',
+      'login',
+      'preview',
+      'uploads',
+    ]) {
       expect(RESERVED_SEGMENTS.has(segment)).toBe(true);
     }
   });

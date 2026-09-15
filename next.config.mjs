@@ -62,8 +62,13 @@ const nextConfig = {
       },
       {
         // Uploaded files are served as-is, so stop the browser guessing a type
-        // and never let one render as a document in the site's origin.
-        source: '/uploads/:path*',
+        // and never let one render as a document in the site's origin. The
+        // sandboxing CSP is what makes serving a user-supplied SVG safe: it
+        // cannot run script or fetch anything, whatever the file contains.
+        //
+        // `/media` is the current prefix and `/uploads` the one it replaced;
+        // both are still routed, so both need the same headers.
+        source: '/:prefix(media|uploads)/:path*',
         headers: [
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Content-Disposition', value: 'inline' },

@@ -256,6 +256,20 @@ Uploaded images must not be stored inside the container. Azure runs several
 copies of your app and replaces them on every deployment, so a file saved inside
 one copy is invisible to the others and disappears at the next release.
 
+> **There are two ways to solve that, and both are supported.**
+>
+> **A — Azure Files, no cloud storage account.** Mount an Azure Files share at
+> `/data/uploads` and keep `STORAGE_DRIVER=local`. The share is shared between
+> replicas and survives revisions, which is exactly what the container's own
+> disk is not. No R2 or S3 bucket is needed for media at all — the commands are
+> in [MEDIA-STORAGE.md](MEDIA-STORAGE.md#azure-container-apps). Skip the media
+> bucket below; you still need the **backup** bucket.
+>
+> **B — R2 or S3**, as written below. Nothing to mount.
+>
+> This section documents B, which is what the rest of this guide's variable
+> table assumes.
+
 You need **two separate buckets**: one public for media, one private for backups.
 
 ### Media bucket
@@ -365,7 +379,7 @@ The values that matter most for a first deployment:
 | `SEED_ADMIN_EMAIL` | Manual entry | your email address |
 | `SEED_ADMIN_PASSWORD` | Reference a secret | `seed-admin-password` |
 | `SEED_DEMO_CONTENT` | Manual entry | `false` |
-| `STORAGE_PROVIDER` | Manual entry | `r2` |
+| `STORAGE_DRIVER` | Manual entry | `r2` — or `local` with an Azure Files share mounted at `/data/uploads` |
 | `BACKUP_STORAGE_DRIVER` | Manual entry | `s3` |
 
 Click **Save** at the bottom, then **Create** to apply.
@@ -669,10 +683,17 @@ Visit `https://YOUR-DOMAIN/api/health`. If it reports
 
 **Images upload but do not appear**
 
-`STORAGE_PROVIDER` is probably still `local`. It must be `r2` or `s3` on Azure —
-a file saved into the container is lost when the container is replaced. Check
-`S3_PUBLIC_URL` is the public bucket URL and that public access is enabled on the
-media bucket.
+On Azure a file saved into the container's own disk is lost when the container
+is replaced, and is invisible to the other replicas meanwhile. Either:
+
+- `STORAGE_DRIVER=local` **with an Azure Files share mounted at `UPLOAD_DIR`**
+  (`/data/uploads`). Check the mount actually exists — the container log has a
+  `storage.check` line naming the directory and whether it was writable, and
+  `/api/health` reports `storage.writable`; or
+- `STORAGE_DRIVER=r2`/`s3`, in which case check `S3_PUBLIC_URL` is the public
+  bucket URL and that public access is enabled on the media bucket.
+
+See [MEDIA-STORAGE.md](MEDIA-STORAGE.md).
 
 ---
 

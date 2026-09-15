@@ -101,6 +101,32 @@ else
   log info seed.skipped "RUN_SEED is not true"
 fi
 
+# ---------------------------------------------------------------------------
+# Media storage
+# ---------------------------------------------------------------------------
+# Checked before the server starts, because the failure it catches is silent:
+# a container brought up without its volume works perfectly, nobody notices,
+# and every upload lands on a layer the next deployment throws away.
+#
+# Not fatal. An unwritable directory stops uploads; it does not stop the site
+# serving the pages it already has, and exiting here would take a working
+# storefront offline over a misconfigured mount.
+STORAGE_DRIVER_RESOLVED="$(printf '%s' "${STORAGE_DRIVER:-${STORAGE_PROVIDER:-local}}" | tr '[:upper:]' '[:lower:]')"
+
+if [ "$STORAGE_DRIVER_RESOLVED" = "local" ]; then
+  MEDIA_DIR="${UPLOAD_DIR:-${LOCAL_UPLOAD_DIR:-/data/uploads}}"
+
+  if ! mkdir -p "$MEDIA_DIR" 2>/dev/null; then
+    log error storage.unusable "cannot create $MEDIA_DIR — uploads will fail until a writable volume is mounted there"
+  elif [ ! -w "$MEDIA_DIR" ]; then
+    log error storage.readonly "$MEDIA_DIR is not writable by this container — uploads will fail; check the volume's ownership"
+  else
+    log info storage.ready "media storage: local, $MEDIA_DIR, writable"
+  fi
+else
+  log info storage.ready "media storage: $STORAGE_DRIVER_RESOLVED (object storage)"
+fi
+
 log info server.start "starting Next.js on port ${PORT:-3000}"
 
 # `exec` replaces this shell, so the Node process becomes PID 1 and receives

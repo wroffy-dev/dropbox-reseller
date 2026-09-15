@@ -117,19 +117,31 @@ COPY --from=builder --chown=nextjs:nodejs /app/scripts/clone-market.mjs ./script
 COPY --chown=nextjs:nodejs docker/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-# Two directories that only matter when the deployment stores things locally.
+# Directories that hold data rather than code.
 #
-# On Docker/Coolify these are mounted as persistent volumes and everything works.
-# On Azure Container Apps the filesystem is ephemeral and replicas do not share
-# it, so a file written by replica A is invisible to B and gone on the next
-# revision. That is why Azure deployments must set STORAGE_PROVIDER=r2 and
-# BACKUP_STORAGE_DRIVER=s3; the directories remain because restore and import
-# still stage archives through the local filesystem, which is per-operation and
-# safe.
+# /data/uploads is the media library. It is outside /app on purpose: everything
+# under /app is replaced wholesale by the next image, so a library written
+# there is destroyed by the deployment that was supposed to keep it. Mounted as
+# a persistent volume it survives restarts, rebuilds and redeployments — on a
+# VPS, in Docker Compose, on Coolify, and on Azure Container Apps with an Azure
+# Files share mounted at this path. The application never learns which of those
+# it is; it writes to a directory.
+#
+# Ownership is set here, at build time, because the container does not run as
+# root: a volume mounted over a directory the `nextjs` user cannot write to
+# produces an EACCES on the first upload and nothing else.
+#
+# Azure Container Apps without a mounted share is the one case that does not
+# work — its filesystem is ephemeral and replicas do not share it, so a file
+# written by one replica is invisible to the others and gone on the next
+# revision. See docs/MEDIA-STORAGE.md.
+RUN mkdir -p /data/uploads && chown -R nextjs:nodejs /data/uploads
+# The directory uploads were written to before /data/uploads. Still read, so an
+# existing volume keeps serving its files; never written to.
 RUN mkdir -p /app/public/uploads && chown -R nextjs:nodejs /app/public/uploads
 RUN mkdir -p /app/backups && chown -R nextjs:nodejs /app/backups
 
-VOLUME ["/app/public/uploads", "/app/backups"]
+VOLUME ["/data/uploads", "/app/backups"]
 
 USER nextjs
 EXPOSE 3000

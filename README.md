@@ -184,8 +184,10 @@ openssl rand -base64 32   # ENCRYPTION_KEY
 | `ENCRYPTION_KEY` | recommended | Encrypts the stored SMTP password. Falls back to `AUTH_SECRET` |
 | `NEXTAUTH_URL` | yes in production | The deployment's public URL |
 | `NEXT_PUBLIC_SITE_URL` | yes in production | Used for canonical URLs, the sitemap and email links |
-| `STORAGE_PROVIDER` | no | `local` (default), `s3` or `r2` |
-| `MAX_UPLOAD_MB` | no | Upload size cap. Default 12 |
+| `STORAGE_DRIVER` | no | `local` (default), `s3` or `r2`. Nothing else is needed for `local` |
+| `UPLOAD_DIR` | no | Where `local` writes. Default `/data/uploads`. Must be a persistent volume |
+| `MEDIA_PUBLIC_PATH` | no | URL prefix media is served under. Default `/media` |
+| `MAX_UPLOAD_SIZE_MB` | no | Upload size cap. Default 150 KB; `.env.example` ships 10 MB |
 | `SMTP_*`, `MAIL_FROM` | no | Bootstrap SMTP. Admin → Settings → Email overrides these |
 | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | seed only | The first administrator |
 | `SEED_DEMO_CONTENT` | no | `false` skips the demo pages, products and posts |
@@ -302,8 +304,8 @@ The image:
 - exposes `/api/health` (liveness) and `/api/ready` (readiness — it also checks
   migrations have been applied), both returning 503 rather than a misleading
   200 when the database is unreachable;
-- declares volumes at `/app/public/uploads` and `/app/backups` for locally
-  stored media and backups;
+- declares volumes at `/data/uploads` and `/app/backups` for media and backups,
+  both outside the part of the filesystem a new image replaces;
 - contains **no secrets**. Configuration is supplied at runtime, so the same
   image can be promoted between environments unchanged.
 
@@ -321,9 +323,12 @@ The image:
 4. **First deploy.** Set `RUN_SEED=true` together with `SEED_ADMIN_EMAIL` and
    `SEED_ADMIN_PASSWORD`. Deploy, sign in at `/admin`, change the password, then
    remove those three variables and redeploy.
-5. **Persist uploads.** If you are using `STORAGE_PROVIDER=local`, add a
-   persistent volume mounted at `/app/public/uploads`. With S3 or R2 this is not
-   needed.
+5. **Persist uploads.** Add a persistent volume mounted at `/data/uploads`
+   (**Storages** → **Add**). This is not optional on the default `local`
+   driver: Coolify rebuilds the image on every deploy, so an unmounted
+   directory loses the whole media library — silently, because everything keeps
+   working until someone looks for an older image. Only a deployment using S3
+   or R2 can skip it.
 6. **Health check.** Coolify picks up the Dockerfile `HEALTHCHECK`
    automatically; if you configure one manually, use `/api/health`.
 
@@ -350,9 +355,12 @@ deployment — nothing is masked.
 
 Two things differ from a single-server deployment and are not optional:
 
-- **`STORAGE_PROVIDER` must be `r2` or `s3`.** Several copies of the app run at
-  once and the filesystem is replaced on each release, so a locally stored upload
-  is invisible to the other copies and gone at the next deploy.
+- **Media needs shared, persistent storage.** Several copies of the app run at
+  once and the filesystem is replaced on each release, so an upload written to
+  a container's own disk is invisible to the other copies and gone at the next
+  deploy. Either mount an Azure Files share at `/data/uploads` and keep
+  `STORAGE_DRIVER=local`, or set `STORAGE_DRIVER=r2`/`s3`. Both are supported;
+  see [docs/MEDIA-STORAGE.md](docs/MEDIA-STORAGE.md).
 - **`BACKUP_STORAGE_DRIVER` must be `s3`**, for the same reason.
 
 Everything else — the same Dockerfile, the same entrypoint, the same environment
@@ -378,15 +386,29 @@ nothing destructive.
 ## File storage: local, S3 and Cloudflare R2
 
 The CMS never knows which backend is in use — everything goes through
-`StorageService` in `src/lib/storage`.
+`StorageService` in `src/lib/storage`. Full detail, including the deployment
+recipes and the security rules, is in
+[docs/MEDIA-STORAGE.md](docs/MEDIA-STORAGE.md).
 
-**Local** (default). Files are written under `public/uploads`. Mount that path
-as a volume in production, or files vanish on redeploy.
+**Local** (default, and a complete setup on its own — no bucket, no account, no
+key):
+
+```env
+STORAGE_DRIVER=local
+UPLOAD_DIR=/data/uploads
+MEDIA_PUBLIC_PATH=/media
+```
+
+Files are written under `UPLOAD_DIR` and served from `/media/...`; the
+filesystem path is never exposed. Mount that directory as a persistent volume
+in production, or uploads vanish on redeploy. The previous default,
+`public/uploads`, is still read so an upgraded installation keeps serving what
+it already had.
 
 **Cloudflare R2:**
 
 ```env
-STORAGE_PROVIDER=r2
+STORAGE_DRIVER=r2
 S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
 S3_REGION=auto
 S3_BUCKET=your-bucket
@@ -398,7 +420,7 @@ S3_PUBLIC_URL=https://cdn.yourdomain.com
 **AWS S3:**
 
 ```env
-STORAGE_PROVIDER=s3
+STORAGE_DRIVER=s3
 S3_REGION=ap-south-1
 S3_BUCKET=your-bucket
 S3_ACCESS_KEY=...
@@ -547,8 +569,10 @@ all mail is composed from typed fields in `src/lib/email/mailer.ts`.
 **"Can't reach database server" during a build.** Expected and harmless — the
 build falls back to on-demand rendering. It is only fatal at runtime.
 
-**Uploads disappear after a deploy.** `STORAGE_PROVIDER=local` without a
-persistent volume. Mount `/app/public/uploads`, or switch to S3/R2.
+**Uploads disappear after a deploy.** `STORAGE_DRIVER=local` without a
+persistent volume. Mount one at `UPLOAD_DIR` (`/data/uploads` by default), or
+switch to S3/R2. The startup log says which directory was checked and whether
+it was writable.
 
 **Sign-in loops back to `/auth-control-panel/admin`.** `NEXTAUTH_URL` does not
 match the URL you are actually visiting, so the session cookie is scoped to a

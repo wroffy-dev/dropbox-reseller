@@ -80,16 +80,23 @@ export function collectEnvProblems(source: EnvSource = process.env): EnvProblem[
   }
 
   // --- Conditional: media storage ----------------------------------------
-  const storageProvider = (source.STORAGE_PROVIDER || 'local').toLowerCase();
-  if (storageProvider === 's3' || storageProvider === 'r2') {
+  //
+  // Nothing is required for the default driver. A deployment that stores media
+  // on its own disk must be able to boot with no bucket, no account and no key
+  // anywhere in its environment — that is the whole point of `local`, and a
+  // check that demanded S3 variables regardless would quietly make the cloud
+  // mandatory again.
+  const storageDriver = (source.STORAGE_DRIVER || source.STORAGE_PROVIDER || 'local').toLowerCase();
+  const driverName = source.STORAGE_DRIVER ? 'STORAGE_DRIVER' : 'STORAGE_PROVIDER';
+  if (storageDriver === 's3' || storageDriver === 'r2') {
     for (const name of ['S3_BUCKET', 'S3_ACCESS_KEY', 'S3_SECRET_KEY'] as const) {
-      require(name, `is required when STORAGE_PROVIDER=${storageProvider}`);
+      require(name, `is required when ${driverName}=${storageDriver}`);
     }
     require(
       'S3_PUBLIC_URL',
-      `is required when STORAGE_PROVIDER=${storageProvider} — the public base URL that serves the bucket`,
+      `is required when ${driverName}=${storageDriver} — the public base URL that serves the bucket`,
     );
-    if (storageProvider === 'r2') {
+    if (storageDriver === 'r2') {
       require('S3_ENDPOINT', 'is required for Cloudflare R2');
     }
   }

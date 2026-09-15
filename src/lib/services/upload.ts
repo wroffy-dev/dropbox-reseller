@@ -6,11 +6,12 @@ import {
   ACCEPT_ATTRIBUTE,
   DEFAULT_MAX_UPLOAD_KB,
   UNSUPPORTED_TYPE_MESSAGE,
-  TOO_LARGE_MESSAGE,
+  formatUploadLimit,
+  tooLargeMessage,
 } from '@/lib/media/constants';
 
 // Re-exported so existing server-side imports keep working from one place.
-export { ALLOWED_EXTENSIONS, ACCEPT_ATTRIBUTE, UNSUPPORTED_TYPE_MESSAGE, TOO_LARGE_MESSAGE };
+export { ALLOWED_EXTENSIONS, ACCEPT_ATTRIBUTE, UNSUPPORTED_TYPE_MESSAGE };
 
 /**
  * The only file types this installation accepts.
@@ -49,14 +50,31 @@ const SIGNATURES: Array<{ mime: string; test: (buf: Buffer) => boolean }> = [
 /**
  * Upload ceiling in bytes.
  *
- * MAX_UPLOAD_KB may raise or lower it, but a missing, non-numeric or
- * non-positive value always falls back to 150 KB — a misconfigured environment
- * must never silently remove the limit.
+ * `MAX_UPLOAD_SIZE_MB` is the name to configure; `MAX_UPLOAD_KB` is read after
+ * it so a deployment that already set one keeps its limit. A missing,
+ * non-numeric or non-positive value in either falls back to the default — a
+ * misconfigured environment must never silently remove the limit, which is
+ * exactly what `Number('') === 0` and `Number('abc') === NaN` would do if the
+ * result were used unchecked.
  */
 export function maxUploadBytes(): number {
-  const configured = Number(process.env.MAX_UPLOAD_KB);
-  const kb = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_UPLOAD_KB;
-  return kb * 1024;
+  const mb = Number(process.env.MAX_UPLOAD_SIZE_MB);
+  if (Number.isFinite(mb) && mb > 0) return Math.floor(mb * 1024 * 1024);
+
+  const kb = Number(process.env.MAX_UPLOAD_KB);
+  if (Number.isFinite(kb) && kb > 0) return Math.floor(kb * 1024);
+
+  return DEFAULT_MAX_UPLOAD_KB * 1024;
+}
+
+/** "10 MB" — the configured ceiling, for hint text next to an upload control. */
+export function maxUploadLabel(): string {
+  return formatUploadLimit(maxUploadBytes());
+}
+
+/** The rejection message, carrying the limit actually in force. */
+export function tooLargeError(): string {
+  return tooLargeMessage(maxUploadBytes());
 }
 
 export type UploadValidation =
@@ -68,7 +86,7 @@ export function validateUpload(
   buffer: Buffer,
   size: number,
 ): UploadValidation {
-  if (size > maxUploadBytes()) return { ok: false, error: TOO_LARGE_MESSAGE };
+  if (size > maxUploadBytes()) return { ok: false, error: tooLargeError() };
   if (size === 0) return { ok: false, error: 'That file is empty.' };
 
   const allowed = ALLOWED_MIME[declaredMime];
@@ -159,15 +177,26 @@ function isCompatible(detected: string, declared: string): boolean {
   return detected === declared;
 }
 
+/**
+ * The URL-safe stem of a filename.
+ *
+ * Lowercase letters, digits and single hyphens — nothing else survives, which
+ * is what makes a name typed by an administrator safe to join to a directory:
+ * a path separator, a leading dot, a percent sign or a `..` cannot come out of
+ * this function at all.
+ */
+export function mediaSlug(value: string): string {
+  return path
+    .basename(value, path.extname(value))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
 /** Namespaced, unguessable storage key. Never derived from user input alone. */
 export function buildStorageKey(filename: string, extension: string): string {
-  const base =
-    path
-      .basename(filename, path.extname(filename))
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 60) || 'file';
+  const base = mediaSlug(filename) || 'file';
   const now = new Date();
   const folder = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
   return `${folder}/${base}-${randomToken(6)}.${extension}`;

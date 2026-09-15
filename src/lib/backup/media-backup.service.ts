@@ -2,7 +2,7 @@ import 'server-only';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { prisma } from '@/lib/db/prisma';
-import { storage } from '@/lib/storage';
+import { storage, uploadRoot } from '@/lib/storage';
 import { ARCHIVE_PATHS } from './manifest';
 import type { ArchiveEntry } from './archive';
 
@@ -19,9 +19,16 @@ import type { ArchiveEntry } from './archive';
  * into an empty database.
  */
 
-/** Where locally-stored uploads live on disk. Matches LocalStorage's default. */
+/**
+ * Where locally-stored uploads live on disk.
+ *
+ * Resolved by the storage layer rather than re-derived here, so a backup and
+ * the writer can never disagree about which directory holds the library — a
+ * disagreement that would produce an archive with no media in it and no error
+ * to show for it.
+ */
 export function localUploadRoot(): string {
-  return path.resolve(process.cwd(), process.env.LOCAL_UPLOAD_DIR || 'public/uploads');
+  return uploadRoot();
 }
 
 export type MediaFileRef = { storageKey: string; archivePath: string };

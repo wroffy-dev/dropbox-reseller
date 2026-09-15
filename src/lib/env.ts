@@ -46,8 +46,14 @@ const serverSchema = z.object({
   SMTP_ENCRYPTION: z.enum(['none', 'tls', 'ssl']).optional(),
   MAIL_FROM: z.string().optional(),
 
-  STORAGE_PROVIDER: z.enum(['local', 's3', 'r2']).default('local'),
-  LOCAL_UPLOAD_DIR: z.string().default('public/uploads'),
+  /** The driver. STORAGE_PROVIDER is the previous name and is still read. */
+  STORAGE_DRIVER: z.enum(['local', 's3', 'r2']).optional(),
+  STORAGE_PROVIDER: z.enum(['local', 's3', 'r2']).optional(),
+  /** Where local uploads are written. LOCAL_UPLOAD_DIR is the previous name. */
+  UPLOAD_DIR: z.string().optional(),
+  LOCAL_UPLOAD_DIR: z.string().optional(),
+  /** The URL prefix local media is served under. */
+  MEDIA_PUBLIC_PATH: z.string().optional(),
   S3_ENDPOINT: z.string().optional(),
   S3_REGION: z.string().optional(),
   S3_BUCKET: z.string().optional(),
@@ -56,8 +62,12 @@ const serverSchema = z.object({
   S3_PUBLIC_URL: z.string().optional(),
   S3_FORCE_PATH_STYLE: z.string().optional(),
 
-  /** Upload ceiling in kilobytes. Falls back to 150 KB when unset or invalid. */
-  MAX_UPLOAD_KB: z.string().default('150'),
+  /**
+   * Upload ceiling. MAX_UPLOAD_SIZE_MB is read first and MAX_UPLOAD_KB after
+   * it; both fall back to 150 KB when unset or invalid.
+   */
+  MAX_UPLOAD_SIZE_MB: z.string().optional(),
+  MAX_UPLOAD_KB: z.string().optional(),
 
   BACKUP_STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
   BACKUP_LOCAL_PATH: z.string().optional(),

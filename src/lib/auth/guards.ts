@@ -1,10 +1,9 @@
 import 'server-only';
 import { cache } from 'react';
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { loadSession, touchSession } from '@/lib/auth/session.service';
-import { LOGIN_PATH } from '@/lib/auth/routes';
 import type { PermissionKey } from '@/lib/auth/permissions';
 
 export type SessionUser = {
@@ -89,9 +88,15 @@ export const getAuthState = cache(async (): Promise<AuthState> => {
   return { status: 'authenticated', user };
 });
 
-/** Where a half-authenticated request should be sent. */
+/**
+ * Where a half-authenticated request should be sent.
+ *
+ * Only a request that has already proved a password has anywhere to be sent.
+ * An anonymous one is answered with a 404 rather than redirected — see
+ * `requireUser` — so null means "do not redirect" for the anonymous case as
+ * much as for the fully authenticated one.
+ */
 export function authRedirectPath(state: AuthState): string | null {
-  if (state.status === 'anonymous') return LOGIN_PATH;
   if (state.status === 'mfa-setup') return '/auth/setup-2fa';
   if (state.status === 'mfa-pending') return '/auth/verify-2fa';
   return null;
@@ -110,13 +115,25 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
 }
 
 /**
- * Page-level guard. Sends an unauthenticated visitor to the login screen and a
- * half-authenticated one to the step it still owes.
+ * Page-level guard.
+ *
+ * An anonymous visitor gets the site's own 404, not a redirect to the sign-in
+ * screen. A redirect would carry that screen's path in a Location header, so
+ * anything probing /admin would be handed the one address that moving the
+ * screen off /login was meant to keep quiet. Answering exactly as a URL that
+ * does not exist is answered leaves nothing to find: /admin is not a locked
+ * door, it is no door.
+ *
+ * A half-authenticated visitor is a different case. That request has already
+ * proved a password, so it is sent on to the step it still owes rather than
+ * told the admin does not exist.
  */
 export async function requireUser(): Promise<SessionUser> {
   const state = await getAuthState();
   if (state.status === 'authenticated') return state.user;
-  redirect(authRedirectPath(state) ?? LOGIN_PATH);
+  const next = authRedirectPath(state);
+  if (next) redirect(next);
+  notFound();
 }
 
 /**
@@ -128,7 +145,8 @@ export async function requirePartialUser(): Promise<{
   status: AuthState['status'];
 }> {
   const state = await getAuthState();
-  if (state.status === 'anonymous') redirect(LOGIN_PATH);
+  // Same reasoning as `requireUser`: an anonymous visitor is told nothing.
+  if (state.status === 'anonymous') notFound();
   return { user: state.user, status: state.status };
 }
 

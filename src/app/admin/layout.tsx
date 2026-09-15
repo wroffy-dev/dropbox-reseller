@@ -1,14 +1,29 @@
 import type { Metadata } from 'next';
 import { prisma } from '@/lib/db/prisma';
-import { requireUser } from '@/lib/auth/guards';
+import { getCurrentUser, requireUser } from '@/lib/auth/guards';
 import { getWebsiteSettings } from '@/lib/services/settings';
 import { getAdminCountryScope } from '@/lib/country/admin';
 import { AdminShell } from '@/components/admin/admin-shell';
 
-export const metadata: Metadata = {
-  title: { default: 'Admin', template: '%s · Admin' },
-  robots: { index: false, follow: false },
-};
+/**
+ * Titles for the admin — but only for somebody who is actually in it.
+ *
+ * A layout's metadata is still resolved when the layout itself calls
+ * `notFound()`, so a static export here would title the 404 that an anonymous
+ * visitor gets "Admin" and tell them precisely what that 404 exists not to
+ * say. Returning nothing leaves the site's own defaults, which is what every
+ * other missing page shows.
+ *
+ * `getCurrentUser()` is request-cached, so this shares the lookup the layout
+ * below makes rather than adding one.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  if (!(await getCurrentUser())) return {};
+  return {
+    title: { default: 'Admin', template: '%s · Admin' },
+    robots: { index: false, follow: false },
+  };
+}
 
 /**
  * Every /admin route is authenticated here as well as in middleware.

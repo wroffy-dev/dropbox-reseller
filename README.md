@@ -130,16 +130,22 @@ npm run db:seed
 npm run dev
 ```
 
-The site runs at <http://localhost:3000> and the admin at
-<http://localhost:3000/admin>, which bounces you to the sign-in screen at
-<http://localhost:3000/auth-wroffy/admin>.
+The site runs at <http://localhost:3000>. Sign in at
+<http://localhost:3000/auth-wroffy/admin>, which is the only way in — the
+admin does not advertise itself.
 
-**The sign-in screen is not on `/login`.** Its path is defined once, as
-`LOGIN_PATH` in `src/lib/auth/routes.ts`, and every redirect, guard, sign-out
-and script reads it from there — so moving it again is a one-line change plus
-renaming the matching directory under `src/app`. `/login` itself 404s, which
-is the point: the conventional path is the first thing a credential-stuffing
-bot tries.
+**The sign-in screen is not on `/login`,** because `/login` is the first path
+a credential-stuffing bot tries. Its path is defined once, as `LOGIN_PATH` in
+`src/lib/auth/routes.ts`, and every guard, sign-out and script reads it from
+there — so moving it again is a one-line change plus renaming the matching
+directory under `src/app`. `/login` itself 404s.
+
+**`/admin` 404s when you are signed out,** rather than redirecting to the
+sign-in screen. A redirect would put that screen's path in a Location header,
+which would hand it to anything that probed `/admin` and undo the move
+entirely. `/preview` and the two-step screens answer the same way, for the
+same reason. So bookmark the sign-in URL: signed out, nothing else leads to
+it.
 
 Generate the two secrets with:
 
@@ -523,8 +529,10 @@ colours, responsive breakpoints and anchor ID — without writing any of it.
 - Security headers (frame denial, nosniff, referrer policy, permissions policy,
   HSTS) are set in `next.config.mjs`.
 - IP addresses are only ever stored as a salted hash.
-- `/admin` is gated in middleware **and** re-checked in the admin layout and in
-  every action — middleware alone is not treated as an authorisation boundary.
+- `/admin` answers a signed-out visitor with a 404 rather than a redirect, so
+  probing it reveals neither the admin nor the path of the sign-in screen.
+  Authentication is enforced in the admin layout and every permission is
+  re-checked in the action that needs it; nothing relies on middleware.
 
 ### A note on `npm audit`
 

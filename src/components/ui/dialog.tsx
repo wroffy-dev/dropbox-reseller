@@ -26,29 +26,47 @@ export function Dialog({
   const [mounted, setMounted] = React.useState(false);
   const panelRef = React.useRef<HTMLDivElement>(null);
 
+  /*
+   * The close handler, held in a ref rather than read from the closure.
+   *
+   * Almost every caller passes an inline arrow — `onClose={() => setEditing(null)}`
+   * — which is a new function on each of its renders, and a dialog's own inputs
+   * usually write to state in that same component. With `onClose` in the effect's
+   * dependencies below, that made every keystroke tear the effect down and set it
+   * up again: the cleanup restored focus to whatever opened the dialog and the
+   * setup moved it to the panel's first focusable element, so a field lost focus
+   * once per character and nothing could be typed into it at all.
+   *
+   * Reading it through a ref keeps the handler current while leaving the effect's
+   * dependencies stable, so the effect runs once when the dialog opens and once
+   * when it closes — which is what it was always meant to do.
+   */
+  const onCloseRef = React.useRef(onClose);
+  React.useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   React.useEffect(() => setMounted(true), []);
 
   React.useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') onCloseRef.current();
       if (event.key === 'Tab') trapFocus(event, panelRef.current);
     };
     document.addEventListener('keydown', onKey);
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    // Focus the first focusable element in the panel.
-    window.setTimeout(() => {
-      const focusable = panelRef.current?.querySelector<HTMLElement>(FOCUSABLE);
-      focusable?.focus();
-    }, 10);
+    // The portal's content is committed before effects run, so the panel is
+    // already in the document and this needs no timeout to wait for it.
+    panelRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
     return () => {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = overflow;
       previouslyFocused?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!mounted || !open) return null;
 

@@ -45,14 +45,25 @@ export function SectionEditorPanel({
   const [settings, setSettings] = React.useState<FieldValues>(section.settings);
   const [state, setState] = React.useState<SaveState>('idle');
 
-  // Switching section resets the form to that section's stored values.
-  React.useEffect(() => {
-    setName(section.name ?? '');
-    setContent(section.content);
-    setSettings(section.settings);
-    setState('idle');
-    setTab('content');
-  }, [section.id, section.name, section.content, section.settings]);
+  /*
+   * There is deliberately no effect re-syncing this form from `section`.
+   *
+   * There used to be one, keyed on `section.content` and `section.settings` —
+   * object references. Saving replaces exactly those references (the workspace
+   * merges the saved values back into its list), so the effect fired on every
+   * successful save and reset the editor: the active tab jumped back to
+   * Content, so a change made on Design, Responsive or Advanced left the user
+   * looking at a different panel and their section apparently collapsed. It
+   * also cut the "Saved" indicator short by resetting the state to idle in the
+   * same pass.
+   *
+   * Switching to a different section is already handled without an effect: the
+   * workspace renders this panel with `key={selected.id}`, so a different
+   * section remounts it and the `useState` initialisers below read that
+   * section's stored values. Prop changes that arrive while the same section
+   * stays selected are this component's own save coming back, and must not
+   * clobber what the user is still editing.
+   */
 
   const markDirty = () => setState('dirty');
 

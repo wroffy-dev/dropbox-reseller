@@ -94,6 +94,68 @@ describe('website settings', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('stores the footer newsletter form, and clears it when the select is emptied', async () => {
+    const form = await prisma.form.create({
+      data: { name: `Newsletter ${suffix}`, slug: `newsletter-${suffix}`, isActive: true },
+      select: { id: true },
+    });
+
+    const on = await saveWebsiteSettings(
+      formData({
+        ...BASE_SETTINGS,
+        footerNewsletterEnabled: 'true',
+        footerNewsletterFormId: form.id,
+      }),
+    );
+    expect(on.ok).toBe(true);
+
+    let settings = await prisma.websiteSettings.findUniqueOrThrow({ where: { id: 'singleton' } });
+    expect(settings.footerNewsletterEnabled).toBe(true);
+    expect(settings.footerNewsletterFormId).toBe(form.id);
+
+    // Choosing "No form" must clear the column rather than store an empty
+    // string, which would be a reference the footer then fails to resolve.
+    const off = await saveWebsiteSettings(
+      formData({ ...BASE_SETTINGS, footerNewsletterEnabled: 'false', footerNewsletterFormId: '' }),
+    );
+    expect(off.ok).toBe(true);
+
+    settings = await prisma.websiteSettings.findUniqueOrThrow({ where: { id: 'singleton' } });
+    expect(settings.footerNewsletterEnabled).toBe(false);
+    expect(settings.footerNewsletterFormId).toBeNull();
+
+    await prisma.form.delete({ where: { id: form.id } });
+  });
+
+  it('serves the footer newsletter form by id, and not once it is switched off', async () => {
+    const { getPublicFormById } = await import('@/lib/services/forms');
+    const form = await prisma.form.create({
+      data: {
+        name: `Footer form ${suffix}`,
+        slug: `footer-form-${suffix}`,
+        isActive: true,
+        fields: {
+          create: [
+            { type: 'EMAIL', label: 'Email', name: 'email', sortOrder: 0, isRequired: true },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+
+    const live = await getPublicFormById(form.id);
+    expect(live?.id).toBe(form.id);
+    expect(live?.fields.map((field) => field.name)).toEqual(['email']);
+
+    // Deactivating it must empty the footer rather than render a dead form.
+    // (The request-scoped cache around this loader is inert under vitest, so
+    // this reads the database again rather than a memoised answer.)
+    await prisma.form.update({ where: { id: form.id }, data: { isActive: false } });
+    expect(await getPublicFormById(form.id)).toBeNull();
+
+    await prisma.form.delete({ where: { id: form.id } });
+  });
+
   it('strips a javascript: URL from a link field', async () => {
     const result = await saveWebsiteSettings(
       formData({

@@ -148,6 +148,8 @@ const websiteSettingsSchema = z.object({
   headerSecondaryCtaUrl: optional(300),
 
   footerDescription: optional(600),
+  footerNewsletterEnabled: z.coerce.boolean().default(false),
+  footerNewsletterFormId: optional(40),
   copyrightText: optional(300),
   defaultCurrency: z.string().trim().length(3),
   maintenanceMode: z.coerce.boolean().default(false),
@@ -166,6 +168,7 @@ export async function saveWebsiteSettings(formData: FormData): Promise<ActionRes
     const input = websiteSettingsSchema.parse({
       ...raw,
       announcementEnabled: raw.announcementEnabled === 'true',
+      footerNewsletterEnabled: raw.footerNewsletterEnabled === 'true',
       maintenanceMode: raw.maintenanceMode === 'true',
     });
 
@@ -178,6 +181,8 @@ export async function saveWebsiteSettings(formData: FormData): Promise<ActionRes
       siteDescription: sanitizeText(input.siteDescription),
       address: input.address ? sanitizeText(input.address) : null,
       footerDescription: input.footerDescription ? sanitizeText(input.footerDescription) : null,
+      // An empty select means "no form", which is the same as off.
+      footerNewsletterFormId: input.footerNewsletterFormId || null,
       copyrightText: input.copyrightText ? sanitizeText(input.copyrightText) : null,
       announcementText: input.announcementText ? sanitizeText(input.announcementText) : null,
       announcementUrl: safeUrl(input.announcementUrl),

@@ -41,10 +41,13 @@ export function WebsiteSettingsForm({
   initial,
   canEdit,
   only,
+  forms = [],
 }: {
   initial: WebsiteSettingsValues;
   canEdit: boolean;
   only?: readonly TabId[];
+  /** Active forms the footer newsletter can be pointed at. */
+  forms?: Array<{ id: string; name: string }>;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -845,6 +848,37 @@ export function WebsiteSettingsForm({
                     onChange={(e) => set('copyrightText', e.target.value)}
                   />
                 </Field>
+                <Switch
+                  label="Show a newsletter sign-up in the footer"
+                  checked={bool('footerNewsletterEnabled')}
+                  onChange={(checked) => set('footerNewsletterEnabled', checked)}
+                  hint="Uses one of your existing forms, so its fields, consent text and submissions work exactly as they do anywhere else."
+                />
+                {bool('footerNewsletterEnabled') ? (
+                  <Field
+                    label="Newsletter form"
+                    htmlFor="footerNewsletterFormId"
+                    hint={
+                      forms.length === 0
+                        ? 'No active forms yet — create one under Forms first.'
+                        : 'Only active forms appear here.'
+                    }
+                    error={errors.footerNewsletterFormId?.[0]}
+                  >
+                    <Select
+                      id="footerNewsletterFormId"
+                      value={str('footerNewsletterFormId')}
+                      onChange={(e) => set('footerNewsletterFormId', e.target.value)}
+                    >
+                      <option value="">No form</option>
+                      {forms.map((form) => (
+                        <option key={form.id} value={form.id}>
+                          {form.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                ) : null}
                 <p className="text-sm text-muted">
                   Footer columns come from Navigation — every menu with a footer location becomes a
                   column.

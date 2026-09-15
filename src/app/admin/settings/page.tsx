@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { DatabaseBackup, Mail, Palette, Globe } from 'lucide-react';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { getWebsiteSettings } from '@/lib/services/settings';
+import { listActiveFormChoices } from '@/lib/services/forms';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { WebsiteSettingsForm } from '@/components/admin/settings/settings-form';
 import { buttonClasses } from '@/components/ui/button';
@@ -12,14 +13,12 @@ export const dynamic = 'force-dynamic';
 
 export default async function SettingsAdmin() {
   const user = await requirePermission('settings.manage');
-  const settings = await getWebsiteSettings();
+  const [settings, forms] = await Promise.all([getWebsiteSettings(), listActiveFormChoices()]);
 
   // Send everything except the timestamps; the form owns the whole record.
-  const { id, updatedAt, footerNewsletterEnabled, footerNewsletterFormId, ...rest } = settings;
+  const { id, updatedAt, ...rest } = settings;
   void id;
   void updatedAt;
-  void footerNewsletterEnabled;
-  void footerNewsletterFormId;
 
   const initial = Object.fromEntries(
     Object.entries(rest).map(([key, value]) => [key, value === null ? '' : value]),
@@ -58,6 +57,7 @@ export default async function SettingsAdmin() {
         initial={initial}
         canEdit={userCan(user, 'settings.manage')}
         only={['general', 'branding', 'header', 'footer']}
+        forms={forms}
       />
     </div>
   );

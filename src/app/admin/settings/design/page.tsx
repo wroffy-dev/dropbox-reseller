@@ -23,11 +23,9 @@ export default async function WebsiteDesignAdmin() {
   const user = await requirePermission('settings.manage');
   const settings = await getWebsiteSettings();
 
-  const { id, updatedAt, footerNewsletterEnabled, footerNewsletterFormId, ...rest } = settings;
+  const { id, updatedAt, ...rest } = settings;
   void id;
   void updatedAt;
-  void footerNewsletterEnabled;
-  void footerNewsletterFormId;
 
   const initial = Object.fromEntries(
     Object.entries(rest).map(([key, value]) => [key, value === null ? '' : value]),

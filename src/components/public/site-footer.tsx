@@ -10,6 +10,8 @@ import {
   type IconComponent,
 } from '@/components/ui/icons';
 import type { WebsiteSettings } from '@prisma/client';
+import { getPublicFormById } from '@/lib/services/forms';
+import { PublicFormRenderer } from '@/components/forms/public-form';
 import type { ResolvedNavigation, ResolvedNavItem } from '@/lib/services/navigation';
 import type { CountrySettingsView } from '@/lib/country/types';
 
@@ -28,8 +30,14 @@ const SOCIALS: Array<{ key: keyof WebsiteSettings; label: string; Icon: IconComp
  * name, contact details and copyright line come from the market being browsed
  * and fall back to the global settings, so the root market's footer renders
  * exactly what it rendered before markets existed.
+ *
+ * Nothing here is written into the component: the columns and the legal row
+ * are whichever menus an administrator gave a footer location, the social
+ * icons are whichever profile URLs are filled in, and the newsletter is one of
+ * the site's own forms. A market with no footer menus renders no columns
+ * rather than a placeholder.
  */
-export function SiteFooter({
+export async function SiteFooter({
   settings,
   local,
   homeUrl = '/',
@@ -44,6 +52,17 @@ export function SiteFooter({
   columns: ResolvedNavigation[];
   legal: ResolvedNavItem[];
 }) {
+  /*
+   * An existing form rather than a footer-only email box: its fields, consent
+   * text, captcha, notifications and submissions then work exactly as they do
+   * on any other page, and a signup from here lands in the same place as one
+   * from a landing page.
+   */
+  const newsletter =
+    settings.footerNewsletterEnabled && settings.footerNewsletterFormId
+      ? await getPublicFormById(settings.footerNewsletterFormId)
+      : null;
+
   const socials = SOCIALS.map(({ key, label, Icon }) => ({
     label,
     Icon,
@@ -53,6 +72,26 @@ export function SiteFooter({
   return (
     <footer className="border-t border-hairline bg-[rgb(var(--brand-secondary))] text-white/70">
       <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
+        {newsletter ? (
+          <div className="mb-12 grid gap-6 rounded-2xl bg-white/5 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center">
+            <div>
+              <h2 className="font-heading text-lg font-bold text-white">{newsletter.name}</h2>
+              {newsletter.description ? (
+                <p className="mt-2 text-sm leading-relaxed">{newsletter.description}</p>
+              ) : null}
+            </div>
+            {/*
+              * On a light panel: the form carries its own colours from Forms →
+              * Design, and those are chosen against a page background. Painting
+              * it straight onto a dark footer would leave an administrator
+              * restyling one form for one location.
+              */}
+            <div className="rounded-xl bg-surface p-4 text-content sm:p-5">
+              <PublicFormRenderer form={newsletter} ctaLocation="footer-newsletter" compact />
+            </div>
+          </div>
+        ) : null}
+
         {/*
           * One column per menu, plus a wider first one for the brand block.
           *

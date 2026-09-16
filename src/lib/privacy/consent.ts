@@ -61,14 +61,44 @@ export const DEFAULT_CONSENT_NOTICE: ConsentNoticeContent = {
   termsVersion: null,
 };
 
+/**
+ * A ticked box, read strictly.
+ *
+ * `z.coerce.boolean()` reads the string "false" as true, because it is a
+ * non-empty string — it would record consent nobody gave. Only the tokens a
+ * checkbox actually posts count as ticked; anything else, including anything
+ * unrecognised, is unticked.
+ */
+const ticked = z
+  .unknown()
+  .optional()
+  .transform(
+    (value) =>
+      value === true || value === 'true' || value === 'on' || value === '1' || value === 'yes',
+  );
+
 /** What the browser sends back. Every box defaults to false, never to true. */
 export const consentSubmissionSchema = z.object({
-  /** The notice family and version the visitor was actually shown. */
-  noticeKey: z.string().trim().max(60).optional(),
-  noticeVersion: z.coerce.number().int().min(1).optional(),
-  enquiry: z.coerce.boolean().default(false),
-  marketing: z.coerce.boolean().default(false),
-  terms: z.coerce.boolean().default(false),
+  /**
+   * The notice family and version the visitor was actually shown.
+   *
+   * Version 0 is a real value, not a missing one: it is what `getCurrentNotice`
+   * returns for a site with no notice stored, meaning “the wording compiled into
+   * the code”. Rejecting it would reject every submission on such a site — and
+   * because this object sits inside the submission envelope, the rejection is
+   * the *whole envelope* failing to parse, which the visitor sees as an
+   * unexplained “could not be read” with a form they cannot fix.
+   *
+   * For that reason nothing here can fail the parse. A version we cannot read
+   * degrades to “unknown”, which costs only the staleness check below; the
+   * evidence records the server's own notice and version either way, so a
+   * mangled field can never make the record claim more than it should.
+   */
+  noticeKey: z.string().trim().max(60).optional().catch(undefined),
+  noticeVersion: z.coerce.number().int().min(0).optional().catch(undefined),
+  enquiry: ticked,
+  marketing: ticked,
+  terms: ticked,
 });
 
 export type ConsentSubmission = z.infer<typeof consentSubmissionSchema>;

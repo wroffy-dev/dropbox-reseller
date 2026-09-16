@@ -94,6 +94,12 @@ export const formInputSchema = z.object({
   createsLead: z.boolean().default(true),
   notifyEmails: optional(500),
   consentText: optional(600),
+  lawfulBasis: z
+    .enum(['CONSENT', 'CONTRACT', 'LEGITIMATE_INTEREST', 'LEGAL_OBLIGATION'])
+    .default('CONSENT'),
+  collectsPersonalData: z.boolean().default(true),
+  offerMarketingConsent: z.boolean().default(true),
+  requireTermsAcceptance: z.boolean().default(false),
   // Defaults to false so a payload from an older client — or an existing form
   // saved before this existed — never silently switches the CAPTCHA on.
   requireCaptcha: z.boolean().default(false),

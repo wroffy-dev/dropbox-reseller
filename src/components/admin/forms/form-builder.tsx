@@ -155,6 +155,10 @@ export function FormBuilder({
       leadSource: values.leadSource || null,
       notifyEmails: values.notifyEmails || null,
       consentText: values.consentText || null,
+      lawfulBasis: values.lawfulBasis,
+      collectsPersonalData: values.collectsPersonalData,
+      offerMarketingConsent: values.offerMarketingConsent,
+      requireTermsAcceptance: values.requireTermsAcceptance,
       description: values.description || null,
       fields: values.fields.map(toFieldPayload),
     };
@@ -331,18 +335,72 @@ export function FormBuilder({
                 />
               </Field>
 
-              <Field
-                label="Consent text"
-                htmlFor="form-consent"
-                hint="Shown above the submit button."
-              >
-                <Textarea
-                  id="form-consent"
-                  rows={2}
-                  value={values.consentText}
-                  onChange={(e) => set('consentText', e.target.value)}
+              <div className="space-y-4 rounded-lg border border-hairline p-4">
+                <div>
+                  <p className="text-sm font-medium text-content">Consent</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted">
+                    The wording itself is managed once, under Leads &amp; CRM → Consent notice.
+                    These settings decide what this form asks for.
+                  </p>
+                </div>
+
+                <Switch
+                  checked={values.collectsPersonalData}
+                  onChange={(next) => set('collectsPersonalData', next)}
+                  label="This form collects personal information"
+                  hint="Off hides the consent block entirely. Only correct for a form that asks for nothing about a person — no name, email, phone or message."
                 />
-              </Field>
+
+                {values.collectsPersonalData ? (
+                  <>
+                    <Field
+                      label="Lawful basis"
+                      htmlFor="form-basis"
+                      hint="Consent makes the tick box mandatory. On any other basis the box would be theatre, and the CRM shows “Not applicable” instead of an apparent gap."
+                    >
+                      <Select
+                        id="form-basis"
+                        value={values.lawfulBasis}
+                        onChange={(e) =>
+                          set('lawfulBasis', e.target.value as typeof values.lawfulBasis)
+                        }
+                      >
+                        <option value="CONSENT">Consent</option>
+                        <option value="CONTRACT">Performance of a contract</option>
+                        <option value="LEGITIMATE_INTEREST">Legitimate interest</option>
+                        <option value="LEGAL_OBLIGATION">Legal obligation</option>
+                      </Select>
+                    </Field>
+
+                    <Switch
+                      checked={values.offerMarketingConsent}
+                      onChange={(next) => set('offerMarketingConsent', next)}
+                      label="Offer the optional marketing tick box"
+                      hint="Never required to submit, whatever this is set to."
+                    />
+
+                    <Switch
+                      checked={values.requireTermsAcceptance}
+                      onChange={(next) => set('requireTermsAcceptance', next)}
+                      label="Require Terms & Conditions acceptance"
+                      hint="Adds a second required tick box, recorded separately from data-processing consent."
+                    />
+                  </>
+                ) : null}
+
+                <Field
+                  label="Extra line above the button"
+                  htmlFor="form-consent"
+                  hint="Optional free text, kept from before the consent block existed."
+                >
+                  <Textarea
+                    id="form-consent"
+                    rows={2}
+                    value={values.consentText}
+                    onChange={(e) => set('consentText', e.target.value)}
+                  />
+                </Field>
+              </div>
 
               <div className="rounded-lg border border-hairline p-4">
                 <Switch

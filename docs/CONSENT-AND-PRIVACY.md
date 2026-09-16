@@ -1,0 +1,227 @@
+# Consent and privacy
+
+What this application does, what it deliberately does not claim, and the
+decisions that still need a person.
+
+---
+
+## What is not claimed
+
+**Collecting a tick does not make this site compliant with the DPDP Act, the
+GDPR, or any other law.** This codebase provides the mechanics — a notice that
+can be worded and versioned, three separate permissions, server-side
+enforcement, an evidence trail, a withdrawal route, and access controls over
+the personal data collected. Whether those mechanics add up to lawful
+processing depends on decisions nobody but the business can make, listed at the
+end of this document.
+
+Nothing in the admin UI says "you are now compliant", and nothing should be
+added that does.
+
+---
+
+## How consent works
+
+### One chokepoint
+
+Every public form on the site — contact, enquiry, product and plan forms, hero
+and embedded forms, popups, callback and quotation forms, and anything an
+administrator builds in the CMS — submits through one server action,
+`submitForm` in `src/lib/actions/submit-form.ts`. Consent is enforced there, so
+adding a new form cannot accidentally create a route that skips it.
+
+### Three permissions, kept apart
+
+| Permission | Required? | Stored as |
+|---|---|---|
+| Enquiry processing | Yes, when the form's lawful basis is `CONSENT` | `ConsentRecord.enquiryConsent` |
+| Marketing | Never | `ConsentRecord.marketingConsent` |
+| Terms acceptance | Only when the form asks for it | `ConsentRecord.termsAccepted` |
+
+They are three columns rather than one because they are three different
+decisions. A single tick that meant all three would be the "blanket consent
+covering unrelated purposes" that neither regime permits, and it would leave
+the CRM unable to answer "may we market to this person?" without guessing.
+
+Marketing is never a condition of submitting. The server does not reject a
+submission for leaving it unticked, and there is a test that asserts this.
+
+### Every box starts unticked
+
+The consent block (`src/components/forms/consent-block.tsx`) initialises its
+state to `false` and is never seeded from anything else. A pre-ticked box has
+not recorded a decision.
+
+### Enforcement is server-side
+
+What a form requires is re-read from the database on every submission — from
+the `Form` row and the live `ConsentNotice` — never from the payload's own
+account of what was required. A crafted request that omits the consent object
+entirely therefore **fails** the requirement rather than skipping it.
+
+```
+tests/integration/consent.test.ts
+  → "rejects a direct submission that omits the consent object entirely"
+```
+
+### Notices are versioned and immutable
+
+Editing the wording in the admin publishes a **new version**; the previous one
+is never modified. A submission stores:
+
+- the notice key and version it was shown,
+- a full snapshot of the wording as rendered,
+- the Privacy Policy and Terms URLs and their versions,
+- the purpose text.
+
+The snapshot exists because a notice row can be deleted or a market removed,
+and the evidence still has to say what was on screen. If the page was open
+since before an edit, the submission is rejected with "our privacy notice
+changed while you were filling this in" rather than recording agreement to
+wording the person never saw.
+
+### Withdrawal
+
+Recording a withdrawal (Leads → a lead → Consent & privacy → *Record a
+withdrawal*) appends a `ConsentEvent` and sets `withdrawnAt`. **The original
+booleans are not edited.** The history then reads "agreed on the 3rd, withdrew
+on the 9th" rather than "never agreed".
+
+Withdrawing also sets `Lead.marketingSuppressedAt`, which is what campaign
+sending reads — a withdrawal that only updated the evidence would leave the
+record honest and the mailing list wrong.
+
+---
+
+## IP addresses
+
+### Why the forwarded header is not simply read
+
+`x-forwarded-for` is a request header: anyone can send one. Behind a proxy the
+header is genuine, but only for the hops the proxy itself appended — everything
+to the left of those was supplied by the client and can say anything. Reading
+`split(',')[0]` records whatever the visitor typed, which is the opposite of
+evidence.
+
+### Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `TRUSTED_PROXY_COUNT` | `0` | How many proxies append to `x-forwarded-for` before the app sees it. |
+| `TRUSTED_IP_HEADER` | unset | A single header an edge overwrites, e.g. `cf-connecting-ip`. |
+| `IP_RETENTION_DAYS` | `365` | How long a stored address is kept. |
+
+**Set `TRUSTED_PROXY_COUNT` to match the deployment**, or no address is
+recorded at all:
+
+- Direct to the container, nothing in front → `0`
+- One reverse proxy (Traefik, Nginx, Coolify, an Azure Container Apps ingress)
+  → `1`
+- A CDN in front of that proxy → `2`
+
+Only set `TRUSTED_IP_HEADER` when that edge is genuinely in front of the app.
+The header is otherwise just another thing a client can send.
+
+### What is stored, and why "no address" has three meanings
+
+`Lead.ipStatus` and `FormSubmission.ipStatus` record which case applies:
+
+| Status | Meaning |
+|---|---|
+| `RECORDED` | Read from a hop the deployment trusts. |
+| `UNAVAILABLE` | No address was offered at all. |
+| `UNTRUSTED` | A forwarded address arrived from a hop that is not trusted, and was discarded. |
+| `PURGED` | Recorded once, then removed by the retention period. |
+
+A bare null would conflate all four.
+
+### Other guarantees
+
+- **No browser-supplied IP field is accepted.** There is no such input; the
+  resolver only reads headers, and only the trusted hop of those.
+- **IPv4 and IPv6** both parse, including `::ffff:` mapped form, compression,
+  ports and brackets.
+- **IP geolocation is never the source of the selected country.** The market
+  comes from the URL prefix the visitor actually requested.
+- **Access is a separate permission** (`leads.viewIp`). The address is not sent
+  to the browser at all for a user without it, and the export column is absent
+  rather than blank.
+- **Collection is disclosed** in the default notice's purpose text.
+
+### Retention
+
+`IP_RETENTION_DAYS` is read by `ipRetentionDays()`. **A scheduled purge is not
+yet wired up** — see the open decisions below.
+
+---
+
+## Where the controls are
+
+| Control | Location |
+|---|---|
+| Notice wording, purpose, withdrawal text, policy links and versions | Admin → Leads & CRM → **Consent notice** |
+| Per-form lawful basis, marketing box, Terms box, "collects personal data" | Admin → Forms → *a form* → **Settings** tab → Consent |
+| Consent column and filter | Admin → **Leads** |
+| Evidence, history, withdrawal, IP | Admin → Leads → *a lead* → **Consent & privacy** |
+| Submitted fields with original labels | Admin → Leads → *a lead* → **Submitted form** |
+| Consent columns in exports | Admin → Leads → **Export** |
+
+Permissions: `leads.view` to read, `leads.viewIp` for addresses,
+`leads.manageConsent` to publish notices and record withdrawals,
+`leads.export` for exports.
+
+---
+
+## Open decisions — these need a person
+
+These are not defects. They are choices the code cannot make.
+
+1. **Which law applies to which market.** The DPDP Act and the GDPR differ on
+   lawful bases, children's data, notice content and cross-border transfer. The
+   application supports one notice per market; which markets need their own
+   wording is a business call.
+
+2. **Commencement.** The DPDP Act's obligations commence in stages by
+   notification. Whether the obligations this implements are in force for your
+   operations on a given date needs checking against the current notifications —
+   the code does not gate anything on a date.
+
+3. **Lawful basis per form.** Every form defaults to `CONSENT`, which makes the
+   tick box mandatory. A quotation request may be better placed on contract
+   performance, and a fraud-prevention log on legitimate interest. Each form's
+   basis is now a setting; someone has to set it.
+
+4. **Whether the default purpose text is true.** The shipped wording says the
+   details are used to respond to the enquiry, prepare a quotation, keep a
+   record of correspondence, and that the IP is recorded to detect abuse. If the
+   business does more than that — enrichment, scoring, sharing with a vendor —
+   the notice must say so before consent to it means anything.
+
+5. **Retention periods, and the purge job.** `IP_RETENTION_DAYS` is read but
+   nothing deletes on a schedule yet. Decide the period for IP addresses, for
+   submissions, and for leads, then wire a purge into the existing cron route
+   (`/api/internal/cron/backup` is the model). Until then, addresses are kept
+   indefinitely.
+
+6. **The Privacy Policy and Terms pages themselves.** The notice links to
+   `/privacy` and `/terms` by default. Those pages must exist, must actually
+   describe this processing, and must carry the version strings entered in the
+   notice.
+
+7. **A data-subject request route.** The withdrawal text points at "the address
+   on our Privacy Policy". Someone has to own that mailbox and a process for
+   access, correction and erasure requests. The admin can record a withdrawal;
+   it cannot answer an access request on its own.
+
+8. **Existing leads.** Leads captured before this shipped have no consent
+   evidence and display "Not recorded". **Nothing backfills them, and nothing
+   should.** Whether those leads may still be contacted, and on what basis, is a
+   decision to take deliberately.
+
+9. **Notifying the notice change.** Publishing a new notice version does not
+   notify anyone who consented to an earlier one. Whether a material change
+   requires re-consent is a legal judgement.
+
+10. **Processors.** Submissions are emailed to notification addresses and may
+    pass through an SMTP provider. Those are processors, and the notice does not
+    currently name them.

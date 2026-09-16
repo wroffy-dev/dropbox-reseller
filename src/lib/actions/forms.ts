@@ -78,6 +78,10 @@ export async function saveForm(
       createsLead: input.createsLead,
       notifyEmails: input.notifyEmails,
       consentText: input.consentText ? sanitizeText(input.consentText) : null,
+      lawfulBasis: input.lawfulBasis,
+      collectsPersonalData: input.collectsPersonalData,
+      offerMarketingConsent: input.offerMarketingConsent,
+      requireTermsAcceptance: input.requireTermsAcceptance,
       requireCaptcha: input.requireCaptcha,
       // Omitted by a payload that does not mean to restyle the form, in which
       // case `undefined` leaves the stored design untouched rather than wiping
@@ -205,6 +209,10 @@ export async function duplicateForm(formId: string): Promise<ActionResult<{ id: 
         createsLead: source.createsLead,
         notifyEmails: source.notifyEmails,
         consentText: source.consentText,
+        lawfulBasis: source.lawfulBasis,
+        collectsPersonalData: source.collectsPersonalData,
+        offerMarketingConsent: source.offerMarketingConsent,
+        requireTermsAcceptance: source.requireTermsAcceptance,
         requireCaptcha: source.requireCaptcha,
         fields: {
           create: source.fields.map((field) => ({

@@ -105,9 +105,15 @@ export default async function CountriesAdmin({
         'localBusinessType',
         'latitude',
         'longitude',
+        'robotsDisallow',
+        'robotsAllow',
       ] as const
     ).map((key) => [key, settings?.[key] ?? '']),
   );
+
+  // The two booleans travel as strings, like every other value in this form.
+  settingsValues.noIndexCountry = String(settings?.noIndexCountry ?? false);
+  settingsValues.excludeFromSitemap = String(settings?.excludeFromSitemap ?? false);
 
   return (
     <div className="mx-auto max-w-5xl">

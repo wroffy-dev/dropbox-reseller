@@ -68,6 +68,14 @@ export const countrySchema = z.object({
 export type CountryInput = z.infer<typeof countrySchema>;
 
 export const countrySettingsSchema = z.object({
+  // --- crawler rules --------------------------------------------------------
+  // Free text, one path per line. The compiler in lib/seo/robots.ts is what
+  // cleans, prefixes and refuses them — validating shape here as well would be
+  // two places to keep in agreement.
+  robotsDisallow: optional(2000),
+  robotsAllow: optional(2000),
+  noIndexCountry: z.coerce.boolean().default(false),
+  excludeFromSitemap: z.coerce.boolean().default(false),
   companyName: optional(160),
   legalName: optional(160),
   salesPhone: optional(40),

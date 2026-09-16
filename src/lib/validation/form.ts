@@ -98,8 +98,22 @@ export const formInputSchema = z.object({
     .enum(['CONSENT', 'CONTRACT', 'LEGITIMATE_INTEREST', 'LEGAL_OBLIGATION'])
     .default('CONSENT'),
   collectsPersonalData: z.boolean().default(true),
-  offerMarketingConsent: z.boolean().default(true),
+  /*
+   * Off by default, like `requireCaptcha` below and for the same reason: a
+   * payload that does not mention marketing must not switch it on. It is also
+   * the only default that is valid on its own — the default lawful basis is
+   * CONSENT, which makes the tick box required, and marketing cannot ride on a
+   * required box. Defaulting to true would make every payload that omits these
+   * settings fail the very check below.
+   */
+  offerMarketingConsent: z.boolean().default(false),
   requireTermsAcceptance: z.boolean().default(false),
+  /**
+   * The wording beside this form's one tick box. Empty means "compose it from
+   * the purposes the box covers", which is what every form that has never been
+   * given a label does.
+   */
+  consentCombinedLabel: optional(600),
   // Defaults to false so a payload from an older client — or an existing form
   // saved before this existed — never silently switches the CAPTCHA on.
   requireCaptcha: z.boolean().default(false),

@@ -64,6 +64,8 @@ export type FormBuilderValues = {
   collectsPersonalData: boolean;
   offerMarketingConsent: boolean;
   requireTermsAcceptance: boolean;
+  /** Empty composes the label from the purposes the tick box covers. */
+  consentCombinedLabel: string;
   requireCaptcha: boolean;
   fields: BuilderField[];
 };
@@ -127,8 +129,15 @@ export const EMPTY_FORM: FormBuilderValues = {
   leadSource: 'Website Form',
   lawfulBasis: 'CONSENT',
   collectsPersonalData: true,
-  offerMarketingConsent: true,
+  /*
+   * Off, so the defaults are a configuration that can actually be drawn: the
+   * default lawful basis is CONSENT, which makes the tick box required, and
+   * marketing cannot ride on a required box. An administrator turns it on
+   * after choosing a basis that leaves the box optional.
+   */
+  offerMarketingConsent: false,
   requireTermsAcceptance: false,
+  consentCombinedLabel: '',
   countryId: '',
   defaultProductId: '',
   createsLead: true,

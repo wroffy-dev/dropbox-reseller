@@ -51,6 +51,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/toast';
 import { Spinner } from '@/components/ui/icons';
+import { Alert } from '@/components/ui/states';
+import { buildCombinedLabel, marketingConflict } from '@/lib/privacy/consent';
 import { slugify } from '@/lib/utils/slug';
 import { cn } from '@/lib/utils/cn';
 
@@ -141,6 +143,25 @@ export function FormBuilder({
     set('fields', arrayMove(values.fields, oldIndex, newIndex));
   }
 
+  /*
+   * Shown while the administrator is still choosing, not only after a rejected
+   * save. The same function decides both, so the screen cannot warn about one
+   * thing and the server refuse another.
+   */
+  const consentConflict = marketingConflict(values);
+
+  /** What an empty label will render as, so the field shows its own default. */
+  const combinedPlaceholder = buildCombinedLabel({
+    presentsEnquiry: values.collectsPersonalData && values.lawfulBasis === 'CONSENT',
+    presentsTerms: values.collectsPersonalData && values.requireTermsAcceptance,
+    presentsMarketing:
+      values.collectsPersonalData &&
+      values.offerMarketingConsent &&
+      !consentConflict &&
+      values.lawfulBasis !== 'CONSENT' &&
+      !values.requireTermsAcceptance,
+  });
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
@@ -159,6 +180,7 @@ export function FormBuilder({
       collectsPersonalData: values.collectsPersonalData,
       offerMarketingConsent: values.offerMarketingConsent,
       requireTermsAcceptance: values.requireTermsAcceptance,
+      consentCombinedLabel: values.consentCombinedLabel,
       description: values.description || null,
       fields: values.fields.map(toFieldPayload),
     };
@@ -339,8 +361,9 @@ export function FormBuilder({
                 <div>
                   <p className="text-sm font-medium text-content">Consent</p>
                   <p className="mt-1 text-xs leading-relaxed text-muted">
-                    The wording itself is managed once, under Leads &amp; CRM → Consent notice.
-                    These settings decide what this form asks for.
+                    This form shows <strong className="font-medium text-content">one</strong> tick
+                    box. The wording it covers is managed once, under Leads &amp; CRM → Consent
+                    notice; these settings decide which parts of it this form asks for.
                   </p>
                 </div>
 
@@ -375,16 +398,37 @@ export function FormBuilder({
                     <Switch
                       checked={values.offerMarketingConsent}
                       onChange={(next) => set('offerMarketingConsent', next)}
-                      label="Offer the optional marketing tick box"
-                      hint="Never required to submit, whatever this is set to."
+                      label="Offer marketing consent in the tick box"
+                      hint="Adds the marketing sentence to the box. Only possible when the box is optional, and only when the notice actually has marketing wording — clearing that wording turns this off everywhere."
                     />
+
+                    {consentConflict ? (
+                      <Alert tone="warning" title="Marketing cannot be offered on this form">
+                        {consentConflict}
+                      </Alert>
+                    ) : null}
 
                     <Switch
                       checked={values.requireTermsAcceptance}
                       onChange={(next) => set('requireTermsAcceptance', next)}
                       label="Require Terms & Conditions acceptance"
-                      hint="Adds a second required tick box, recorded separately from data-processing consent."
+                      hint="Adds the Terms sentence and link to the box, and makes the box required. Recorded separately from data-processing consent."
                     />
+
+                    <Field
+                      label="Tick box wording"
+                      htmlFor="form-consent-label"
+                      hint="The sentence beside the box. Leave empty to compose one from the purposes it covers. It is not a claim of GDPR or DPDP compliance — see docs/CONSENT-AND-PRIVACY.md."
+                      error={errors.consentCombinedLabel?.[0]}
+                    >
+                      <Textarea
+                        id="form-consent-label"
+                        rows={2}
+                        value={values.consentCombinedLabel}
+                        placeholder={combinedPlaceholder}
+                        onChange={(e) => set('consentCombinedLabel', e.target.value)}
+                      />
+                    </Field>
                   </>
                 ) : null}
 

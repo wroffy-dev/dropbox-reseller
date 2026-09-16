@@ -80,15 +80,11 @@ export function PublicFormRenderer({
   const router = useRouter();
   const [pending, setPending] = React.useState(false);
   /*
-   * Unticked on mount and never seeded from anything. A consent box that
-   * arrives pre-ticked has not recorded a decision, whatever the evidence row
-   * later says about it.
+   * The one consent box. Unticked on mount and never seeded from anything: a
+   * box that arrives pre-ticked has not recorded a decision, whatever the
+   * evidence row later says about it.
    */
-  const [consent, setConsent] = React.useState({
-    enquiry: false,
-    marketing: false,
-    terms: false,
-  });
+  const [consentAccepted, setConsentAccepted] = React.useState(false);
   const [done, setDone] = React.useState<string | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string[]>>({});
@@ -162,53 +158,70 @@ export function PublicFormRenderer({
       submitted[field.name] = multi && all.length > 1 ? all : (all[0] ?? '');
     }
 
-    const result = await submitForm({
-      formSlug: form.slug,
-      productId: productId ?? null,
-      leadMagnetId: leadMagnetId ?? null,
-      website: String(data.get('website') ?? ''),
-      elapsedMs: Date.now() - mountedAt.current,
-      values: submitted,
-      attribution: collectAttribution({ ctaLabel, ctaLocation }),
-      captchaToken: captcha?.token ?? null,
-      captchaAnswer: form.requireCaptcha ? captchaAnswer : null,
-      /*
-       * What was shown and what was ticked. The version travels so the server
-       * can refuse a page that has been open since before the notice changed;
-       * the server still re-reads the requirement itself, so this is evidence
-       * of what the visitor saw, never a statement of what is required.
-       */
-      consent: {
-        noticeKey: form.consent.noticeKey,
-        noticeVersion: form.consent.noticeVersion,
-        enquiry: consent.enquiry,
-        marketing: consent.marketing,
-        terms: consent.terms,
-      },
-    });
+    /*
+     * Everything from here is wrapped, and `pending` is cleared in `finally`.
+     *
+     * A server action can fail in ways that are not a rejected submission — a
+     * dropped connection, a deploy mid-request, an error thrown before the
+     * action returns. Without this the promise rejects, `setPending(false)`
+     * is never reached, and the button reads "Sending…" for as long as the
+     * visitor is willing to look at it, with no error and no way back. The
+     * form's own inputs are uncontrolled and nothing resets them, so whatever
+     * was typed is still there to resubmit.
+     */
+    try {
+      const result = await submitForm({
+        formSlug: form.slug,
+        productId: productId ?? null,
+        leadMagnetId: leadMagnetId ?? null,
+        website: String(data.get('website') ?? ''),
+        elapsedMs: Date.now() - mountedAt.current,
+        values: submitted,
+        attribution: collectAttribution({ ctaLabel, ctaLocation }),
+        captchaToken: captcha?.token ?? null,
+        captchaAnswer: form.requireCaptcha ? captchaAnswer : null,
+        /*
+         * What was shown and what was ticked. The version travels so the
+         * server can refuse a page that has been open since before the notice
+         * changed; the server still re-reads the requirement itself, so this
+         * is evidence of what the visitor saw, never a statement of what is
+         * required — and which purposes the tick covers is decided there,
+         * from what this page was told to display.
+         */
+        consent: {
+          noticeKey: form.consent.noticeKey,
+          noticeVersion: form.consent.noticeVersion,
+          accepted: consentAccepted,
+        },
+      });
 
-    setPending(false);
-
-    if (!result.ok) {
-      setFormError(result.error);
-      setFieldErrors(result.fieldErrors ?? {});
-      // A rejected answer burns the challenge: issue a new question so the
-      // visitor is never asked to re-answer one the server will not accept.
-      if (form.requireCaptcha) {
-        setCaptchaAnswer('');
-        loadCaptcha();
+      if (!result.ok) {
+        setFormError(result.error);
+        setFieldErrors(result.fieldErrors ?? {});
+        // A rejected answer burns the challenge: issue a new question so the
+        // visitor is never asked to re-answer one the server will not accept.
+        if (form.requireCaptcha) {
+          setCaptchaAnswer('');
+          loadCaptcha();
+        }
+        return;
       }
-      return;
-    }
 
-    trackConversion('generate_lead', { form: form.slug, product_id: productId ?? undefined });
+      trackConversion('generate_lead', { form: form.slug, product_id: productId ?? undefined });
 
-    const redirectUrl = result.data?.redirectUrl;
-    if (redirectUrl) {
-      router.push(redirectUrl);
-      return;
+      const redirectUrl = result.data?.redirectUrl;
+      if (redirectUrl) {
+        router.push(redirectUrl);
+        return;
+      }
+      setDone(result.data?.message ?? form.successMessage);
+    } catch {
+      // Deliberately no detail: whatever went wrong server-side is not the
+      // visitor's to read, and the only useful instruction is to try again.
+      setFormError('Something went wrong sending this. Please try again.');
+    } finally {
+      setPending(false);
     }
-    setDone(result.data?.message ?? form.successMessage);
   }
 
   /** Scoped stylesheet: responsive overrides and the state rules. */
@@ -373,8 +386,8 @@ export function PublicFormRenderer({
 
         <ConsentBlock
           requirement={form.consent}
-          value={consent}
-          onChange={setConsent}
+          checked={consentAccepted}
+          onChange={setConsentAccepted}
           errors={fieldErrors}
           idPrefix={form.slug}
         />

@@ -8,6 +8,7 @@ import { recordAudit } from '@/lib/services/audit';
 import { formInputSchema, duplicateFieldNames } from '@/lib/validation/form';
 import { uniqueSlug, slugify } from '@/lib/utils/slug';
 import { sanitizeText } from '@/lib/utils/sanitize';
+import { marketingConflict } from '@/lib/privacy/consent';
 import { toCsv } from '@/lib/utils/csv';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
 import { resolveActionCountry } from '@/lib/country/admin';
@@ -56,6 +57,20 @@ export async function saveForm(
     }
 
     /*
+     * A form shows one tick box. Optional marketing cannot ride on a box the
+     * visitor has to tick to submit, because then "send me marketing" is the
+     * price of getting an answer — so this combination is refused here rather
+     * than quietly resolved, and the administrator is told which switch to
+     * change. (`resolveConsentRequirement` also drops marketing from a form
+     * that already holds this combination, so no visitor ever sees it; this is
+     * what stops a new one being saved.)
+     */
+    const conflict = marketingConflict(input);
+    if (conflict) {
+      return failure(conflict, { offerMarketingConsent: [conflict] });
+    }
+
+    /*
      * A form is either shared by every market (null) or bound to one. The id
      * is validated against the markets the user may work in, so a crafted
      * payload cannot bind a form to a market they cannot reach.
@@ -82,6 +97,9 @@ export async function saveForm(
       collectsPersonalData: input.collectsPersonalData,
       offerMarketingConsent: input.offerMarketingConsent,
       requireTermsAcceptance: input.requireTermsAcceptance,
+      consentCombinedLabel: input.consentCombinedLabel
+        ? sanitizeText(input.consentCombinedLabel)
+        : null,
       requireCaptcha: input.requireCaptcha,
       // Omitted by a payload that does not mean to restyle the form, in which
       // case `undefined` leaves the stored design untouched rather than wiping
@@ -213,6 +231,7 @@ export async function duplicateForm(formId: string): Promise<ActionResult<{ id: 
         collectsPersonalData: source.collectsPersonalData,
         offerMarketingConsent: source.offerMarketingConsent,
         requireTermsAcceptance: source.requireTermsAcceptance,
+        consentCombinedLabel: source.consentCombinedLabel,
         requireCaptcha: source.requireCaptcha,
         fields: {
           create: source.fields.map((field) => ({

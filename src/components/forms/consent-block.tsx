@@ -1,148 +1,158 @@
 'use client';
 
 import * as React from 'react';
-import type { ConsentRequirement } from '@/lib/privacy/consent';
+import { showsCheckbox, type ConsentRequirement } from '@/lib/privacy/consent';
 
 /**
  * The consent block under a public form.
  *
- * Every box starts unticked and stays a real checkbox — no pre-selected state,
- * no "by submitting you agree" wording standing in for a choice. The three
- * permissions are separate controls because they are separate decisions: a
- * visitor may want their enquiry answered without wanting marketing, and
- * accepting Terms is not the same act as permitting data processing.
+ * **One** tick box, whatever the form asks for. Three boxes made a visitor
+ * work through three decisions to send one enquiry, and the two that were
+ * mandatory were not really decisions at all — they were a gate with two
+ * latches. One box, with everything it covers written out beneath it, asks the
+ * same question once and reads as a sentence rather than a checklist.
+ *
+ * What the box covers is still recorded separately, because "did this person
+ * agree to marketing?" and "did this person accept the Terms?" are different
+ * questions the CRM has to answer. That split happens on the server, from what
+ * this block actually displayed — never from the box alone.
+ *
+ * The box starts unticked and is never pre-selected. Marketing wording only
+ * appears when the box is optional, so ticking to get an answer can never also
+ * mean subscribing.
  *
  * The policy links open in a new tab. A visitor who wants to read the privacy
  * notice before ticking must not lose what they have typed to do it.
  */
 export function ConsentBlock({
   requirement,
-  value,
+  checked,
   onChange,
   errors,
   idPrefix,
 }: {
   requirement: ConsentRequirement;
-  value: { enquiry: boolean; marketing: boolean; terms: boolean };
-  onChange: (next: { enquiry: boolean; marketing: boolean; terms: boolean }) => void;
+  checked: boolean;
+  onChange: (next: boolean) => void;
   errors: Record<string, string[]>;
   idPrefix: string;
 }) {
+  const id = `${idPrefix}-consent`;
+  const detailId = `${id}-detail`;
+  const errorId = `${id}-error`;
+
   if (!requirement.applies) return null;
 
   const notice = requirement.notice;
-  const enquiryError = errors._consentEnquiry?.[0];
-  const termsError = errors._consentTerms?.[0];
-  const noticeError = errors._consentNotice?.[0];
+  const error = errors._consent?.[0] ?? errors._consentNotice?.[0];
+  const hasBox = showsCheckbox(requirement);
 
-  const set = (patch: Partial<typeof value>) => onChange({ ...value, ...patch });
+  const privacyHref = policyHref(notice.privacyUrl);
+  const termsHref = requirement.presentsTerms ? policyHref(notice.termsUrl) : null;
 
   return (
     <div className="fd-consent mt-4 space-y-3 text-sm">
       <p className="fd-help leading-relaxed">{notice.purposeText}</p>
 
-      {noticeError ? (
-        <p role="alert" className="fd-error">
-          {noticeError}
-        </p>
-      ) : null}
-
-      {requirement.requireEnquiry ? (
-        <ConsentCheckbox
-          id={`${idPrefix}-consent-enquiry`}
-          checked={value.enquiry}
-          onChange={(next) => set({ enquiry: next })}
-          label={notice.enquiryLabel}
-          required
-          error={enquiryError}
-        />
-      ) : null}
-
-      {requirement.requireTerms ? (
-        <ConsentCheckbox
-          id={`${idPrefix}-consent-terms`}
-          checked={value.terms}
-          onChange={(next) => set({ terms: next })}
-          label={notice.termsLabel}
-          required
-          error={termsError}
-        />
-      ) : null}
-
-      {requirement.offerMarketing ? (
-        <ConsentCheckbox
-          id={`${idPrefix}-consent-marketing`}
-          checked={value.marketing}
-          onChange={(next) => set({ marketing: next })}
-          label={notice.marketingLabel}
-        />
-      ) : null}
-
-      <p className="fd-help leading-relaxed">
-        {notice.withdrawalText}{' '}
-        <PolicyLink href={notice.privacyUrl} version={notice.privacyVersion}>
-          Privacy Policy
-        </PolicyLink>
-        {' · '}
-        <PolicyLink href={notice.termsUrl} version={notice.termsVersion}>
-          Terms &amp; Conditions
-        </PolicyLink>
-      </p>
-    </div>
-  );
-}
-
-function ConsentCheckbox({
-  id,
-  checked,
-  onChange,
-  label,
-  required,
-  error,
-}: {
-  id: string;
-  checked: boolean;
-  onChange: (next: boolean) => void;
-  label: string;
-  required?: boolean;
-  error?: string;
-}) {
-  const errorId = error ? `${id}-error` : undefined;
-  return (
-    <div>
-      {/*
-        * A real <input type="checkbox"> inside its <label>: the whole line is
-        * clickable, Space toggles it, and a screen reader reads the wording as
-        * the control's name without an aria-label repeating it.
-        */}
-      <label htmlFor={id} className="flex cursor-pointer items-start gap-2.5 leading-relaxed">
-        <input
-          id={id}
-          type="checkbox"
-          checked={checked}
-          onChange={(event) => onChange(event.target.checked)}
-          aria-required={required || undefined}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={errorId}
-          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
-        />
-        <span>
-          {label}
-          {required ? (
-            <span className="fd-required" aria-hidden="true">
-              {' '}
-              *
+      {hasBox ? (
+        <div>
+          {/*
+            * A real <input type="checkbox"> inside its <label>: the whole line
+            * is clickable, Space toggles it, and a screen reader reads the
+            * wording as the control's name. The detail below is attached with
+            * aria-describedby rather than folded into the name, so the name
+            * stays one readable sentence.
+            */}
+          <label htmlFor={id} className="flex cursor-pointer items-start gap-2.5 leading-relaxed">
+            <input
+              id={id}
+              type="checkbox"
+              checked={checked}
+              onChange={(event) => onChange(event.target.checked)}
+              aria-required={requirement.requireCheckbox || undefined}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={[detailId, error ? errorId : null].filter(Boolean).join(' ')}
+              className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
+            />
+            <span>
+              {requirement.combinedLabel}
+              {requirement.requireCheckbox ? (
+                <span className="fd-required" aria-hidden="true">
+                  {' '}
+                  *
+                </span>
+              ) : null}
             </span>
+          </label>
+
+          {error ? (
+            <p id={errorId} role="alert" className="fd-error mt-1 pl-[1.625rem]">
+              {error}
+            </p>
           ) : null}
-        </span>
-      </label>
-      {error ? (
-        <p id={errorId} role="alert" className="fd-error mt-1 pl-[1.625rem]">
+        </div>
+      ) : null}
+
+      {/*
+        * What the box covers, in full. Only the purposes actually in force
+        * appear — a form that does not ask for Terms shows no Terms sentence
+        * and no Terms link, so there is nothing on screen the record cannot
+        * account for.
+        */}
+      <div id={detailId} className="fd-consent-detail space-y-1.5">
+        {requirement.presentsEnquiry ? (
+          <p className="fd-help leading-relaxed">{notice.enquiryLabel}</p>
+        ) : null}
+        {requirement.presentsMarketing ? (
+          <p className="fd-help leading-relaxed">{notice.marketingLabel}</p>
+        ) : null}
+        {requirement.presentsTerms ? (
+          <p className="fd-help leading-relaxed">{notice.termsLabel}</p>
+        ) : null}
+
+        <p className="fd-help leading-relaxed">
+          {notice.withdrawalText}
+          {privacyHref ? (
+            <>
+              {' '}
+              <PolicyLink href={privacyHref} version={notice.privacyVersion}>
+                Privacy Policy
+              </PolicyLink>
+            </>
+          ) : null}
+          {termsHref ? (
+            <>
+              {privacyHref ? ' · ' : ' '}
+              <PolicyLink href={termsHref} version={notice.termsVersion}>
+                Terms &amp; Conditions
+              </PolicyLink>
+            </>
+          ) : null}
+        </p>
+      </div>
+
+      {!hasBox && error ? (
+        <p role="alert" className="fd-error">
           {error}
         </p>
       ) : null}
     </div>
   );
+}
+
+/**
+ * A policy link target, or null when there is nothing safe to link to.
+ *
+ * An unconfigured or unusable URL produces no link rather than a dead one: a
+ * consent notice pointing at `javascript:` or at nothing is worse than a
+ * notice that simply does not offer the link.
+ */
+function policyHref(raw: string | null | undefined): string | null {
+  const value = (raw ?? '').trim();
+  if (!value) return null;
+  if (/^https?:\/\/[^\s]+$/i.test(value)) return value;
+  if (value.startsWith('/') && !value.startsWith('//')) return value;
+  return null;
 }
 
 /**
@@ -161,9 +171,8 @@ function PolicyLink({
   version?: string | null;
   children: React.ReactNode;
 }) {
-  const safe = /^(https?:\/\/|\/)/i.test(href) ? href : `/${href.replace(/^\/+/, '')}`;
   return (
-    <a href={safe} target="_blank" rel="noopener noreferrer" className="fd-consent-link underline">
+    <a href={href} target="_blank" rel="noopener noreferrer" className="fd-consent-link underline">
       {children}
       {version ? ` (v${version})` : null}
     </a>

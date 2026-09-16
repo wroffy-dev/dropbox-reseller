@@ -10,8 +10,11 @@ import { Dialog } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/toast';
 import { recordConsentWithdrawal } from '@/lib/actions/leads';
 import {
+  BUILT_IN_NOTICE_VERSION,
   CONSENT_DISPLAY_LABELS,
+  MARKETING_DISPLAY_LABELS,
   consentDisplayState,
+  marketingDisplayState,
   type ConsentDisplayState,
 } from '@/lib/privacy/consent';
 import { cn } from '@/lib/utils/cn';
@@ -32,11 +35,17 @@ export type ConsentRecordView = {
   lawfulBasis: 'CONSENT' | 'CONTRACT' | 'LEGITIMATE_INTEREST' | 'LEGAL_OBLIGATION';
   enquiryConsent: boolean;
   marketingConsent: boolean;
+  /** Was marketing on screen at all? Null on records written before this. */
+  marketingPresented: boolean | null;
   termsAccepted: boolean;
   termsRequired: boolean;
   purposeText: string;
   noticeKey: string;
   noticeVersion: number;
+  /** Null for the shared notice; otherwise the market it was published for. */
+  noticeScope: string | null;
+  /** The exact sentence beside the tick box. Null before there was one. */
+  displayedLabel: string | null;
   /** The wording as it was shown, not as it reads today. */
   noticeText: { enquiryLabel: string; marketingLabel: string; termsLabel: string } | null;
   privacyUrl: string;
@@ -85,6 +94,22 @@ export function ConsentPanel({
       : null,
   );
 
+  /*
+   * Marketing is its own state, not a second reading of the enquiry one.
+   * "Not offered" and "offered and declined" are different facts, and
+   * collapsing them into "Not agreed" is exactly the misleading single boolean
+   * the evidence exists to avoid.
+   */
+  const marketingState = marketingDisplayState(
+    record
+      ? {
+          marketingConsent: record.marketingConsent,
+          marketingPresented: record.marketingPresented,
+          withdrawnAt: record.withdrawnAt ? new Date(record.withdrawnAt) : null,
+        }
+      : null,
+  );
+
   async function withdraw() {
     if (!record) return;
     setBusy(true);
@@ -125,8 +150,8 @@ export function ConsentPanel({
               />
               <Row
                 label="Marketing"
-                value={record.marketingConsent ? 'Agreed' : 'Not agreed'}
-                tone={record.marketingConsent ? 'good' : 'muted'}
+                value={MARKETING_DISPLAY_LABELS[marketingState]}
+                tone={marketingState === 'AGREED' ? 'good' : 'muted'}
               />
               <Row
                 label="Terms & Conditions"
@@ -147,9 +172,12 @@ export function ConsentPanel({
                   // Version 0 is the wording built into the site, shown when no
                   // notice has been published in the CMS. “v0” would read like a
                   // draft; it is not one.
-                  record.noticeVersion === 0
-                    ? `${record.noticeKey} — built-in wording`
-                    : `${record.noticeKey} v${record.noticeVersion}`
+                  [
+                    record.noticeVersion === BUILT_IN_NOTICE_VERSION
+                      ? `${record.noticeKey} — built-in wording`
+                      : `${record.noticeKey} v${record.noticeVersion}`,
+                    record.noticeScope ? `(${record.noticeScope})` : '(every market)',
+                  ].join(' ')
                 }
               />
               {ip.visible ? (
@@ -175,15 +203,33 @@ export function ConsentPanel({
               <p className="mt-1 leading-relaxed text-content">{record.purposeText}</p>
             </div>
 
+            {record.displayedLabel ? (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  Tick box wording
+                </p>
+                <p className="mt-1 leading-relaxed text-content">“{record.displayedLabel}”</p>
+              </div>
+            ) : null}
+
             {record.noticeText ? (
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                  Exact wording accepted
+                  What it covered
                 </p>
+                {/*
+                  * Only what was actually on screen. A sentence that was not
+                  * shown is not listed as "accepted", whatever the notice row
+                  * happens to contain today.
+                  */}
                 <ul className="mt-1 space-y-1.5 leading-relaxed text-content">
-                  <li>“{record.noticeText.enquiryLabel}”</li>
+                  {record.lawfulBasis === 'CONSENT' ? (
+                    <li>“{record.noticeText.enquiryLabel}”</li>
+                  ) : null}
                   {record.termsRequired ? <li>“{record.noticeText.termsLabel}”</li> : null}
-                  <li className="text-muted">“{record.noticeText.marketingLabel}”</li>
+                  {record.marketingPresented && record.noticeText.marketingLabel ? (
+                    <li className="text-muted">“{record.noticeText.marketingLabel}”</li>
+                  ) : null}
                 </ul>
               </div>
             ) : null}
@@ -192,9 +238,11 @@ export function ConsentPanel({
               <PolicyLink href={record.privacyUrl} version={record.privacyVersion}>
                 Privacy Policy
               </PolicyLink>
-              <PolicyLink href={record.termsUrl} version={record.termsVersion}>
-                Terms &amp; Conditions
-              </PolicyLink>
+              {record.termsRequired ? (
+                <PolicyLink href={record.termsUrl} version={record.termsVersion}>
+                  Terms &amp; Conditions
+                </PolicyLink>
+              ) : null}
             </div>
 
             {record.events.length > 0 ? (

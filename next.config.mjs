@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+
 /**
  * HSTS, only where it is both meaningful and safe.
  *
@@ -23,8 +26,62 @@ const hstsHeader =
       ]
     : [];
 
+/**
+ * The running application's identity, frozen into the build.
+ *
+ * `package.json` is the single authoritative source for the version: one file,
+ * changed by one command, and the same file npm itself versions — so the
+ * number in Settings is necessarily the number of the artefact that is
+ * running. A database column would be editable to say anything at all, which
+ * is exactly what a version must not be.
+ *
+ * Inlined here rather than imported at runtime because the standalone output
+ * does not ship the repository's package.json in a place the app can reliably
+ * read, and a version that sometimes resolves is worse than one that always
+ * does.
+ */
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+
+/**
+ * The commit the image was built from, when the build was told.
+ *
+ * `.git` is excluded from the Docker build context, so a local `git rev-parse`
+ * cannot be the mechanism in production — it is only a convenience for a
+ * developer running `next build` in a checkout. CI and PaaS builders each name
+ * this differently; all the common ones are accepted so nothing has to be
+ * configured by hand for the field to be populated.
+ */
+function buildCommit() {
+  const fromEnv =
+    process.env.BUILD_COMMIT ||
+    process.env.SOURCE_COMMIT ||
+    process.env.GITHUB_SHA ||
+    process.env.COOLIFY_COMMIT_SHA ||
+    process.env.VERCEL_GIT_COMMIT_SHA;
+  if (fromEnv) return fromEnv.slice(0, 12);
+
+  try {
+    return execSync('git rev-parse --short=12 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim();
+  } catch {
+    // No git, no build arg: the field is simply absent rather than invented.
+    return '';
+  }
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  /*
+   * Read by src/lib/app-version.ts. These are build-time constants: they
+   * change when a new image is built, and never when content is edited, a
+   * consent notice is published or a container restarts.
+   */
+  env: {
+    APP_VERSION: pkg.version,
+    APP_RELEASE_DATE: pkg.release?.date ?? '',
+    APP_BUILD_COMMIT: buildCommit(),
+  },
   output: 'standalone',
   reactStrictMode: true,
   poweredByHeader: false,

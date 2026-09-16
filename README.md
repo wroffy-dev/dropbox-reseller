@@ -5,6 +5,11 @@ is entirely content-managed: pages, products, blog posts, navigation, branding,
 SEO and tracking are all edited from the admin panel, with no code changes and
 no redeploy.
 
+**Version 1.1.0** — see [CHANGELOG.md](./CHANGELOG.md) for what changed and
+[VERSION_README.md](./VERSION_README.md) for how releases are versioned and
+deployed. The running version is shown in Admin → Settings → Application
+information.
+
 ---
 
 ## Contents
@@ -29,6 +34,8 @@ no redeploy.
 - [Security notes](#security-notes)
 - [Troubleshooting](#troubleshooting)
 - [Countries](docs/MULTI-COUNTRY.md)
+- [Versioning and releases](VERSION_README.md)
+- [Changelog](CHANGELOG.md)
 
 ---
 

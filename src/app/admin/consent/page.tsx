@@ -50,10 +50,11 @@ export default async function ConsentAdmin() {
         describes what you do with the details. See docs/CONSENT-AND-PRIVACY.md for the list.
       </Alert>
 
-      {versions.length === 0 ? (
+      {current.source === 'BUILT_IN' ? (
         <Alert tone="info" className="mb-5" title="No notice published yet">
-          Forms are currently showing the built-in wording below. Publishing a version stores it, so
-          submissions can cite a version number rather than “whatever the code said at the time”.
+          Forms are currently showing the built-in wording below, recorded against version 0.
+          Publishing a version stores it and starts the numbering at 1, so submissions cite a
+          version rather than “whatever the code said at the time”.
         </Alert>
       ) : null}
 

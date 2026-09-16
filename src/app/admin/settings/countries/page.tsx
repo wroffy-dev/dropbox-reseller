@@ -133,6 +133,7 @@ export default async function CountriesAdmin({
       <CountriesManager
         countries={rows}
         settings={settingsValues}
+        sourceName={rows.find((country) => country.isDefault)?.name ?? null}
         selectedId={selected.id}
         canEdit={userCan(user, 'settings.manage')}
       />

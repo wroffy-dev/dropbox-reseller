@@ -20,6 +20,7 @@ import { useToast } from '@/components/ui/toast';
 import { Spinner } from '@/components/ui/icons';
 import { SUPPORTED_CURRENCIES } from '@/lib/utils/money';
 import { CountryPicker } from './country-picker';
+import { SyncPanel } from './sync-panel';
 import { suggestedSlug, suggestedLocale } from '@/lib/country/iso';
 import { cn } from '@/lib/utils/cn';
 
@@ -76,12 +77,15 @@ export function CountriesManager({
   countries,
   settings,
   selectedId,
+  sourceName,
   canEdit,
 }: {
   countries: CountryRow[];
   /** The selected country's settings, already merged for display. */
   settings: CountrySettingsValues;
   selectedId: string;
+  /** The default market's name — the one content is copied from. */
+  sourceName: string | null;
   canEdit: boolean;
 }) {
   const router = useRouter();
@@ -253,6 +257,20 @@ export function CountriesManager({
           country={selected}
           initial={settings}
           canEdit={canEdit}
+        />
+      ) : null}
+
+      {/*
+        * Only on a destination market. The source has nothing to copy into it,
+        * and offering the button there would invite exactly the mistake the
+        * action refuses.
+        */}
+      {selected && !selected.isDefault && sourceName ? (
+        <SyncPanel
+          key={`sync-${selected.id}`}
+          sourceName={sourceName}
+          target={{ id: selected.id, name: selected.name, currency: selected.currency }}
+          canSync={canEdit}
         />
       ) : null}
 

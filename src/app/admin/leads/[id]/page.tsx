@@ -4,6 +4,10 @@ import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { LeadDetail, type LeadDetailData } from '@/components/admin/leads/lead-detail';
+import {
+  ConsentPanel,
+  type ConsentRecordView,
+} from '@/components/admin/leads/consent-panel';
 import { decimalToString } from '@/lib/utils/money';
 
 export const dynamic = 'force-dynamic';
@@ -28,12 +32,37 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       include: {
         product: { select: { id: true, name: true } },
         form: { select: { name: true } },
+        country: { select: { name: true } },
         blogPost: { select: { title: true, slug: true } },
         notes: { orderBy: { createdAt: 'desc' }, include: { author: { select: { name: true } } } },
         activities: {
           orderBy: { createdAt: 'desc' },
           take: 50,
           include: { actor: { select: { name: true } } },
+        },
+        consents: {
+          orderBy: { consentedAt: 'desc' },
+          include: {
+            events: {
+              orderBy: { createdAt: 'asc' },
+              include: { actor: { select: { name: true } } },
+            },
+          },
+        },
+        // The submission behind this lead, so every configured field is
+        // shown — including the custom ones the Lead columns have no home
+        // for — with the labels they carried at the time.
+        submissions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            data: true,
+            fieldLabels: true,
+            formName: true,
+            pageUrl: true,
+            createdAt: true,
+          },
         },
       },
     }),
@@ -107,6 +136,66 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
     })),
   };
 
+  const latest = lead.consents[0] ?? null;
+  const snapshot = (latest?.noticeSnapshot ?? null) as Record<string, string> | null;
+
+  /*
+   * The address is only sent to the browser when the viewer may see it. A
+   * client-side check would still have shipped the value in the page payload,
+   * which is not a restriction at all.
+   */
+  const canSeeIp = userCan(user, 'leads.viewIp');
+
+  const consentRecord: ConsentRecordView | null = latest
+    ? {
+        id: latest.id,
+        lawfulBasis: latest.lawfulBasis,
+        enquiryConsent: latest.enquiryConsent,
+        marketingConsent: latest.marketingConsent,
+        termsAccepted: latest.termsAccepted,
+        termsRequired: latest.termsRequired,
+        purposeText: latest.purposeText,
+        noticeKey: latest.noticeKey,
+        noticeVersion: latest.noticeVersion,
+        noticeText: snapshot
+          ? {
+              enquiryLabel: String(snapshot.enquiryLabel ?? ''),
+              marketingLabel: String(snapshot.marketingLabel ?? ''),
+              termsLabel: String(snapshot.termsLabel ?? ''),
+            }
+          : null,
+        privacyUrl: latest.privacyUrl,
+        privacyVersion: latest.privacyVersion,
+        termsUrl: latest.termsUrl,
+        termsVersion: latest.termsVersion,
+        consentedAt: latest.consentedAt.toISOString(),
+        withdrawnAt: latest.withdrawnAt?.toISOString() ?? null,
+        withdrawnScope: latest.withdrawnScope,
+        events: latest.events.map((event) => ({
+          id: event.id,
+          type: event.type,
+          scope: event.scope,
+          value: event.value,
+          actorName: event.actor?.name ?? null,
+          actorType: event.actorType,
+          note: event.note,
+          createdAt: event.createdAt.toISOString(),
+        })),
+      }
+    : null;
+
+  const submission = lead.submissions[0] ?? null;
+  const labels = (submission?.fieldLabels ?? {}) as Record<string, string>;
+  const submittedFields = submission
+    ? Object.entries((submission.data ?? {}) as Record<string, unknown>).map(([name, value]) => ({
+        name,
+        // The label as it read at submission, falling back to the key when a
+        // field predates label snapshots.
+        label: labels[name] ?? name,
+        value: Array.isArray(value) ? value.join(', ') : String(value ?? ''),
+      }))
+    : [];
+
   return (
     <>
       <AdminPageHeader
@@ -124,6 +213,28 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
           delete: userCan(user, 'leads.delete'),
           createCustomer: userCan(user, 'customers.create'),
         }}
+        submission={
+          submission
+            ? {
+                formName: submission.formName ?? lead.form?.name ?? null,
+                pageUrl: submission.pageUrl,
+                countryName: lead.country.name,
+                submittedAt: submission.createdAt.toISOString(),
+                fields: submittedFields,
+              }
+            : null
+        }
+        consent={
+          <ConsentPanel
+            record={consentRecord}
+            ip={{
+              address: canSeeIp ? lead.ipAddress : null,
+              status: lead.ipStatus,
+              visible: canSeeIp,
+            }}
+            canManage={userCan(user, 'leads.manageConsent')}
+          />
+        }
       />
     </>
   );

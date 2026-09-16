@@ -34,6 +34,14 @@ export type LeadFilters = {
   landingUrl?: string;
   /** 'due' = follow-up on or before today, 'set' = has one, 'none' = has none. */
   followUp?: string;
+  /**
+   * Consent state, as the column shows it.
+   *
+   * 'recorded' | 'none' | 'withdrawn' | 'na' | 'marketing' — the last being
+   * "agreed to marketing and has not withdrawn", which is the set a campaign
+   * may actually be sent to.
+   */
+  consent?: string;
   /** Filter dates against creation or last update. */
   dateField?: string;
   from?: string;
@@ -98,6 +106,35 @@ export function buildLeadWhere(filters: LeadFilters): Prisma.LeadWhereInput {
   // so clicking a bar selects exactly the leads that bar counted.
   if (filters.landingUrl) {
     where.landingUrl = filters.landingUrl === NO_ATTRIBUTION ? null : filters.landingUrl;
+  }
+
+  /*
+   * Consent filters read the evidence, never a flag copied onto the lead. A
+   * denormalised boolean would drift the moment a withdrawal was recorded, and
+   * this is the one place where being out of date is a compliance problem
+   * rather than a cosmetic one.
+   */
+  if (filters.consent === 'recorded') {
+    and.push({ consents: { some: { enquiryConsent: true, withdrawnAt: null } } });
+  } else if (filters.consent === 'none') {
+    // No record at all, or a record that was never agreed to. Leads captured
+    // before consent evidence existed land here, which is the honest place
+    // for them.
+    and.push({
+      OR: [
+        { consents: { none: {} } },
+        { consents: { every: { enquiryConsent: false, lawfulBasis: 'CONSENT' } } },
+      ],
+    });
+  } else if (filters.consent === 'withdrawn') {
+    and.push({ consents: { some: { withdrawnAt: { not: null } } } });
+  } else if (filters.consent === 'na') {
+    and.push({ consents: { some: { lawfulBasis: { not: 'CONSENT' } } } });
+  } else if (filters.consent === 'marketing') {
+    and.push({
+      consents: { some: { marketingConsent: true, withdrawnAt: null } },
+      marketingSuppressedAt: null,
+    });
   }
 
   if (filters.followUp === 'due') {

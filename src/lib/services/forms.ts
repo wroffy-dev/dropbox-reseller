@@ -4,6 +4,8 @@ import { prisma } from '@/lib/db/prisma';
 import type { FormFieldType } from '@prisma/client';
 import { parseFormDesign, type FormDesign } from '@/lib/forms/form-design';
 import { parseFieldSettings, type FieldSettings } from '@/lib/forms/field-settings';
+import type { ConsentRequirement } from '@/lib/privacy/consent';
+import { resolveConsentRequirement } from './consent';
 
 export type PublicFormField = {
   id: string;
@@ -45,6 +47,13 @@ export type PublicForm = {
   /** Presentation, shared by every place this form is rendered. */
   design: FormDesign;
   fields: PublicFormField[];
+  /**
+   * What this form must ask before it may be submitted, resolved from the
+   * form's own settings and the live notice version. The renderer draws it and
+   * the submission handler re-resolves it from the database — the copy that
+   * reaches the browser is what was shown, never what is enforced.
+   */
+  consent: ConsentRequirement;
 };
 
 function parseOptions(raw: unknown): Array<{ label: string; value: string }> {
@@ -102,6 +111,8 @@ async function loadPublicForm(
   });
   if (!form) return null;
 
+  const consent = await resolveConsentRequirement(form, countryId ?? form.countryId ?? null);
+
   // A disabled field is dropped here rather than hidden in the renderer, so it
   // is absent from the validation schema too — the server then rejects a value
   // for it instead of quietly accepting one nobody could have entered.
@@ -118,6 +129,7 @@ async function loadPublicForm(
     consentText: form.consentText,
     requireCaptcha: form.requireCaptcha,
     design: parseFormDesign(form.design),
+    consent,
     fields: fields.map((f) => ({
       id: f.id,
       type: f.type,

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { consentSubmissionSchema } from '@/lib/privacy/consent';
 import type { PublicFormField } from '@/lib/services/forms';
 import { conditionsSatisfied } from '@/lib/forms/field-settings';
 import type { FormDesign } from '@/lib/forms/form-design';
@@ -44,6 +45,14 @@ export const submissionEnvelopeSchema = z.object({
    */
   captchaToken: z.string().max(400).optional().nullable(),
   captchaAnswer: z.string().max(10).optional().nullable(),
+  /**
+   * What the visitor was shown and what they ticked.
+   *
+   * Only ever evidence. What the form *requires* is re-read from the database
+   * on every submission, so omitting this object entirely — as a crafted
+   * request would — fails the requirement rather than skipping it.
+   */
+  consent: consentSubmissionSchema.optional(),
 });
 
 export type SubmissionEnvelope = z.infer<typeof submissionEnvelopeSchema>;

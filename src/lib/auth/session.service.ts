@@ -31,7 +31,11 @@ export type SessionRevocationReason =
  * factor. It grants nothing until `markSessionMfaVerified` is called.
  */
 export async function createPendingSession(userId: string): Promise<string> {
-  const { ip, userAgent } = await requestContext().catch(() => ({ ip: null, userAgent: null }));
+  const { ip, userAgent } = await requestContext().catch(() => ({
+    ip: null,
+    ipStatus: 'UNAVAILABLE' as const,
+    userAgent: null,
+  }));
 
   const session = await prisma.authSession.create({
     data: {

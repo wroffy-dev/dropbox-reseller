@@ -24,6 +24,15 @@ export const PERMISSIONS = {
   'leads.delete': { group: 'leads', label: 'Delete leads' },
   'leads.export': { group: 'leads', label: 'Export leads' },
   'leads.assign': { group: 'leads', label: 'Assign leads' },
+  /*
+   * The address itself, not the fact that one was recorded. Separate from
+   * leads.view so the people who work leads all day are not handed personal
+   * data they have no use for, which is the whole of "restrict IP access to
+   * authorised staff".
+   */
+  'leads.viewIp': { group: 'leads', label: 'View lead IP addresses' },
+  /* Recording a withdrawal, and editing the consent notices themselves. */
+  'leads.manageConsent': { group: 'leads', label: 'Manage consent records and notices' },
 
   'customers.view': { group: 'customers', label: 'View customers' },
   'customers.create': { group: 'customers', label: 'Create customers' },

@@ -65,7 +65,13 @@ async function makeForm(slug: string, fields: FieldSeed[], design?: Record<strin
 
 /** A submission that clears the spam gates, so only validation is under test. */
 function envelope(slug: string, values: Record<string, string | string[]>) {
-  return { formSlug: slug, elapsedMs: 5000, values };
+  return {
+    /*
+     * Every form now asks for consent, so a submission that omits it is
+     * rejected — which is the point. The helper ticks the required box so
+     * these tests keep testing what they are about.
+     */
+    consent: { enquiry: true, marketing: false, terms: false }, formSlug: slug, elapsedMs: 5000, values };
 }
 
 beforeEach(() => {
@@ -211,6 +217,7 @@ describe('read-only, hidden and system fields', () => {
     ]);
 
     const result = await submitForm({
+      consent: { enquiry: true, marketing: false, terms: false },
       formSlug: slug,
       elapsedMs: 5000,
       productId: product.id,

@@ -1,8 +1,9 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
-import { authorize } from '@/lib/auth/guards';
+import { authorize, userCan } from '@/lib/auth/guards';
 import { recordAudit } from '@/lib/services/audit';
 import { logLeadActivity, notifyLeadAssignment } from '@/lib/services/leads';
 import {
@@ -21,6 +22,12 @@ import { LEAD_STATUS_LABELS } from '@/lib/crm/constants';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
 import { resolveActionCountry } from '@/lib/country/admin';
 import { listAccessibleCountries } from '@/lib/country/access';
+import {
+  consentDisplayState,
+  CONSENT_DISPLAY_LABELS,
+} from '@/lib/privacy/consent';
+import { withdrawConsent } from '@/lib/services/consent';
+import { requestContext } from '@/lib/utils/request';
 import type { Prisma } from '@prisma/client';
 
 function revalidateCrm(leadId?: string) {
@@ -427,8 +434,39 @@ export async function exportLeads(filters: LeadFilters): Promise<ActionResult<{ 
         assignedTo: { select: { name: true } },
         form: { select: { name: true } },
         country: { select: { code: true } },
+        consents: {
+          orderBy: { consentedAt: 'desc' },
+          take: 1,
+          select: {
+            lawfulBasis: true,
+            enquiryConsent: true,
+            marketingConsent: true,
+            termsAccepted: true,
+            termsRequired: true,
+            noticeKey: true,
+            noticeVersion: true,
+            privacyUrl: true,
+            privacyVersion: true,
+            termsUrl: true,
+            termsVersion: true,
+            consentedAt: true,
+            withdrawnAt: true,
+            withdrawnScope: true,
+          },
+        },
       },
     });
+
+    /*
+     * The IP is a separate permission from exporting.
+     *
+     * Someone who may pull a lead list does not automatically need every
+     * visitor's address in a spreadsheet that will be mailed around, so the
+     * column is only present for a user who holds leads.viewIp — absent
+     * entirely rather than blanked, so nobody reads an empty cell as "no
+     * address was recorded".
+     */
+    const withIp = userCan(user, 'leads.viewIp');
 
     const header = [
       'reference', 'created_at', 'country', 'name', 'email', 'phone', 'company', 'job_title',
@@ -436,6 +474,10 @@ export async function exportLeads(filters: LeadFilters): Promise<ActionResult<{ 
       'assigned_to', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term',
       'utm_content', 'first_utm_source', 'first_utm_campaign', 'landing_url',
       'referrer', 'cta_label', 'follow_up_at', 'message',
+      'consent_state', 'consent_enquiry', 'consent_marketing', 'terms_accepted',
+      'lawful_basis', 'consent_notice', 'consent_at', 'consent_withdrawn_at',
+      'privacy_url', 'privacy_version', 'terms_url', 'terms_version',
+      ...(withIp ? ['ip_address', 'ip_status'] : []),
     ];
 
     const rows = leads.map((lead) => [
@@ -467,13 +509,28 @@ export async function exportLeads(filters: LeadFilters): Promise<ActionResult<{ 
       lead.ctaLabel ?? '',
       lead.followUpAt?.toISOString() ?? '',
       (lead.message ?? '').replace(/\s+/g, ' '),
+      CONSENT_DISPLAY_LABELS[consentDisplayState(lead.consents[0])],
+      // "yes"/"no"/"" rather than TRUE/FALSE: an empty cell means there is no
+      // record to answer from, which is not the same as a recorded "no".
+      boolCell(lead.consents[0]?.enquiryConsent),
+      boolCell(lead.consents[0]?.marketingConsent),
+      lead.consents[0]?.termsRequired ? boolCell(lead.consents[0]?.termsAccepted) : '',
+      lead.consents[0]?.lawfulBasis ?? '',
+      lead.consents[0] ? `${lead.consents[0].noticeKey} v${lead.consents[0].noticeVersion}` : '',
+      lead.consents[0]?.consentedAt.toISOString() ?? '',
+      lead.consents[0]?.withdrawnAt?.toISOString() ?? '',
+      lead.consents[0]?.privacyUrl ?? '',
+      lead.consents[0]?.privacyVersion ?? '',
+      lead.consents[0]?.termsUrl ?? '',
+      lead.consents[0]?.termsVersion ?? '',
+      ...(withIp ? [lead.ipAddress ?? '', lead.ipStatus] : []),
     ]);
 
     await recordAudit({
       actor: user,
       action: 'exported',
       entity: 'Lead',
-      summary: `Exported ${leads.length} lead(s)`,
+      summary: `Exported ${leads.length} lead(s)${withIp ? ' including IP addresses' : ''}`,
     });
 
     return success({
@@ -537,6 +594,56 @@ export async function convertLeadToCustomer(leadId: string): Promise<ActionResul
     revalidateCrm(leadId);
     revalidatePath('/admin/customers');
     return success({ id: customer.id }, existing ? 'Linked to an existing customer.' : 'Customer created.');
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+/** "yes" / "no", or blank when there is no record to answer from. */
+function boolCell(value: boolean | undefined): string {
+  if (value === undefined) return '';
+  return value ? 'yes' : 'no';
+}
+
+const withdrawSchema = z.object({
+  recordId: z.string().min(1),
+  scope: z.enum(['MARKETING', 'ALL']),
+  note: z.string().trim().max(500).optional(),
+});
+
+/**
+ * Records that someone withdrew consent.
+ *
+ * Its own permission, not leads.edit: a withdrawal is a statement about what
+ * the business may now do with a person's data, and it suppresses marketing
+ * for that lead — which is a different kind of decision from editing a phone
+ * number.
+ */
+export async function recordConsentWithdrawal(input: unknown): Promise<ActionResult> {
+  try {
+    const user = await authorize('leads.manageConsent');
+    const { recordId, scope, note } = withdrawSchema.parse(input);
+
+    const { ip } = await requestContext();
+    const result = await withdrawConsent({
+      recordId,
+      scope,
+      actorId: user.id,
+      note: note ? sanitizeText(note) : null,
+      ipAddress: ip,
+    });
+    if (!result.ok) return failure(result.error);
+
+    await recordAudit({
+      actor: user,
+      action: 'updated',
+      entity: 'ConsentRecord',
+      entityId: recordId,
+      summary: `Recorded consent withdrawal (${scope.toLowerCase()})`,
+    });
+
+    revalidatePath('/admin/leads');
+    return success(undefined, 'Withdrawal recorded.');
   } catch (error) {
     return toActionError(error);
   }

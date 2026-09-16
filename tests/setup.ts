@@ -22,7 +22,13 @@ vi.mock('next/cache', () => ({
 vi.mock('@/lib/utils/request', () => ({
   clientIp: async () => '203.0.113.10',
   userAgent: async () => 'vitest',
-  requestContext: async () => ({ ip: '203.0.113.10', userAgent: 'vitest' }),
+  requestContext: async () => ({
+    ip: '203.0.113.10',
+    ipStatus: 'RECORDED',
+    userAgent: 'vitest',
+  }),
+  clientIpResolution: async () => ({ status: 'RECORDED', ip: '203.0.113.10' }),
+  ipRetentionDays: () => 365,
 }));
 
 vi.mock('@/lib/email/mailer', () => ({

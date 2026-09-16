@@ -232,6 +232,7 @@ describe('Flow C — visitor becomes a lead, then a customer', () => {
 
     // The visitor arrives from a campaign, browses, then converts on the page.
     const submitted = await submitForm({
+      consent: { enquiry: true, marketing: false, terms: false },
       formSlug: form!.slug,
       productId: product.id,
       elapsedMs: 9000,

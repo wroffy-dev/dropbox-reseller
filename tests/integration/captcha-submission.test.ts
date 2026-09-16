@@ -53,6 +53,12 @@ async function makeForm(slug: string, requireCaptcha: boolean) {
 
 function payload(slug: string, extra: Record<string, unknown> = {}) {
   return {
+    /*
+     * Every form now asks for consent, so a submission that omits it is
+     * rejected — which is the point. The helper ticks the required box so
+     * these tests keep testing what they are about.
+     */
+    consent: { enquiry: true, marketing: false, terms: false },
     formSlug: slug,
     elapsedMs: 5000,
     values: {

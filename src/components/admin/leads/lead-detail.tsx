@@ -69,16 +69,30 @@ export type LeadDetailData = {
   activities: Array<{ id: string; type: string; summary: string; actorName: string | null; createdAt: string }>;
 };
 
+export type SubmissionView = {
+  formName: string | null;
+  pageUrl: string | null;
+  countryName: string;
+  submittedAt: string;
+  fields: Array<{ name: string; label: string; value: string }>;
+};
+
 export function LeadDetail({
   lead,
   staff,
   products,
   can,
+  submission,
+  consent,
 }: {
   lead: LeadDetailData;
   staff: Array<{ id: string; name: string }>;
   products: Array<{ id: string; name: string }>;
   can: { edit: boolean; assign: boolean; delete: boolean; createCustomer: boolean };
+  /** Every configured field as it was submitted, custom ones included. */
+  submission?: SubmissionView | null;
+  /** Rendered by the page so the IP never reaches a viewer without the right. */
+  consent?: React.ReactNode;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -323,6 +337,39 @@ export function LeadDetail({
             </CardBody>
           </Card>
         ) : null}
+
+        {submission ? (
+          <Card>
+            <CardHeader
+              title="Submitted form"
+              description="Every field as it was filled in, with the labels it carried then."
+            />
+            <CardBody className="space-y-3 text-sm">
+              <dl className="space-y-2">
+                <SubmissionRow label="Form" value={submission.formName ?? '—'} />
+                <SubmissionRow label="Country" value={submission.countryName} />
+                <SubmissionRow label="Page" value={submission.pageUrl ?? '—'} />
+                <SubmissionRow
+                  label="Submitted"
+                  value={`${new Date(submission.submittedAt).toLocaleString('en-GB', {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                    timeZone: 'UTC',
+                  })} UTC`}
+                />
+              </dl>
+              {submission.fields.length > 0 ? (
+                <dl className="space-y-2 border-t border-hairline pt-3">
+                  {submission.fields.map((field) => (
+                    <SubmissionRow key={field.name} label={field.label} value={field.value || '—'} />
+                  ))}
+                </dl>
+              ) : null}
+            </CardBody>
+          </Card>
+        ) : null}
+
+        {consent}
 
         {can.delete ? (
           <Button variant="outline" className="w-full" onClick={() => setConfirmDelete(true)} disabled={busy}>
@@ -604,3 +651,14 @@ function LeadEditor({
   );
 }
 
+/** One label/value line in the submitted-form card. */
+function SubmissionRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-0.5 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)] sm:gap-3">
+      <dt className="text-xs font-medium uppercase tracking-wide text-muted sm:text-sm sm:normal-case sm:tracking-normal">
+        {label}
+      </dt>
+      <dd className="break-words text-content">{value}</dd>
+    </div>
+  );
+}

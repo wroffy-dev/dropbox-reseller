@@ -95,6 +95,7 @@ afterAll(async () => {
 describe('public form submission', () => {
   it('creates a lead with product, page and attribution', async () => {
     const result = await submitForm({
+      consent: { enquiry: true, marketing: false, terms: false },
       formSlug,
       elapsedMs: 5000,
       values: {
@@ -165,6 +166,7 @@ describe('public form submission', () => {
   it('rejects a submission missing a required field', async () => {
     __resetRateLimits();
     const result = await submitForm({
+      consent: { enquiry: true, marketing: false, terms: false },
       formSlug,
       elapsedMs: 5000,
       values: { name: 'No Email', email: '', phone: '', company: '', message: '' },
@@ -176,6 +178,7 @@ describe('public form submission', () => {
   it('rejects an invalid email address', async () => {
     __resetRateLimits();
     const result = await submitForm({
+      consent: { enquiry: true, marketing: false, terms: false },
       formSlug,
       elapsedMs: 5000,
       values: { name: 'Bad Email', email: 'not-an-email', phone: '', company: '', message: '' },
@@ -187,6 +190,7 @@ describe('public form submission', () => {
   it('rejects a value outside the configured select options', async () => {
     __resetRateLimits();
     const result = await submitForm({
+      consent: { enquiry: true, marketing: false, terms: false },
       formSlug,
       elapsedMs: 5000,
       values: {
@@ -203,6 +207,7 @@ describe('public form submission', () => {
     __resetRateLimits();
     const before = await prisma.lead.count({ where: { formId } });
     const result = await submitForm({
+      consent: { enquiry: true, marketing: false, terms: false },
       formSlug,
       elapsedMs: 5000,
       website: 'http://spam.example',
@@ -215,6 +220,7 @@ describe('public form submission', () => {
   it('rejects a submission completed impossibly fast', async () => {
     __resetRateLimits();
     const result = await submitForm({
+      consent: { enquiry: true, marketing: false, terms: false },
       formSlug,
       elapsedMs: 200,
       values: { name: 'Speedy', email: `speedy+${suffix}@example.test` },
@@ -228,6 +234,7 @@ describe('public form submission', () => {
     for (let i = 0; i < 7; i += 1) {
       results.push(
         await submitForm({
+      consent: { enquiry: true, marketing: false, terms: false },
           formSlug,
           elapsedMs: 5000,
           values: { name: `Repeat ${i}`, email: `repeat${i}+${suffix}@example.test` },

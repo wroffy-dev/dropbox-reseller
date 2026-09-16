@@ -16,6 +16,12 @@ let formId = '';
 
 function payload(email: string, attribution: Record<string, unknown>) {
   return {
+    /*
+     * Every form now asks for consent, so a submission that omits it is
+     * rejected — which is the point. The helper ticks the required box so
+     * these tests keep testing what they are about.
+     */
+    consent: { enquiry: true, marketing: false, terms: false },
     formSlug: slug,
     elapsedMs: 5000,
     values: { name: 'Ada Lovelace', email },
@@ -124,6 +130,7 @@ describe('attribution reaches the lead', () => {
     const email = `direct+${suffix}@example.test`;
 
     const result = await submitForm({
+      consent: { enquiry: true, marketing: false, terms: false },
       formSlug: slug,
       elapsedMs: 5000,
       values: { name: 'Ada Lovelace', email },

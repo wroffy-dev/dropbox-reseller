@@ -10,6 +10,7 @@ import type { CaptchaChallenge } from '@/lib/forms/captcha';
 import { collectAttribution, trackConversion } from '@/lib/analytics/attribution';
 import { buildFormStyles, type FormStyles } from '@/lib/forms/form-design';
 import { conditionsSatisfied } from '@/lib/forms/field-settings';
+import { ConsentBlock } from './consent-block';
 import { FormButtonIcon } from './form-button-icon';
 import { cn } from '@/lib/utils/cn';
 
@@ -78,6 +79,16 @@ export function PublicFormRenderer({
 }) {
   const router = useRouter();
   const [pending, setPending] = React.useState(false);
+  /*
+   * Unticked on mount and never seeded from anything. A consent box that
+   * arrives pre-ticked has not recorded a decision, whatever the evidence row
+   * later says about it.
+   */
+  const [consent, setConsent] = React.useState({
+    enquiry: false,
+    marketing: false,
+    terms: false,
+  });
   const [done, setDone] = React.useState<string | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string[]>>({});
@@ -161,6 +172,19 @@ export function PublicFormRenderer({
       attribution: collectAttribution({ ctaLabel, ctaLocation }),
       captchaToken: captcha?.token ?? null,
       captchaAnswer: form.requireCaptcha ? captchaAnswer : null,
+      /*
+       * What was shown and what was ticked. The version travels so the server
+       * can refuse a page that has been open since before the notice changed;
+       * the server still re-reads the requirement itself, so this is evidence
+       * of what the visitor saw, never a statement of what is required.
+       */
+      consent: {
+        noticeKey: form.consent.noticeKey,
+        noticeVersion: form.consent.noticeVersion,
+        enquiry: consent.enquiry,
+        marketing: consent.marketing,
+        terms: consent.terms,
+      },
     });
 
     setPending(false);
@@ -347,6 +371,15 @@ export function PublicFormRenderer({
           />
         </div>
 
+        <ConsentBlock
+          requirement={form.consent}
+          value={consent}
+          onChange={setConsent}
+          errors={fieldErrors}
+          idPrefix={form.slug}
+        />
+
+        {/* The legacy free-text line, for forms written before the notice. */}
         {form.consentText ? (
           <p className="fd-help mt-3 leading-relaxed">{form.consentText}</p>
         ) : null}

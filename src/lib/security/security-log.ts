@@ -52,6 +52,7 @@ export async function recordSecurityEvent(event: SecurityEvent): Promise<void> {
   try {
     const { ip, userAgent } = await requestContext().catch(() => ({
       ip: null,
+      ipStatus: 'UNAVAILABLE' as const,
       userAgent: null,
     }));
 

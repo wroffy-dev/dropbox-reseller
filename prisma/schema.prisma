@@ -21,6 +21,57 @@ enum ContentStatus {
   ARCHIVED
 }
 
+/// Why personal data may be processed. Only CONSENT makes the tick box the
+/// thing that authorises processing; the others are recorded so the CRM can
+/// say "not applicable" honestly instead of showing a missing tick as a gap.
+enum LawfulBasis {
+  CONSENT
+  CONTRACT
+  LEGITIMATE_INTEREST
+  LEGAL_OBLIGATION
+}
+
+/// What a consent event did. Append-only: a withdrawal never edits the row
+/// that recorded the original grant.
+enum ConsentEventType {
+  GRANTED
+  WITHDRAWN
+  REINSTATED
+}
+
+enum ConsentScope {
+  ENQUIRY
+  MARKETING
+  TERMS
+  ALL
+}
+
+/// Whether the stored client IP can be relied on as evidence.
+enum IpStatus {
+  /// Read from a hop the deployment is configured to trust.
+  RECORDED
+  /// No address was available at all (internal call, missing headers).
+  UNAVAILABLE
+  /// A forwarded address arrived from a hop that is not trusted, so it was
+  /// discarded rather than recorded as if it were the visitor's.
+  UNTRUSTED
+  /// Recorded once, then removed by the configured retention period.
+  PURGED
+}
+
+enum SyncMode {
+  ADD_MISSING
+  UPDATE_EXISTING
+}
+
+enum SyncStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
 enum LeadStatus {
   NEW
   CONTACTED
@@ -226,29 +277,41 @@ model Country {
   timezone       String  @default("Asia/Kolkata")
 
   /// The root market. Exactly one row is true; the save action enforces it.
-  isDefault Boolean @default(false)
+  isDefault   Boolean @default(false)
   /// An inactive market stops resolving publicly — its prefix 404s rather than
   /// serving a half-built storefront.
-  isActive  Boolean @default(true)
-  sortOrder Int     @default(0)
+  isActive    Boolean @default(true)
+  /// Published means "ready for search engines": an active but unpublished
+  /// market serves its pages to anyone with the link and stays out of the
+  /// sitemaps. Separate from isActive so a market can be built in the open
+  /// without being indexed, and defaults true so no existing market changes.
+  isPublished Boolean @default(true)
+  sortOrder   Int     @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  settings       CountrySettings?
-  pages          Page[]
-  posts          BlogPost[]
-  navigations    Navigation[]
-  productConfigs ProductCountry[]
-  variantPricing ProductVariantCountry[]
-  blogCategories BlogCategoryCountry[]
-  leads          Lead[]
-  submissions    FormSubmission[]
-  forms          Form[]
-  popups         Popup[]
-  staffAccess    UserCountry[]
+  settings             CountrySettings?
+  pages                Page[]
+  posts                BlogPost[]
+  navigations          Navigation[]
+  productConfigs       ProductCountry[]
+  variantPricing       ProductVariantCountry[]
+  blogCategories       BlogCategoryCountry[]
+  leads                Lead[]
+  submissions          FormSubmission[]
+  forms                Form[]
+  popups               Popup[]
+  staffAccess          UserCountry[]
+  consentNotices       ConsentNotice[]
+  consentRecords       ConsentRecord[]
+  syncMappingsAsSource CountrySyncMapping[]    @relation("SyncSource")
+  syncMappingsAsTarget CountrySyncMapping[]    @relation("SyncTarget")
+  syncRunsAsSource     CountrySyncRun[]        @relation("SyncRunSource")
+  syncRunsAsTarget     CountrySyncRun[]        @relation("SyncRunTarget")
 
   @@index([isActive, sortOrder])
+  @@index([isActive, isPublished])
   @@index([slug])
 }
 
@@ -288,6 +351,20 @@ model CountrySettings {
   salesCtaText      String?
   footerDescription String? @db.Text
   copyrightText     String?
+
+  // --- Crawler rules for this market ---------------------------------------
+  // Compiled into the single host-root robots.txt, prefixed with the market's
+  // URL prefix. A market does not get its own robots.txt: crawlers only read
+  // the one at the host root, so /ae/robots.txt would be ignored.
+  /// One path per line, relative to this market's prefix.
+  robotsDisallow     String? @db.Text
+  robotsAllow        String? @db.Text
+  /// Sends noindex for every page in this market, through the meta tag and the
+  /// X-Robots-Tag header. Independent of the crawl rules above: blocking a
+  /// crawler stops it seeing the noindex at all.
+  noIndexCountry     Boolean @default(false)
+  /// Keeps the market out of the sitemap index without changing its pages.
+  excludeFromSitemap Boolean @default(false)
 
   // --- SEO defaults for this market (fall back to the global SEO settings) ---
   defaultTitle        String?
@@ -401,19 +478,22 @@ model User {
   accounts Account[]
   sessions Session[]
 
-  assignedLeads     Lead[]         @relation("LeadAssignee")
-  assignedCustomers Customer[]     @relation("CustomerAssignee")
+  assignedLeads     Lead[]           @relation("LeadAssignee")
+  assignedCustomers Customer[]       @relation("CustomerAssignee")
   leadNotes         LeadNote[]
   leadActivities    LeadActivity[]
   customerNotes     CustomerNote[]
-  authoredPosts     BlogPost[]     @relation("PostAuthor")
-  uploadedMedia     Media[]        @relation("MediaUploader")
+  authoredPosts     BlogPost[]       @relation("PostAuthor")
+  uploadedMedia     Media[]          @relation("MediaUploader")
   auditLogs         AuditLog[]
-  backups           Backup[]       @relation("BackupCreator")
+  backups           Backup[]         @relation("BackupCreator")
   authSessions      AuthSession[]
   recoveryCodes     RecoveryCode[]
   /// Markets this account may work in. No rows means every market.
   countries         UserCountry[]
+  consentNotices    ConsentNotice[]  @relation("ConsentNoticeAuthor")
+  consentEvents     ConsentEvent[]   @relation("ConsentEventActor")
+  syncRuns          CountrySyncRun[] @relation("SyncRunActor")
 
   @@index([email])
   @@index([roleId])
@@ -1254,7 +1334,25 @@ model Form {
   createsLead      Boolean @default(true)
 
   notifyEmails String? @db.Text // comma-separated
+  /// Legacy free-text line under the submit button. Still rendered when no
+  /// consent notice applies, so forms built before consent existed are
+  /// unchanged.
   consentText  String? @db.Text
+
+  // --- Consent ---------------------------------------------------------------
+  /// Which notice version family this form shows. Null uses the site default.
+  consentNoticeKey       String?
+  /// What authorises processing this form's submissions. CONSENT makes the
+  /// enquiry tick box mandatory server-side; the others record the basis and
+  /// let the CRM show "Not applicable" rather than an apparent gap.
+  lawfulBasis            LawfulBasis @default(CONSENT)
+  /// Offer the optional marketing tick box. Never required to submit.
+  offerMarketingConsent  Boolean     @default(true)
+  /// Ask for Terms acceptance as its own tick box.
+  requireTermsAcceptance Boolean     @default(false)
+  /// Turns the consent block off for a form that genuinely collects nothing
+  /// personal. Defaults true: every existing form collects an email.
+  collectsPersonalData   Boolean     @default(true)
 
   // Spam protection. Defaults to false so every form published before this
   // existed keeps submitting exactly as it did.
@@ -1339,17 +1437,26 @@ model FormSubmission {
   data      Json    @default("{}")
 
   ipHash    String?
-  userAgent String? @db.Text
-  referrer  String? @db.Text
-  pageUrl   String? @db.Text
+  ipAddress String?
+  ipStatus  IpStatus @default(UNAVAILABLE)
+  userAgent String?  @db.Text
+  referrer  String?  @db.Text
+  pageUrl   String?  @db.Text
+
+  /// The form's name and the field labels as they were when this was
+  /// submitted. A later rename must not change what this submission says it
+  /// asked.
+  formName    String?
+  fieldLabels Json    @default("{}")
 
   leadId String?
 
   createdAt DateTime @default(now())
 
-  form    Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
-  lead    Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  country Country? @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  form    Form           @relation(fields: [formId], references: [id], onDelete: Cascade)
+  lead    Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  country Country?       @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  consent ConsentRecord?
 
   @@index([formId, createdAt])
   @@index([leadId])
@@ -1399,10 +1506,20 @@ model Lead {
   firstLandingUrl  String?   @db.Text
   firstTouchAt     DateTime?
 
-  referrer   String? @db.Text
-  landingUrl String? @db.Text
-  userAgent  String? @db.Text
-  ipHash     String?
+  referrer              String?   @db.Text
+  landingUrl            String?   @db.Text
+  userAgent             String?   @db.Text
+  ipHash                String?
+  /// The address itself, for the evidence trail. Readable only with the
+  /// leads.viewIp permission and cleared by the configured retention period,
+  /// which is why ipStatus exists beside it: a null could mean "never had
+  /// one", "arrived from an untrusted hop", or "retained period elapsed", and
+  /// those are different facts.
+  ipAddress             String?
+  ipStatus              IpStatus  @default(UNAVAILABLE)
+  /// Set when marketing consent is withdrawn, so consent-based marketing can
+  /// be suppressed without editing the original consent record.
+  marketingSuppressedAt DateTime?
 
   productId     String?
   landingPageId String?
@@ -1434,6 +1551,7 @@ model Lead {
   notes       LeadNote[]
   activities  LeadActivity[]
   submissions FormSubmission[]
+  consents    ConsentRecord[]
 
   @@index([status, createdAt])
   @@index([assignedToId])
@@ -2043,4 +2161,216 @@ model BackupLock {
   holder     String?
   acquiredAt DateTime @default(now())
   expiresAt  DateTime
+}
+
+// ---------------------------------------------------------------------------
+// CONSENT
+// ---------------------------------------------------------------------------
+
+/**
+ * A version of the consent notice shown beside a form.
+ * Immutable once published. Editing the wording in the CMS writes a new
+ * version rather than changing this row, because a submission stores which
+ * version it was shown and that has to stay readable years later — the point
+ * of the record is to prove what the person actually agreed to.
+ */
+model ConsentNotice {
+  id        String  @id @default(cuid())
+  /// Groups the versions of one notice. "default" is the site-wide one.
+  key       String
+  version   Int
+  /// The version served to new submissions. Exactly one per key; the save
+  /// action moves it forward.
+  isCurrent Boolean @default(false)
+
+  /// Null means the notice applies to every market.
+  countryId String?
+
+  /// What the information is collected for, in plain words. Shown above the
+  /// tick boxes and copied into every submission's evidence.
+  purposeText String @db.Text
+
+  /// The required processing tick box.
+  enquiryLabel   String @db.Text
+  /// The optional marketing tick box. Never required to submit.
+  marketingLabel String @db.Text
+  /// The Terms acceptance tick box, when the form asks for one.
+  termsLabel     String @db.Text
+  /// How to withdraw consent or ask a question about the data.
+  withdrawalText String @db.Text
+
+  privacyUrl     String
+  privacyVersion String?
+  termsUrl       String
+  termsVersion   String?
+
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  country   Country?        @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  createdBy User?           @relation("ConsentNoticeAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  records   ConsentRecord[]
+
+  @@unique([key, version])
+  @@index([key, isCurrent])
+  @@index([countryId])
+}
+
+/**
+ * What one person agreed to, at the moment they submitted.
+ * The notice text is snapshotted rather than referenced alone: a notice row
+ * can be deleted, a country can be removed, and the evidence still has to say
+ * exactly what was on screen. The three consents stay three columns — folding
+ * them into one boolean would lose the distinction between "agreed we may
+ * answer the enquiry" and "agreed to marketing", which are different
+ * permissions with different consequences.
+ */
+model ConsentRecord {
+  id String @id @default(cuid())
+
+  leadId       String?
+  submissionId String? @unique
+  countryId    String?
+
+  noticeId       String?
+  noticeKey      String
+  noticeVersion  Int
+  /// Exact wording shown, as rendered. Kept even if the notice row goes away.
+  noticeSnapshot Json
+  purposeText    String  @db.Text
+
+  lawfulBasis LawfulBasis @default(CONSENT)
+
+  /// Agreed the enquiry may be processed. Required when the basis is CONSENT.
+  enquiryConsent   Boolean @default(false)
+  /// Optional. Never a condition of submitting.
+  marketingConsent Boolean @default(false)
+  /// Only meaningful when the form asked for Terms acceptance.
+  termsAccepted    Boolean @default(false)
+  termsRequired    Boolean @default(false)
+
+  privacyUrl     String
+  privacyVersion String?
+  termsUrl       String
+  termsVersion   String?
+
+  /// Server clock, UTC. Never taken from the browser.
+  consentedAt DateTime @default(now())
+
+  /// Set when consent is withdrawn. The booleans above are left as they were:
+  /// this points at the withdrawal, it does not rewrite what was agreed.
+  withdrawnAt    DateTime?
+  withdrawnScope ConsentScope?
+
+  lead       Lead?           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  submission FormSubmission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+  country    Country?        @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  notice     ConsentNotice?  @relation(fields: [noticeId], references: [id], onDelete: SetNull)
+  events     ConsentEvent[]
+
+  @@index([leadId])
+  @@index([countryId, consentedAt])
+  @@index([marketingConsent, withdrawnAt])
+}
+
+/**
+ * Append-only history for one consent record.
+ */
+model ConsentEvent {
+  id       String           @id @default(cuid())
+  recordId String
+  type     ConsentEventType
+  scope    ConsentScope
+
+  /// The value the scope moved to, so the log reads without inference.
+  value Boolean
+
+  /// Who caused it: the visitor at submission, or a staff member acting on a
+  /// request. Null actor with VISITOR source is the original grant.
+  actorId   String?
+  actorType String  @default("VISITOR")
+  note      String? @db.Text
+  ipAddress String?
+
+  createdAt DateTime @default(now())
+
+  record ConsentRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  actor  User?         @relation("ConsentEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([recordId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// COUNTRY CONTENT SYNC
+// ---------------------------------------------------------------------------
+
+/**
+ * One row per record copied from the source market into a destination market.
+ * This is what makes a repeat run idempotent: the sync looks up the source id
+ * here before creating anything, so running it twice updates or skips rather
+ * than producing a second copy. `locallyEdited` is set when the destination
+ * row changes after import, which is how "preserve local changes" is decided
+ * without guessing from timestamps alone.
+ */
+model CountrySyncMapping {
+  id              String @id @default(cuid())
+  sourceCountryId String
+  targetCountryId String
+
+  /// PAGE | PRODUCT | FORM — the allowlist lives in code, not here.
+  entityType String
+  sourceId   String
+  targetId   String
+
+  /// The source row's updatedAt at the last successful copy, so a later run
+  /// can tell whether the source actually changed.
+  sourceUpdatedAt DateTime?
+  /// The destination row's updatedAt just after the copy. A destination whose
+  /// updatedAt has moved past this has been edited locally.
+  targetSyncedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sourceCountry Country @relation("SyncSource", fields: [sourceCountryId], references: [id], onDelete: Cascade)
+  targetCountry Country @relation("SyncTarget", fields: [targetCountryId], references: [id], onDelete: Cascade)
+
+  @@unique([targetCountryId, entityType, sourceId])
+  @@index([targetCountryId, entityType])
+  @@index([sourceCountryId])
+}
+
+/**
+ * One execution of the sync, with its counts and audit log.
+ */
+model CountrySyncRun {
+  id              String     @id @default(cuid())
+  sourceCountryId String
+  targetCountryId String
+  mode            SyncMode   @default(ADD_MISSING)
+  status          SyncStatus @default(PENDING)
+
+  /// Set for a dry run that only reports what would happen.
+  previewOnly Boolean @default(false)
+
+  createdCount  Int @default(0)
+  updatedCount  Int @default(0)
+  skippedCount  Int @default(0)
+  conflictCount Int @default(0)
+  failedCount   Int @default(0)
+
+  /// Per-entity detail: what was created, skipped, and why.
+  log   Json    @default("[]")
+  error String? @db.Text
+
+  startedById String?
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+
+  sourceCountry Country @relation("SyncRunSource", fields: [sourceCountryId], references: [id], onDelete: Cascade)
+  targetCountry Country @relation("SyncRunTarget", fields: [targetCountryId], references: [id], onDelete: Cascade)
+  startedBy     User?   @relation("SyncRunActor", fields: [startedById], references: [id], onDelete: SetNull)
+
+  @@index([targetCountryId, startedAt])
+  @@index([status])
 }

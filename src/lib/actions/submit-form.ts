@@ -2,6 +2,8 @@
 
 import { prisma } from '@/lib/db/prisma';
 import { getPublicForm } from '@/lib/services/forms';
+import { resolveConsentRequirement } from '@/lib/services/consent';
+import { validateConsent, buildConsentEvidence } from '@/lib/privacy/consent';
 import {
   submissionEnvelopeSchema,
   buildFieldSchema,
@@ -22,6 +24,11 @@ import { success, failure, type ActionResult } from '@/lib/utils/result';
 import type { Prisma } from '@prisma/client';
 
 export type SubmitFormResult = ActionResult<{ message: string; redirectUrl: string | null }>;
+
+/** The lead shape the notification helpers expect, kept in one place. */
+type CreatedLead = Prisma.LeadGetPayload<{
+  include: { product: { select: { name: true } }; form: { select: { name: true } } };
+}>;
 
 /**
  * Public form submission — the single entry point for every lead on the site.
@@ -44,8 +51,18 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
     return failure('That was submitted too quickly. Please try again.');
   }
 
-  const { ip, userAgent } = await requestContext();
-  const ipKey = hashIp(ip) ?? 'anonymous';
+  const { ip, ipStatus, userAgent } = await requestContext();
+  /*
+   * Spam bucketing, not evidence.
+   *
+   * With no trusted proxy configured there is no address we would record, but
+   * putting every visitor in one bucket would let five submissions lock the
+   * form for everyone. The user agent and the raw forwarded chain are not
+   * trustworthy — that is exactly why they are not stored as the IP — but they
+   * still separate one visitor from another well enough to rate limit, and a
+   * bot that varies them is varying its fingerprint either way.
+   */
+  const ipKey = hashIp(ip) ?? hashIp(`${ipStatus}:${userAgent ?? ''}`) ?? 'anonymous';
   const limit = rateLimit(`form:${envelope.formSlug}:${ipKey}`, 5, 600);
   if (!limit.ok) {
     return failure(`Too many submissions. Please try again in ${limit.retryAfterSeconds} seconds.`);
@@ -75,6 +92,35 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
     }
   }
 
+  /*
+   * Consent is judged from the stored form and the live notice, never from the
+   * payload's own account of what was required. A request that simply omits
+   * the consent object therefore fails the requirement instead of skipping it,
+   * which is what stops the tick box being bypassed by calling the action
+   * directly.
+   */
+  const formConsentSettings = await prisma.form.findUnique({
+    where: { id: form.id },
+    select: {
+      consentNoticeKey: true,
+      lawfulBasis: true,
+      offerMarketingConsent: true,
+      requireTermsAcceptance: true,
+      collectsPersonalData: true,
+    },
+  });
+  if (!formConsentSettings) return failure('This form is no longer available.');
+
+  const requirement = await resolveConsentRequirement(formConsentSettings, country.id);
+  const consentVerdict = validateConsent(requirement, envelope.consent);
+
+  const consentErrors: Record<string, string[]> = consentVerdict.ok
+    ? {}
+    : {
+        [`_consent${consentVerdict.field.charAt(0).toUpperCase()}${consentVerdict.field.slice(1)}`]:
+          [consentVerdict.message],
+      };
+
   // Only the fields the visitor could actually have answered are judged: a
   // question hidden by conditional logic must not be required of them, and a
   // read-only field's value is never taken from the payload. Both decisions are
@@ -83,12 +129,18 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
   const fieldSchema = buildFieldSchema(judged, form.design);
   const valuesResult = fieldSchema.safeParse(envelope.values);
   if (!valuesResult.success) {
-    const fieldErrors: Record<string, string[]> = {};
+    const fieldErrors: Record<string, string[]> = { ...consentErrors };
     for (const issue of valuesResult.error.issues) {
       const key = issue.path.join('.') || '_form';
       (fieldErrors[key] ??= []).push(issue.message);
     }
+    // Both sets at once: a visitor who missed a field and the tick box should
+    // see both, not discover the second only after fixing the first.
     return failure('Please correct the highlighted fields.', fieldErrors);
+  }
+
+  if (!consentVerdict.ok) {
+    return failure(consentVerdict.message, consentErrors);
   }
 
   const values = valuesResult.data as Record<string, string>;
@@ -187,12 +239,29 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
         })
       : null;
 
+  /*
+   * The lead, its submission and its consent evidence go in together.
+   *
+   * Written one at a time, a failure after the lead insert would leave a lead
+   * whose consent record does not exist — and a lead with no evidence is
+   * indistinguishable from one captured before consent was collected. A
+   * transaction is what stops "accepted" and "we can prove they agreed" from
+   * ever disagreeing.
+   */
+  const evidence = buildConsentEvidence(requirement, envelope.consent);
+  // The labels as they read today, so renaming a field later cannot change
+  // what this submission says it asked for.
+  const fieldLabels = Object.fromEntries(form.fields.map((field) => [field.name, field.label]));
+
   let leadId: string | null = null;
 
-  if (formRecord?.createsLead !== false && core.email) {
-    const firstTouchAt = attribution.firstTouchAt ? new Date(attribution.firstTouchAt) : null;
+  const persisted = await prisma.$transaction(async (tx) => {
+    let createdLead: CreatedLead | null = null;
 
-    const lead = await prisma.lead.create({
+    if (formRecord?.createsLead !== false && core.email) {
+      const firstTouchAt = attribution.firstTouchAt ? new Date(attribution.firstTouchAt) : null;
+
+      createdLead = await tx.lead.create({
       data: {
         countryId: country.id,
         name: sanitizeText(core.name) || core.email.split('@')[0] || 'Unknown',
@@ -225,6 +294,8 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
         landingUrl: attribution.landingUrl ?? attribution.pagePath ?? null,
         userAgent,
         ipHash: hashIp(ip),
+        ipAddress: ip,
+        ipStatus,
         productId,
         landingPageId: landingPage?.id ?? null,
         blogPostId: blogPost?.id ?? null,
@@ -232,33 +303,78 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
         leadMagnetId: envelope.leadMagnetId || null,
       },
       include: { product: { select: { name: true } }, form: { select: { name: true } } },
+      });
+    }
+
+    const submission = await tx.formSubmission.create({
+      data: {
+        formId: form.id,
+        countryId: country.id,
+        data: values as Prisma.InputJsonValue,
+        formName: form.name,
+        fieldLabels: fieldLabels as Prisma.InputJsonValue,
+        ipHash: hashIp(ip),
+        ipAddress: ip,
+        ipStatus,
+        userAgent,
+        referrer: attribution.referrer ?? null,
+        pageUrl: attribution.landingUrl ?? attribution.pagePath ?? null,
+        leadId: createdLead?.id ?? null,
+      },
+      select: { id: true },
     });
-    leadId = lead.id;
+
+    if (requirement.applies) {
+      const record = await tx.consentRecord.create({
+        data: {
+          leadId: createdLead?.id ?? null,
+          submissionId: submission.id,
+          countryId: country.id,
+          noticeId: null,
+          ...evidence,
+          noticeSnapshot: evidence.noticeSnapshot as Prisma.InputJsonValue,
+        },
+        select: { id: true },
+      });
+
+      // The grant, as an event, so the history reads from the beginning
+      // rather than starting at the first withdrawal.
+      const granted: Array<{ scope: 'ENQUIRY' | 'MARKETING' | 'TERMS'; value: boolean }> = [
+        { scope: 'ENQUIRY', value: evidence.enquiryConsent },
+        { scope: 'MARKETING', value: evidence.marketingConsent },
+        { scope: 'TERMS', value: evidence.termsAccepted },
+      ];
+      await tx.consentEvent.createMany({
+        data: granted.map((entry) => ({
+          recordId: record.id,
+          type: 'GRANTED' as const,
+          scope: entry.scope,
+          value: entry.value,
+          actorType: 'VISITOR',
+          ipAddress: ip,
+        })),
+      });
+    }
+
+    return createdLead;
+  });
+
+  if (persisted) {
+    leadId = persisted.id;
 
     await logLeadActivity({
-      leadId: lead.id,
+      leadId: persisted.id,
       type: 'CREATED',
-      summary: `Lead captured from “${form.name}”${lead.product?.name ? ` for ${lead.product.name}` : ''}`,
-      meta: { formSlug: form.slug, utmSource: lead.utmSource },
+      summary: `Lead captured from “${form.name}”${persisted.product?.name ? ` for ${persisted.product.name}` : ''}`,
+      meta: { formSlug: form.slug, utmSource: persisted.utmSource },
     });
 
-    // Notifications must never block the visitor's response.
-    void notifyNewLead({ lead, extraRecipients: splitEmails(formRecord?.notifyEmails) });
-    void sendLeadConfirmation(lead.email, lead.name, lead.product?.name ?? null);
+    // Notifications must never block the visitor's response, and must not run
+    // inside the transaction that decides whether the lead exists at all.
+    void notifyNewLead({ lead: persisted, extraRecipients: splitEmails(formRecord?.notifyEmails) });
+    void sendLeadConfirmation(persisted.email, persisted.name, persisted.product?.name ?? null);
   }
-
-  await prisma.formSubmission.create({
-    data: {
-      formId: form.id,
-      countryId: country.id,
-      data: values as Prisma.InputJsonValue,
-      ipHash: hashIp(ip),
-      userAgent,
-      referrer: attribution.referrer ?? null,
-      pageUrl: attribution.landingUrl ?? attribution.pagePath ?? null,
-      leadId,
-    },
-  });
+  void leadId;
 
   void notifySubmission(
     form.id,

@@ -17,6 +17,7 @@ import { Card } from '@/components/ui/card';
 import { ButtonLink } from '@/components/ui/button';
 import { LEAD_STATUS_OPTIONS } from '@/lib/crm/constants';
 import { decimalToString } from '@/lib/utils/money';
+import { consentDisplayState } from '@/lib/privacy/consent';
 import {
   daysAgo,
   today,
@@ -135,6 +136,23 @@ export default async function LeadsAdmin({
         followUpAt: true,
         createdAt: true,
         updatedAt: true,
+        marketingSuppressedAt: true,
+        /*
+         * The newest consent record decides the column. A lead can carry more
+         * than one if the same person submitted twice, and the latest is the
+         * state that applies now — but the older rows stay, because each is
+         * evidence for its own submission.
+         */
+        consents: {
+          orderBy: { consentedAt: 'desc' },
+          take: 1,
+          select: {
+            lawfulBasis: true,
+            enquiryConsent: true,
+            marketingConsent: true,
+            withdrawnAt: true,
+          },
+        },
         product: { select: { name: true } },
         form: { select: { name: true } },
         assignedTo: { select: { name: true } },
@@ -229,6 +247,13 @@ export default async function LeadsAdmin({
     followUpAt: row.followUpAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    consent: consentDisplayState(row.consents[0]),
+    // Suppressed after a withdrawal even though the original record still
+    // says they agreed — because they did, and then they changed their mind.
+    marketingConsent:
+      Boolean(row.consents[0]?.marketingConsent) &&
+      !row.consents[0]?.withdrawnAt &&
+      !row.marketingSuppressedAt,
   }));
 
   // Primary filters sit in the bar; the rest live behind "More filters" so the
@@ -240,6 +265,18 @@ export default async function LeadsAdmin({
       label: 'Status',
       options: LEAD_STATUS_OPTIONS,
       allLabel: 'All statuses',
+    },
+    {
+      name: 'consent',
+      label: 'Consent',
+      allLabel: 'Any consent state',
+      options: [
+        { value: 'recorded', label: 'Recorded' },
+        { value: 'none', label: 'Not recorded' },
+        { value: 'withdrawn', label: 'Withdrawn' },
+        { value: 'na', label: 'Not applicable' },
+        { value: 'marketing', label: 'Marketing allowed' },
+      ],
     },
     {
       name: 'assignedTo',

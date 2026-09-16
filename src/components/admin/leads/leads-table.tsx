@@ -20,6 +20,10 @@ import { formatRelative } from '@/lib/utils/format';
 import { formatMoney } from '@/lib/utils/money';
 import { downloadCsv } from '@/lib/utils/download';
 import { cn } from '@/lib/utils/cn';
+import {
+  CONSENT_DISPLAY_LABELS,
+  type ConsentDisplayState,
+} from '@/lib/privacy/consent';
 
 export type LeadRow = {
   id: string;
@@ -30,6 +34,14 @@ export type LeadRow = {
   company: string | null;
   /** The storefront this lead came from. */
   countryName: string;
+  /**
+   * How this lead's consent reads. Four states rather than a boolean: a lead
+   * with nothing recorded and a lead processed on another lawful basis are
+   * different facts, and collapsing them would report one as the other.
+   */
+  consent: ConsentDisplayState;
+  /** Whether marketing may still be sent, shown beside the main state. */
+  marketingConsent: boolean;
   status: LeadStatus;
   source: string | null;
   utmSource: string | null;
@@ -282,6 +294,7 @@ export function LeadsTable({
               <SortableTh field="status" defaultDir="asc">
                 Status
               </SortableTh>
+              <Th>Consent</Th>
               <SortableTh field="updatedAt">Last activity</SortableTh>
               <SortableTh field="createdAt">Created</SortableTh>
               <Th align="right">Actions</Th>
@@ -375,6 +388,10 @@ export function LeadsTable({
                   <LeadStatusBadge status={row.status} />
                 </Td>
 
+                <Td>
+                  <ConsentChip state={row.consent} marketing={row.marketingConsent} />
+                </Td>
+
                 <Td className="whitespace-nowrap text-sm text-muted">
                   {formatRelative(row.updatedAt)}
                 </Td>
@@ -436,7 +453,10 @@ export function LeadsTable({
                     {showCountry ? ` · ${row.countryName}` : ''}
                   </p>
                 </div>
-                <LeadStatusBadge status={row.status} />
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <LeadStatusBadge status={row.status} />
+                  <ConsentChip state={row.consent} marketing={row.marketingConsent} />
+                </div>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
                 <span>{row.assignedToName ?? 'Unassigned'}</span>
@@ -476,5 +496,50 @@ export function LeadsTable({
         pending={busy}
       />
     </>
+  );
+}
+
+const CONSENT_CHIP: Record<ConsentDisplayState, string> = {
+  RECORDED: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+  NOT_RECORDED: 'bg-muted/10 text-muted ring-current/15',
+  WITHDRAWN: 'bg-amber-50 text-amber-700 ring-amber-600/20',
+  NOT_APPLICABLE: 'bg-muted/10 text-muted ring-current/15',
+};
+
+/**
+ * One lead's consent, compactly.
+ *
+ * The marketing dot is shown separately rather than folded into the main
+ * state: "agreed we may answer your enquiry" and "agreed to marketing" are
+ * different permissions, and a single tick that meant either would be read as
+ * meaning both.
+ */
+function ConsentChip({
+  state,
+  marketing,
+}: {
+  state: ConsentDisplayState;
+  marketing: boolean;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium ring-1 ring-inset',
+          CONSENT_CHIP[state],
+        )}
+      >
+        {state === 'RECORDED' ? <span aria-hidden="true">✓</span> : null}
+        {CONSENT_DISPLAY_LABELS[state]}
+      </span>
+      {marketing ? (
+        <span
+          className="rounded-full bg-brand/10 px-1.5 py-0.5 text-[0.625rem] font-medium text-brand"
+          title="Also agreed to marketing"
+        >
+          Mktg
+        </span>
+      ) : null}
+    </span>
   );
 }

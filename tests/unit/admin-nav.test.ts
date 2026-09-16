@@ -49,6 +49,10 @@ describe('admin navigation', () => {
     expect(crm.items.map((item) => item.label)).toEqual([
       'CRM Dashboard',
       'Leads',
+      // Reading the consent notice needs only leads.view: the people who work
+      // leads have to be able to see what those leads agreed to. Publishing a
+      // new version needs leads.manageConsent, which this user lacks.
+      'Consent notice',
       'Pipeline',
       'Customers',
     ]);

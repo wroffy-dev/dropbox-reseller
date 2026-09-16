@@ -57,6 +57,13 @@ export type FormBuilderValues = {
   createsLead: boolean;
   notifyEmails: string;
   consentText: string;
+  // --- Consent ---------------------------------------------------------------
+  /** What authorises processing this form's submissions. */
+  lawfulBasis: 'CONSENT' | 'CONTRACT' | 'LEGITIMATE_INTEREST' | 'LEGAL_OBLIGATION';
+  /** Off for a form that genuinely collects nothing personal. */
+  collectsPersonalData: boolean;
+  offerMarketingConsent: boolean;
+  requireTermsAcceptance: boolean;
   requireCaptcha: boolean;
   fields: BuilderField[];
 };
@@ -118,6 +125,10 @@ export const EMPTY_FORM: FormBuilderValues = {
   successMessage: 'Thank you. Our team will contact you shortly.',
   redirectUrl: '',
   leadSource: 'Website Form',
+  lawfulBasis: 'CONSENT',
+  collectsPersonalData: true,
+  offerMarketingConsent: true,
+  requireTermsAcceptance: false,
   countryId: '',
   defaultProductId: '',
   createsLead: true,

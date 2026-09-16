@@ -144,6 +144,12 @@ export const ADMIN_NAV: AdminNavModule[] = [
         description: 'Every enquiry from the website',
       },
       {
+        label: 'Consent notice',
+        href: '/admin/consent',
+        permission: 'leads.view',
+        description: 'Wording shown beside every public form',
+      },
+      {
         label: 'Pipeline',
         href: '/admin/pipeline',
         permission: 'leads.view',

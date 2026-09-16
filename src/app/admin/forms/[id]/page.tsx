@@ -94,6 +94,10 @@ export default async function EditForm({ params }: { params: Promise<{ id: strin
     createsLead: form.createsLead,
     notifyEmails: form.notifyEmails ?? '',
     consentText: form.consentText ?? '',
+    lawfulBasis: form.lawfulBasis,
+    collectsPersonalData: form.collectsPersonalData,
+    offerMarketingConsent: form.offerMarketingConsent,
+    requireTermsAcceptance: form.requireTermsAcceptance,
     requireCaptcha: form.requireCaptcha,
     fields,
   };

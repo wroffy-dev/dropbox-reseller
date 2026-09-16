@@ -10,9 +10,21 @@ import { runCountrySync, type SyncResult } from '@/lib/country/sync';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
 import type { Prisma } from '@prisma/client';
 
+/**
+ * There is no `mode`, and no `sourceCountryId`.
+ *
+ * The source is the default market, read from the database on every call: "sync
+ * from India" is a statement about which market is the root, and letting the
+ * browser name a source would make this a way to copy any market over any
+ * other — UAE over India, or one market over its neighbour.
+ *
+ * `mode` is gone because there is only one behaviour. An "update existing" mode
+ * would overwrite whatever the destination market had changed since importing,
+ * which is the destination's own work; there is no version of that worth
+ * offering an administrator.
+ */
 const schema = z.object({
   targetCountryId: z.string().min(1),
-  mode: z.enum(['ADD_MISSING', 'UPDATE_EXISTING']).default('ADD_MISSING'),
   previewOnly: z.coerce.boolean().default(false),
 });
 
@@ -35,7 +47,7 @@ const STALE_RUN_MS = 15 * 60 * 1000;
 export async function syncCountryContent(input: unknown): Promise<ActionResult<SyncResult & { runId: string | null }>> {
   try {
     const user = await authorize('settings.manage');
-    const { targetCountryId, mode, previewOnly } = schema.parse(input);
+    const { targetCountryId, previewOnly } = schema.parse(input);
 
     const [source, target] = await Promise.all([
       getDefaultCountry(),
@@ -48,7 +60,7 @@ export async function syncCountryContent(input: unknown): Promise<ActionResult<S
 
     // A preview writes nothing, so it neither takes the lock nor records a run.
     if (previewOnly) {
-      const result = await runCountrySync({ source, target, mode, previewOnly: true });
+      const result = await runCountrySync({ source, target, previewOnly: true });
       return success({ ...result, runId: null });
     }
 
@@ -70,7 +82,7 @@ export async function syncCountryContent(input: unknown): Promise<ActionResult<S
       data: {
         sourceCountryId: source.id,
         targetCountryId: target.id,
-        mode,
+        mode: 'ADD_MISSING',
         status: 'RUNNING',
         startedById: user.id,
       },
@@ -78,7 +90,7 @@ export async function syncCountryContent(input: unknown): Promise<ActionResult<S
     });
 
     try {
-      const result = await runCountrySync({ source, target, mode, previewOnly: false });
+      const result = await runCountrySync({ source, target, previewOnly: false });
 
       await prisma.countrySyncRun.update({
         where: { id: run.id },
@@ -86,13 +98,32 @@ export async function syncCountryContent(input: unknown): Promise<ActionResult<S
           status: 'COMPLETED',
           finishedAt: new Date(),
           createdCount: result.created,
-          updatedCount: result.updated,
-          skippedCount: result.skipped,
+          updatedCount: 0,
+          // Content the market removed on purpose is counted with the skips in
+          // the stored totals, and kept apart in the log where the reason is.
+          skippedCount: result.skipped + result.deletedLocally,
           conflictCount: result.conflicts,
           failedCount: result.failed,
           log: result.log as unknown as Prisma.InputJsonValue,
         },
       });
+
+      /*
+       * One line per run, for whoever is reading container logs rather than the
+       * admin screen. Counts and codes only: no lead details, no addresses, no
+       * credentials — none of which this touches, and none of which should ever
+       * reach a log line because a sync happened to run.
+       */
+      console.info(
+        `[country-sync] source=${source.code} target=${target.code} ` +
+          `created=${result.created} skipped=${result.skipped} ` +
+          `locally_deleted=${result.deletedLocally} conflicts=${result.conflicts} ` +
+          `failed=${result.failed} ` +
+          Object.entries(result.breakdown)
+            .filter(([, counts]) => counts.created > 0)
+            .map(([entity, counts]) => `${entity.toLowerCase()}_created=${counts.created}`)
+            .join(' '),
+      );
 
       await recordAudit({
         actor: user,
@@ -103,9 +134,14 @@ export async function syncCountryContent(input: unknown): Promise<ActionResult<S
       });
 
       revalidatePath('/admin/settings/countries');
+      revalidatePath('/admin/products');
+      revalidatePath('/admin/pages');
       return success(
         { ...result, runId: run.id },
-        `${result.created} created, ${result.updated} updated, ${result.skipped} skipped${result.conflicts > 0 ? `, ${result.conflicts} need a decision` : ''}.`,
+        `${result.created} added, ${result.skipped} already here` +
+          (result.deletedLocally > 0 ? `, ${result.deletedLocally} left removed` : '') +
+          (result.conflicts > 0 ? `, ${result.conflicts} need a decision` : '') +
+          '.',
       );
     } catch (error) {
       /*

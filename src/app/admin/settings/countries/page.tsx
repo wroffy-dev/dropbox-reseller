@@ -41,7 +41,14 @@ export default async function CountriesAdmin({
       where: { deletedAt: null },
       _count: { _all: true },
     }),
-    prisma.productCountry.groupBy({ by: ['countryId'], _count: { _all: true } }),
+    // Only what each market actually offers: a withdrawn product is not part
+    // of that market's catalogue, so counting it would overstate every number
+    // on this screen.
+    prisma.productCountry.groupBy({
+      by: ['countryId'],
+      where: { deletedAt: null },
+      _count: { _all: true },
+    }),
     getCountrySettingsRow(selected.id),
   ]);
 

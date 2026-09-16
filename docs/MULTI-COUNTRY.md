@@ -25,7 +25,10 @@ that proves it.
 - [Navigation](#navigation)
 - [Country settings](#country-settings)
 - [Forms, leads and popups](#forms-leads-and-popups)
-- [Duplicating content between countries](#duplicating-content-between-countries)
+- [Sync from India](#sync-from-india)
+- [Country availability for shared taxonomies](#country-availability-for-shared-taxonomies)
+- [Removing a product from one market](#removing-a-product-from-one-market)
+- [Duplicating one page between countries](#duplicating-one-page-between-countries)
 - [SEO, canonicals and hreflang](#seo-canonicals-and-hreflang)
 - [Caching and revalidation](#caching-and-revalidation)
 - [Permissions](#permissions)
@@ -314,9 +317,189 @@ away. The export is additionally narrowed to the markets the user may see.
 
 ---
 
-## Duplicating content between countries
+## Sync from India
 
-**Pages → row menu → Duplicate to country**, and the same on a blog post.
+**Settings → Countries → a market → Sync from India.**
+
+India — whichever market is the default — is the master. Every other market gets
+a **Sync from India** button; India never does, because there is nothing to copy
+into the market everything is copied from. The source is read from the database
+on every call and is never taken from the browser, so there is no request that
+could ask for UAE → Qatar, or UAE → India.
+
+### It only ever adds
+
+This is the single most important property, and it is worth stating as plainly
+as possible:
+
+| | |
+|---|---|
+| Content this market has never had | **added**, as a draft |
+| Content this market already has | **skipped**, however much it has been edited |
+| Content this market imported and then deleted | **skipped**, and stays deleted |
+| Content only this market has | **untouched** |
+| Content India deletes afterwards | **untouched** here |
+
+There is no "update existing" mode, and there is no mode selector. A mirror
+would make the destination look like the source, which means overwriting what
+the destination changed and deleting what the source no longer has — both of
+which destroy a market's own work. Adding and mirroring are different
+operations, and only one of them is safe to leave behind a button.
+
+Nothing is ever deleted from a destination market by a sync, and **source state
+is never a reason to touch a destination**. There is deliberately no code
+anywhere that reads "delete target items whose source is missing".
+
+### Deleting is local, always
+
+Every market owns its own content once it arrives:
+
+| Action | Effect elsewhere |
+|---|---|
+| Delete a UAE page | India and Qatar keep theirs |
+| Delete an India page | Previously synced copies stay |
+| Remove a product from the UAE | India and Qatar keep selling it |
+| Remove a product from India | The UAE and Qatar keep selling it |
+| Remove a category from the UAE | Every other market keeps it |
+
+India is the sync source, but it is still just a market: deleting something
+there stops it being a source for future runs and does nothing else.
+
+### Manually deleted content is not resurrected
+
+If a market imports a page and later deletes it, pressing **Sync from India**
+again does **not** bring it back. Deleting it was a decision.
+
+`CountrySyncMapping` is what makes this work, and it has **no foreign key** to
+the row it points at — deliberately, so deleting the copy leaves the mapping
+standing. When a run finds a mapping whose copy is gone it writes
+`deletedInTargetAt` and reports *"Previously imported but manually removed from
+this country"*. Every later run reads the same tombstone and reaches the same
+conclusion.
+
+To have the item again, add it in that market directly. There is no button that
+undoes a deletion, because a button that occasionally undid deletions would make
+every deletion provisional.
+
+### What is copied
+
+An explicit allowlist, in dependency order — never "everything except", because
+the exclusions must not depend on somebody remembering to add a new model to a
+deny-list.
+
+1. **Page categories** — availability, not copies
+2. **Product categories** — availability, not copies
+3. **Brands** — availability, not copies
+4. **Forms** — definition, fields, design, consent configuration; **inactive** on
+   arrival
+5. **Products** — a `ProductCountry` row per product, **`DRAFT`**, in the target's
+   own currency with **no prices**
+6. **Pages** — with their sections, block content, layout, media references, SEO
+   and OG fields; **`DRAFT`**
+7. **Page sections** — in order, with internal links rewritten for the target
+8. **Menus** — with their items and nesting; links remapped to this market's own
+   pages, and a link whose page was not imported is dropped rather than left
+   pointing at India
+9. **Popups** — **inactive** on arrival, pointed at this market's own form
+
+### What is never copied
+
+- **Leads**, lead notes, assignments and history
+- **Form submissions** — a synced form starts with zero
+- **Consent records**, marketing consent history and captured **IP addresses**
+- **Blog posts, categories and tags** — the blog is written once and lives at the
+  site root; no country-prefixed blog URL is ever created
+- **Users, staff accounts, password hashes, sessions, TOTP secrets, permissions**
+- **API credentials, SMTP credentials, environment variables**
+- **Audit logs and backups**
+- India's own company details, contact information and country settings
+
+### Canonical URLs are never carried across
+
+Neither a page's nor a product's `canonicalUrl` is copied. The source value names
+a URL on India's site; keeping it would tell search engines this market's page is
+a duplicate of India's and need not be shown. The field is left empty so the
+target market's own canonical generator answers for it.
+
+### Prices are never copied
+
+India's ₹1,250 is not 1,250 of anything else. Writing it into a row labelled AED
+would relabel a value rather than convert it. Imported products arrive in the
+target market's configured currency with their prices **empty**, and are reported
+as needing localisation. An empty price an administrator must fill in is safe; a
+wrong one that looks filled in is not.
+
+### Media is shared, not duplicated
+
+A synced page references the same `Media` row as India's. No binary file is
+duplicated, and a market that later replaces an image changes only its own page.
+
+### Preview first
+
+**Preview changes** takes exactly the same decisions the real run takes and
+writes nothing, so the per-entity counts shown are the counts that happen when
+the button is pressed. Both preview and result break down by content type, and
+both name what was left removed and what needs a decision. Failures are shown,
+never swallowed.
+
+### Concurrency and auditing
+
+A run into one market takes a lock on that market, so two administrators cannot
+sync India → UAE at once. India → UAE and India → Qatar are independent and can
+run together. Every run is recorded in `CountrySyncRun` with its source, target,
+actor, timings, status, counts and per-entity log.
+
+---
+
+## Country availability for shared taxonomies
+
+Product categories, page categories and brands are **one shared row each** —
+"Cloud storage" means the same thing everywhere, and a brand is one identity.
+Duplicating them per market would mean renaming the same thing five times and
+detaching every product that points at one.
+
+What is per-market is whether a market *offers* it:
+
+| Table | Says |
+|---|---|
+| `ProductCategoryCountry` | this market offers this product category |
+| `PageCategoryCountry` | this market uses this page category |
+| `BrandCountry` | this market carries this brand |
+
+They follow the shape `BlogCategoryCountry` already established. Removing a
+category from a market's admin screen deletes **one row here**, not the taxonomy
+everybody shares. The shared row is only deleted once no market offers it at all.
+
+`src/lib/country/availability.ts` is the one place that decides this.
+
+---
+
+## Removing a product from one market
+
+`ProductCountry.deletedAt` archives a market's configuration. Delete on
+`/admin/products` means "stop selling this here": the market's prices, ordering
+and SEO are kept rather than destroyed, so a mistaken removal costs nothing to
+undo, and re-entering pricing for that market lifts the withdrawal.
+
+The global `Product.deletedAt` is only set once **no** market offers it any more.
+A product still on sale somewhere must keep a live global row, because every
+market's configuration hangs off it.
+
+This applies to bulk delete too: selecting twenty rows in the UAE catalogue and
+pressing Delete is twenty withdrawals from the UAE, not twenty products destroyed
+for every market.
+
+`/admin/products` lists the catalogue of the market being worked in, and its
+Status, Featured, price and currency columns read that market's row — not the
+global product's.
+
+---
+
+## Duplicating one page between countries
+
+**Pages → row menu → Duplicate to country**, and the same on a blog post. This is
+the one-page version of the sync above, for when a market needs a single page
+rather than everything.
 
 What comes across: every section in order with its block type, content, design
 settings and media references; the layout flags; the SEO fields as a starting

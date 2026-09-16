@@ -84,6 +84,7 @@ async function countriesWithEquivalent(surface: Surface): Promise<Set<string>> {
   if (productSlug) {
     const rows = await prisma.productCountry.findMany({
       where: {
+        deletedAt: null,
         status: 'PUBLISHED',
         OR: [{ publishedAt: null }, { publishedAt: { lte: new Date() } }],
         product: { deletedAt: null, slug: productSlug },

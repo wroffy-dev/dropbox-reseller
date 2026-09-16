@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
+import { getAdminCountryScope } from '@/lib/country/admin';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { BrandManager, type BrandRow } from '@/components/admin/products/brand-manager';
 import { Card } from '@/components/ui/card';
@@ -12,8 +13,11 @@ export const dynamic = 'force-dynamic';
 
 export default async function BrandsAdmin() {
   const user = await requirePermission('products.view');
+  const scope = await getAdminCountryScope();
 
   const brands = await prisma.brand.findMany({
+    // Only what this market carries. See the categories screen.
+    where: { countries: { some: { countryId: scope.country.id } } },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     include: {
       logo: { select: { url: true } },

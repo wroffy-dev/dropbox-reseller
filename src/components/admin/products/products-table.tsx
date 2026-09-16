@@ -45,12 +45,22 @@ export function ProductsTable({
   can,
   filtered,
   showCountries = false,
+  countryName,
+  isDefaultCountry = false,
 }: {
   rows: ProductRow[];
   can: ProductPermissions;
   filtered: boolean;
   /** Adds the "Sold in" column. Hidden on a single-market installation. */
   showCountries?: boolean;
+  /**
+   * The market being worked in. Delete on this screen removes a product from
+   * **this** market, so the confirmation has to say which one rather than
+   * asking "delete this product?" about a catalogue shared with four others.
+   */
+  countryName?: string;
+  /** The source market: its deletions do not follow content already synced. */
+  isDefaultCountry?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -315,8 +325,15 @@ export function ProductsTable({
           if (confirmDelete) await run(() => deleteProduct(confirmDelete));
           setConfirmDelete(null);
         }}
-        title="Delete this product?"
-        message="It is removed from the website and every product block. Existing leads keep their product attribution."
+        title={countryName ? `Remove this product from ${countryName}?` : 'Remove this product?'}
+        message={
+          countryName
+            ? `This only removes it from ${countryName} — its pricing and settings here are archived, and existing leads keep their product attribution.` +
+              (isDefaultCountry
+                ? ' Copies already synced to other markets are not affected.'
+                : ' Other markets are not affected.')
+            : 'It is removed from this market. Existing leads keep their product attribution.'
+        }
         pending={busy}
       />
 
@@ -328,8 +345,19 @@ export function ProductsTable({
           if (ok) selection.clear();
           setConfirmBulkDelete(false);
         }}
-        title={`Delete ${selection.selected.length} product(s)?`}
-        message="They are removed from the website and every product block."
+        title={
+          countryName
+            ? `Remove ${selection.selected.length} product(s) from ${countryName}?`
+            : `Remove ${selection.selected.length} product(s)?`
+        }
+        message={
+          countryName
+            ? `This only removes them from ${countryName}.` +
+              (isDefaultCountry
+                ? ' Copies already synced to other markets are not affected.'
+                : ' Other markets are not affected.')
+            : 'They are removed from this market only.'
+        }
         pending={busy}
       />
     </>

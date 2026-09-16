@@ -36,7 +36,21 @@ export default async function ProductsAdmin({
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
 
-  const where: Prisma.ProductWhereInput = { deletedAt: null };
+  /*
+   * The catalogue of the market being worked in, not the global one.
+   *
+   * A product is in a market's catalogue when that market has a live
+   * `ProductCountry` row for it. Listing every product regardless meant a UAE
+   * administrator saw India's plans, could delete one, and — before deletion
+   * was scoped — removed it from India by doing so.
+   *
+   * The market's own status is what the Status filter matches, for the same
+   * reason: "Published" on this screen has to mean published *here*.
+   */
+  const where: Prisma.ProductWhereInput = {
+    deletedAt: null,
+    countries: { some: { countryId: scope.country.id, deletedAt: null } },
+  };
   if (params.q?.trim()) {
     where.OR = [
       { name: { contains: params.q.trim(), mode: 'insensitive' } },
@@ -44,11 +58,23 @@ export default async function ProductsAdmin({
       { sku: { contains: params.q.trim(), mode: 'insensitive' } },
     ];
   }
-  if (params.status) where.status = params.status as Prisma.ProductWhereInput['status'];
+  if (params.status) {
+    where.countries = {
+      some: {
+        countryId: scope.country.id,
+        deletedAt: null,
+        status: params.status as Prisma.ProductCountryWhereInput['status'],
+      },
+    };
+  }
   if (params.category) where.categoryId = params.category;
   if (params.brand) where.brandId = params.brand;
-  if (params.featured === 'yes') where.isFeatured = true;
-  if (params.featured === 'no') where.isFeatured = false;
+  if (params.featured === 'yes' || params.featured === 'no') {
+    const existing = (where.countries?.some ?? {}) as Prisma.ProductCountryWhereInput;
+    where.countries = {
+      some: { ...existing, isFeatured: params.featured === 'yes' },
+    };
+  }
 
   const [rows, total, categories, brands] = await Promise.all([
     prisma.product.findMany({
@@ -68,11 +94,25 @@ export default async function ProductsAdmin({
         monthlyPrice: true,
         annualPrice: true,
         category: { select: { name: true } },
-        // Which markets actually publish this product, so the catalogue shows
-        // where a plan is on sale without opening it.
+        /*
+         * Every market that still offers it, in one go: this market's own row
+         * supplies the status, price and currency the screen shows — the
+         * global row's INR price is not what the UAE charges — and the rest
+         * supply the "live in" badges. Two filtered selects of the same
+         * relation are not possible in one query, and two queries would be a
+         * second round trip for something already in hand.
+         */
         countries: {
-          where: { status: 'PUBLISHED' },
-          select: { country: { select: { code: true } } },
+          where: { deletedAt: null },
+          select: {
+            countryId: true,
+            status: true,
+            isFeatured: true,
+            currency: true,
+            monthlyPrice: true,
+            annualPrice: true,
+            country: { select: { code: true } },
+          },
         },
         _count: { select: { leads: true } },
       },
@@ -94,21 +134,30 @@ export default async function ProductsAdmin({
     delete: userCan(user, 'products.delete'),
   };
 
-  const tableRows: ProductRow[] = rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    slug: row.slug,
-    sku: row.sku,
-    status: row.status,
-    isFeatured: row.isFeatured,
-    categoryName: row.category?.name ?? null,
-    storage: row.storage,
-    currency: row.currency,
-    monthlyPrice: decimalToString(row.monthlyPrice),
-    annualPrice: decimalToString(row.annualPrice),
-    liveIn: row.countries.map((entry) => entry.country.code),
-    leadCount: row._count.leads,
-  }));
+  const tableRows: ProductRow[] = rows.map((row) => {
+    // This market's configuration. Present by construction — the query only
+    // returns products this market offers — but read defensively so a race
+    // with a withdrawal renders a row rather than throwing.
+    const here = row.countries.find((entry) => entry.countryId === scope.country.id);
+
+    return {
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      sku: row.sku,
+      status: here?.status ?? row.status,
+      isFeatured: here?.isFeatured ?? row.isFeatured,
+      categoryName: row.category?.name ?? null,
+      storage: row.storage,
+      currency: here?.currency ?? row.currency,
+      monthlyPrice: decimalToString(here?.monthlyPrice ?? row.monthlyPrice),
+      annualPrice: decimalToString(here?.annualPrice ?? row.annualPrice),
+      liveIn: row.countries
+        .filter((entry) => entry.status === 'PUBLISHED')
+        .map((entry) => entry.country.code),
+      leadCount: row._count.leads,
+    };
+  });
 
   const definitions: FilterDefinition[] = [
     {
@@ -204,6 +253,8 @@ export default async function ProductsAdmin({
             params.q || params.status || params.category || params.brand || params.featured,
           )}
           showCountries={scope.canSwitch}
+          countryName={scope.canSwitch ? scope.country.name : undefined}
+          isDefaultCountry={scope.country.isDefault}
         />
         {tableRows.length > 0 ? (
           <AdminPagination

@@ -8,6 +8,87 @@ This project uses [semantic versioning](https://semver.org): MAJOR.MINOR.PATCH.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Deleting a product from one market deleted it from every market.** The
+  product screen is country-scoped, but delete set the global `Product.deletedAt`
+  — so removing a plan from the UAE catalogue removed it from India and Qatar
+  too, without anyone there being asked. Deletion is now a withdrawal from one
+  market: `ProductCountry.deletedAt` archives that market's configuration, and
+  the shared product row is only retired once no market offers it. Bulk delete
+  was the same bug at twenty times the scale and is fixed the same way.
+
+- **Deleting a category or brand from one market deleted it everywhere.** The
+  taxonomies are shared rows, so a country screen's delete removed the row
+  everybody used. Three new availability tables — `ProductCategoryCountry`,
+  `PageCategoryCountry`, `BrandCountry` — record which markets offer what, and a
+  country-scoped removal now deletes one availability row. The shared row is
+  removed only when no market offers it at all.
+
+- **`/admin/products` listed the global catalogue**, so a UAE administrator saw
+  and could delete India's products. It now lists the market being worked in,
+  and the Status, Featured, price and currency columns read that market's own
+  configuration rather than the global product's.
+
+### Changed
+
+- **The country sync is add-only.** `UPDATE_EXISTING` is gone from the interface
+  and from the engine. Content a market already has is skipped however much it
+  has been edited; content a market imported and then deleted stays deleted;
+  content only that market has is untouched; and deleting something in India
+  never touches a copy already synced elsewhere.
+
+- **Manually deleted content is no longer resurrected.** `CountrySyncMapping`
+  gains `deletedInTargetAt`. When a run finds a previously imported copy gone it
+  records a tombstone and reports *"Previously imported but manually removed from
+  this country"*; every later run reaches the same conclusion. The mapping has no
+  foreign key to the row it points at, which is what lets the tombstone outlive
+  the deletion.
+
+- **The sync allowlist covers the rest of a market's website**: page categories,
+  product categories, brands, forms, products, pages, page sections, menus and
+  popups, in dependency order. Menu links are remapped to the target market's own
+  pages, and a link whose page was not imported is dropped rather than left
+  pointing at India.
+
+- **Canonical URLs are no longer carried across.** A copied `canonicalUrl` named a
+  URL on India's site, which tells search engines the target market's page is a
+  duplicate that need not be shown. The field is left empty so each market's own
+  canonical generator answers for it.
+
+- **Every non-default market gets a "Sync from India" button** on Settings →
+  Countries; the default market never does. The source is resolved server-side
+  from the default-country configuration and is never taken from the browser, so
+  no request can ask for UAE → Qatar.
+
+- Preview and result both break down by content type, name what was left removed,
+  and show failures rather than swallowing them. Delete confirmations name the
+  market: *"Remove this product from UAE?"*, with a line saying other markets are
+  unaffected.
+
+- Mapping and target lookups are batched per entity kind rather than issued per
+  item, so a market with hundreds of imported records costs one query instead of
+  hundreds.
+
+### Database
+
+Additive migration `20260916150000_country_content_isolation`. No data is reset,
+dropped or rewritten:
+
+- `ProductCountry.deletedAt` + an index on `(countryId, deletedAt)`
+- `CountrySyncMapping.deletedInTargetAt`
+- `ProductCategoryCountry`, `PageCategoryCountry`, `BrandCountry`
+- `Form.offerMarketingConsent` default changed to `false`
+
+Backfill grants every existing market exactly what it can see today, so the admin
+screens and the public site are unchanged the moment it lands. Products already
+deleted globally have their market configurations marked to match, so the change
+of meaning does not bring products back into storefronts that had removed them.
+
+---
+
 ## [1.1.0] — 2026-09-16
 
 ### Fixed

@@ -341,7 +341,10 @@ export async function saveProductCountry(formData: FormData): Promise<ActionResu
 
     await prisma.productCountry.upsert({
       where: { productId_countryId: { productId, countryId } },
-      update: data,
+      // Entering pricing for a market that had withdrawn the product is an
+      // explicit decision to offer it again, so the withdrawal is lifted here
+      // rather than leaving a configured row the storefront still ignores.
+      update: { ...data, deletedAt: null },
       create: { productId, countryId, ...data },
     });
 
@@ -382,7 +385,15 @@ export async function removeProductCountry(input: unknown): Promise<ActionResult
     ]);
     if (!country || !product) return failure('That product or country no longer exists.');
 
-    await prisma.productCountry.deleteMany({ where: { productId, countryId } });
+    /*
+     * Archived, not erased. The market's prices, ordering and SEO survive a
+     * withdrawal, so re-offering the product later does not mean re-entering
+     * everything — and the sync's tombstone still sees a row it can recognise.
+     */
+    await prisma.productCountry.updateMany({
+      where: { productId, countryId, deletedAt: null },
+      data: { deletedAt: new Date(), status: 'ARCHIVED', isFeatured: false },
+    });
 
     await recordAudit({
       actor: user,

@@ -2,23 +2,34 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, CheckCircle2, CircleAlert, Copy, Info } from 'lucide-react';
+import { ArrowRight, CheckCircle2, CircleAlert, Copy, Info, MinusCircle } from 'lucide-react';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Field, Select } from '@/components/ui/field';
 import { useToast } from '@/components/ui/toast';
 import { Spinner } from '@/components/ui/icons';
 import { syncCountryContent } from '@/lib/actions/country-sync';
-import type { SyncResult, SyncLogEntry } from '@/lib/country/sync';
+import {
+  SYNC_ENTITIES,
+  SYNC_ENTITY_LABELS,
+  type SyncResult,
+  type SyncLogEntry,
+  type SyncEntity,
+  // From the client-safe module, not the engine: importing the engine here
+  // would pull `server-only` and Prisma into the browser bundle.
+} from '@/lib/country/sync-entities';
 import { cn } from '@/lib/utils/cn';
 
 /**
- * "Sync Content from <source>", on a destination market's screen.
+ * "Sync from <source>", on a destination market's screen.
  *
  * Preview first, by default. The preview takes the same decisions the real run
  * takes and writes nothing, so the counts shown above the button are the counts
  * that happen when it is pressed — which is the only way an administrator can
  * approve something they have actually seen.
+ *
+ * There is no mode. This adds content this market has never had, and that is
+ * the only thing it does: nothing already here is changed, and nothing this
+ * market removed comes back.
  */
 export function SyncPanel({
   sourceName,
@@ -31,33 +42,36 @@ export function SyncPanel({
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [mode, setMode] = React.useState<'ADD_MISSING' | 'UPDATE_EXISTING'>('ADD_MISSING');
   const [busy, setBusy] = React.useState<'preview' | 'run' | null>(null);
   const [preview, setPreview] = React.useState<SyncResult | null>(null);
   const [outcome, setOutcome] = React.useState<SyncResult | null>(null);
 
   async function run(previewOnly: boolean) {
     setBusy(previewOnly ? 'preview' : 'run');
-    const result = await syncCountryContent({
-      targetCountryId: target.id,
-      mode,
-      previewOnly,
-    });
-    setBusy(null);
+    try {
+      const result = await syncCountryContent({ targetCountryId: target.id, previewOnly });
 
-    if (!result.ok) {
-      toast(result.error, 'error');
-      return;
+      if (!result.ok) {
+        toast(result.error, 'error');
+        return;
+      }
+      if (previewOnly) {
+        setPreview(result.data ?? null);
+        setOutcome(null);
+        return;
+      }
+      setOutcome(result.data ?? null);
+      setPreview(null);
+      toast(result.message ?? 'Sync complete.');
+      router.refresh();
+    } catch {
+      // A failure that is not a refused sync — a dropped connection, a deploy
+      // mid-request. Cleared in `finally` either way, so the button is never
+      // left spinning with nothing to show for it.
+      toast('Something went wrong running the sync. Please try again.', 'error');
+    } finally {
+      setBusy(null);
     }
-    if (previewOnly) {
-      setPreview(result.data ?? null);
-      setOutcome(null);
-      return;
-    }
-    setOutcome(result.data ?? null);
-    setPreview(null);
-    toast(result.message ?? 'Sync complete.');
-    router.refresh();
   }
 
   const shown = outcome ?? preview;
@@ -66,7 +80,7 @@ export function SyncPanel({
     <Card className="mt-6">
       <CardHeader
         title={`Sync content from ${sourceName}`}
-        description="Copies pages, their sections, product availability and market-specific forms. Everything arrives as a draft for review."
+        description={`Adds ${sourceName}'s pages, menus, forms, categories and products to ${target.name}. Everything arrives as a draft for review.`}
       />
       <CardBody className="space-y-5">
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-hairline bg-muted/[0.03] p-3 text-sm">
@@ -77,48 +91,30 @@ export function SyncPanel({
         </div>
 
         <div className="rounded-lg border border-hairline p-3 text-xs leading-relaxed text-muted">
-          <p className="font-medium text-content">What is not copied</p>
+          <p className="font-medium text-content">This only ever adds</p>
           <p className="mt-1">
-            Blog articles, categories and tags — the blog is written once and lives at the site root.
-            Leads, form submissions and consent records. Staff, permissions and credentials.{' '}
-            {sourceName}’s own company details and contact information.
+            Anything {target.name} already has is left exactly as it is, however much it has been
+            edited since. Anything {target.name} has deleted stays deleted — removing something here
+            is a decision, and pressing this will not undo it.
+          </p>
+          <p className="mt-2">
+            Nothing is ever deleted from {target.name}, and nothing that happens in {sourceName}{' '}
+            afterwards — including deleting a page or a product — changes anything here.
+          </p>
+          <p className="mt-2 font-medium text-content">What is never copied</p>
+          <p className="mt-1">
+            Leads, form submissions, consent records and IP addresses. Blog articles, categories and
+            tags — the blog is written once and lives at the site root. Staff, permissions,
+            credentials and audit logs. {sourceName}&rsquo;s own company and contact details.
           </p>
           <p className="mt-2">
             <strong className="font-medium text-content">Prices are not copied.</strong> Products
             arrive configured in {target.currency} with their prices empty, because converting a
             figure from one currency to another is a decision, not a copy.
           </p>
-          <p className="mt-2">
-            Product categories, brands and shared forms are the same records in every market
-            already, so there is nothing to duplicate.
-          </p>
         </div>
 
-        <Field
-          label="Mode"
-          htmlFor="sync-mode"
-          hint={
-            mode === 'ADD_MISSING'
-              ? 'Adds what this market does not have yet. Nothing already here is touched.'
-              : 'Also refreshes previously imported content — but anything edited in this market since it was imported is reported as a conflict and left exactly as it is.'
-          }
-        >
-          <Select
-            id="sync-mode"
-            value={mode}
-            disabled={!canSync || busy !== null}
-            onChange={(event) => {
-              setMode(event.target.value as typeof mode);
-              setPreview(null);
-              setOutcome(null);
-            }}
-          >
-            <option value="ADD_MISSING">Add missing content only</option>
-            <option value="UPDATE_EXISTING">Update previously imported content</option>
-          </Select>
-        </Field>
-
-        {shown ? <Summary result={shown} isPreview={!outcome} /> : null}
+        {shown ? <Summary result={shown} isPreview={!outcome} sourceName={sourceName} target={target.name} /> : null}
 
         {canSync ? (
           <div className="flex flex-wrap gap-2">
@@ -141,7 +137,7 @@ export function SyncPanel({
               ) : (
                 <>
                   <Copy className="h-4 w-4" aria-hidden="true" />
-                  Sync content from {sourceName}
+                  Sync from {sourceName}
                 </>
               )}
             </Button>
@@ -156,9 +152,27 @@ export function SyncPanel({
   );
 }
 
-function Summary({ result, isPreview }: { result: SyncResult; isPreview: boolean }) {
+function Summary({
+  result,
+  isPreview,
+  sourceName,
+  target,
+}: {
+  result: SyncResult;
+  isPreview: boolean;
+  sourceName: string;
+  target: string;
+}) {
   const localise = result.log.filter((entry) => (entry.localise?.length ?? 0) > 0);
   const conflicts = result.log.filter((entry) => entry.outcome === 'conflict');
+  const failures = result.log.filter((entry) => entry.outcome === 'failed');
+
+  // Only the kinds that actually have something to report, so a market with no
+  // popups is not told about popups.
+  const rows = SYNC_ENTITIES.map((entity) => ({ entity, counts: result.breakdown[entity] })).filter(
+    ({ counts }) =>
+      counts.created + counts.skipped + counts.deletedLocally + counts.conflicts + counts.failed > 0,
+  );
 
   return (
     <div className="space-y-4">
@@ -174,14 +188,75 @@ function Summary({ result, isPreview }: { result: SyncResult; isPreview: boolean
           ) : (
             <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
           )}
-          {isPreview ? 'Preview — nothing written yet' : 'Done'}
+          {isPreview ? 'Preview — nothing written yet' : `${sourceName} → ${target} complete`}
         </span>
-        <Count label="to create" value={result.created} done={!isPreview} doneLabel="created" />
-        <Count label="to update" value={result.updated} done={!isPreview} doneLabel="updated" />
-        <Count label="skipped" value={result.skipped} done doneLabel="skipped" />
-        <Count label="conflicts" value={result.conflicts} done doneLabel="conflicts" warn />
-        <Count label="failed" value={result.failed} done doneLabel="failed" warn />
       </div>
+
+      {rows.length > 0 ? (
+        <div className="overflow-hidden rounded-lg border border-hairline">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/[0.03] text-xs uppercase tracking-wide text-muted">
+              <tr>
+                <th scope="col" className="px-3 py-2 text-left font-medium">
+                  Content
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  {isPreview ? 'To add' : 'Added'}
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  Already here
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  Left removed
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-hairline">
+              {rows.map(({ entity, counts }) => (
+                <tr key={entity}>
+                  <th scope="row" className="px-3 py-2 text-left font-medium text-content">
+                    {SYNC_ENTITY_LABELS[entity as SyncEntity]}
+                  </th>
+                  <td className="px-3 py-2 text-right tabular-nums text-content">
+                    {counts.created}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">{counts.skipped}</td>
+                  <td
+                    className={cn(
+                      'px-3 py-2 text-right tabular-nums',
+                      counts.deletedLocally > 0 ? 'font-medium text-amber-700' : 'text-muted',
+                    )}
+                  >
+                    {counts.deletedLocally}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-sm text-muted">
+          {sourceName} has nothing {target} does not already have.
+        </p>
+      )}
+
+      <p className="text-xs leading-relaxed text-muted">
+        Excluded from every sync: leads, form submissions, consent records, IP addresses, blog
+        articles, staff accounts and credentials.
+      </p>
+
+      {result.deletedLocally > 0 ? (
+        <div className="rounded-lg border border-hairline bg-muted/[0.03] p-3">
+          <p className="flex items-center gap-2 text-sm font-medium text-content">
+            <MinusCircle className="h-4 w-4 text-muted" aria-hidden="true" />
+            {result.deletedLocally} item{result.deletedLocally === 1 ? '' : 's'} left removed
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-muted">
+            Imported here once and deleted since. A deletion in this market is a decision, so these
+            are not brought back. To have one again, add it here directly.
+          </p>
+        </div>
+      ) : null}
 
       {conflicts.length > 0 ? (
         <div className="rounded-lg border border-amber-500/30 bg-amber-50/60 p-3">
@@ -197,8 +272,25 @@ function Summary({ result, isPreview }: { result: SyncResult; isPreview: boolean
             ))}
           </ul>
           <p className="mt-2 text-xs text-amber-900/80">
-            Nothing above was overwritten. Edit the local copy, or delete it and sync again.
+            Nothing above was changed. Rename or remove the local copy and sync again.
           </p>
+        </div>
+      ) : null}
+
+      {failures.length > 0 ? (
+        <div className="rounded-lg border border-red-500/30 bg-red-50/60 p-3">
+          <p className="flex items-center gap-2 text-sm font-semibold text-red-900">
+            <CircleAlert className="h-4 w-4" aria-hidden="true" />
+            {failures.length} failed
+          </p>
+          <ul className="mt-2 space-y-1 text-sm text-red-900">
+            {failures.map((entry, index) => (
+              <li key={index}>
+                <strong className="font-medium">{entry.label}</strong>
+                {entry.note ? ` — ${entry.note}` : null}
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
 
@@ -235,40 +327,21 @@ function LogRow({ entry }: { entry: SyncLogEntry }) {
     <li className="flex flex-wrap items-baseline gap-x-2 border-b border-hairline py-1 last:border-0">
       <span
         className={cn(
-          'w-16 shrink-0 font-medium',
+          'w-24 shrink-0 font-medium',
           entry.outcome === 'created' && 'text-emerald-700',
-          entry.outcome === 'updated' && 'text-brand',
+          entry.outcome === 'deleted-locally' && 'text-amber-700',
           entry.outcome === 'conflict' && 'text-amber-700',
           entry.outcome === 'failed' && 'text-red-700',
           entry.outcome === 'skipped' && 'text-muted',
         )}
       >
-        {entry.outcome}
+        {entry.outcome === 'deleted-locally' ? 'left removed' : entry.outcome}
       </span>
-      <span className="w-24 shrink-0 font-mono text-muted">{entry.entity.toLowerCase()}</span>
+      <span className="w-28 shrink-0 font-mono text-muted">
+        {entry.entity.toLowerCase().replace(/_/g, ' ')}
+      </span>
       <span className="min-w-0 flex-1 text-content">{entry.label}</span>
       {entry.note ? <span className="w-full text-muted sm:w-auto">{entry.note}</span> : null}
     </li>
-  );
-}
-
-function Count({
-  label,
-  doneLabel,
-  value,
-  done,
-  warn,
-}: {
-  label: string;
-  doneLabel: string;
-  value: number;
-  done: boolean;
-  warn?: boolean;
-}) {
-  if (value === 0 && warn) return null;
-  return (
-    <span className={cn('text-xs', warn && value > 0 ? 'font-medium text-amber-700' : 'text-muted')}>
-      <strong className="font-semibold text-content">{value}</strong> {done ? doneLabel : label}
-    </span>
   );
 }

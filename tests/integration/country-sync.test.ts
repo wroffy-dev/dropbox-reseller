@@ -11,6 +11,7 @@ const suffix = uniqueSuffix();
 let sourceId = '';
 let targetId = '';
 const pageSlug = `sync-page-${suffix}`;
+let productId = '';
 
 beforeAll(async () => {
   /*
@@ -48,6 +49,33 @@ beforeAll(async () => {
   targetId = target.id;
   invalidateCountryCache();
 
+  /*
+   * A product configured in the source market.
+   *
+   * Created here rather than relied upon: CI runs against a freshly migrated
+   * database with no seed, so a test that assumed seeded products passed
+   * locally and found nothing to copy in CI.
+   */
+  const product = await prisma.product.create({
+    data: {
+      name: `Sync Product ${suffix}`,
+      slug: `sync-product-${suffix}`,
+      countries: {
+        create: {
+          countryId: sourceId,
+          status: 'PUBLISHED',
+          publishedAt: new Date(),
+          currency: 'INR',
+          monthlyPrice: 1250,
+          annualPrice: 12500,
+          shortDescription: 'Plans from ₹1,250 for teams in India.',
+        },
+      },
+    },
+    select: { id: true },
+  });
+  productId = product.id;
+
   // A source page with a section carrying an internal link, an external one
   // and a blog link — the three cases link rewriting has to tell apart.
   await prisma.page.create({
@@ -83,6 +111,8 @@ afterAll(async () => {
   await prisma.productCountry.deleteMany({ where: { countryId: targetId } });
   await prisma.page.deleteMany({ where: { countryId: targetId } });
   await prisma.form.deleteMany({ where: { countryId: targetId } });
+  await prisma.productCountry.deleteMany({ where: { productId } });
+  await prisma.product.deleteMany({ where: { id: productId } });
 });
 
 const sync = (over: Record<string, unknown> = {}) =>
@@ -125,7 +155,9 @@ describe('sync from the default market', () => {
   });
 
   it('never relabels money — the copy is in its own currency with no prices', async () => {
-    const rows = await prisma.productCountry.findMany({ where: { countryId: targetId } });
+    const rows = await prisma.productCountry.findMany({
+      where: { countryId: targetId, productId },
+    });
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       expect(row.currency).toBe('QAR');

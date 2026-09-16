@@ -78,6 +78,21 @@ const RESERVED_COUNTRY_PREFIXES: ReadonlySet<string> = new Set([
   'products',
 ]);
 
+/**
+ * The blog lives at the site root only.
+ *
+ * Articles are written once and are not per-market: there is one `/blog`, one
+ * set of categories and one set of tags, and every market links to them. So a
+ * blog path is never given a market prefix — `/ae/blog/x` would be a second URL
+ * for the same article, which is duplicate content that splits its own ranking.
+ *
+ * This is the single test for "is this a blog URL", used by link generation,
+ * by the redirect that retires the prefixed copies, and by the sitemaps.
+ */
+export function isBlogPath(path: string): boolean {
+  return pathSegments(path)[0] === 'blog';
+}
+
 export function isReservedCountryPrefix(prefix: string): boolean {
   const value = prefix.trim().toLowerCase();
   if (!value) return false;
@@ -145,6 +160,13 @@ export function countryHref(country: CountryContext, href: string | null | undef
   const first = segments[0];
 
   if (first && isReservedSegment(first)) return href;
+  /*
+   * The blog is root-only, so a link to it stays root-relative in every
+   * market. Prefixing it would produce a URL that only exists to redirect
+   * back here — and a country navigation linking to `/blog` is exactly what
+   * is wanted.
+   */
+  if (first === 'blog') return href;
   // Already addressed to a market — the editor meant that market.
   if (first && (first === country.slug || country.prefixes.includes(first))) return href;
 

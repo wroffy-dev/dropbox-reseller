@@ -286,8 +286,11 @@ describe('localiseHtml', () => {
     expect(localiseHtml('<img src="/uploads/2026/01/hero.png">', uae)).toBe(
       '<img src="/uploads/2026/01/hero.png">',
     );
+    // The blog is root-only: an editor's link to an article stays pointing at
+    // the one URL that article has, in every market. Prefixing it would make
+    // a second URL whose only purpose is to redirect back here.
     expect(localiseHtml('<a href="/blog/guide">g</a>', uae)).toBe(
-      '<a href="/ae/blog/guide">g</a>',
+      '<a href="/blog/guide">g</a>',
     );
   });
 

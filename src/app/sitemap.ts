@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import { getSeoSettings } from '@/lib/services/settings';
 import { publishedPageWhere } from '@/lib/services/pages';
 import { publishedPostWhere } from '@/lib/services/blog';
-import { listActiveCountries } from '@/lib/country/registry';
+import { listIndexableCountries } from '@/lib/country/registry';
 import { countryPath } from '@/lib/country/routing';
 import { siteUrl } from '@/lib/env';
 
@@ -30,7 +30,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   if (seo && !seo.sitemapEnabled) return [];
 
   try {
-    const countries = await listActiveCountries();
+    const countries = await listIndexableCountries();
 
     const [pages, products, posts, categories, tags, blogSettings] = await Promise.all([
       prisma.page.findMany({
@@ -89,16 +89,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       });
     }
 
-    // The archive drops out of the sitemap when it is set to noindex.
+    /*
+     * The blog is listed once, at the site root.
+     *
+     * Articles are not per-market: there is one `/blog`, and the prefixed
+     * copies now redirect to it. Emitting a `/ae/blog` entry would advertise a
+     * redirect as a canonical URL.
+     */
     if (!blogSettings?.noIndex) {
-      for (const country of countries) {
-        entries.push({
-          url: `${base}${countryPath(country, 'blog')}`,
-          lastModified: posts.find((post) => post.countryId === country.id)?.updatedAt ?? new Date(),
-          changeFrequency: 'daily',
-          priority: 0.7,
-        });
-      }
+      entries.push({
+        url: `${base}/blog`,
+        lastModified: posts[0]?.updatedAt ?? new Date(),
+        changeFrequency: 'daily',
+        priority: 0.7,
+      });
     }
 
     for (const row of products) {
@@ -112,42 +116,40 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       });
     }
 
-    for (const category of categories) {
-      for (const { countryId } of category.posts) {
-        const href = url(countryId, `blog/category/${category.slug}`);
-        if (!href) continue;
+    // Categories, tags and articles: one entry each, at the root. A category
+    // that a market's posts happen to use is still the same one category.
+    if (!blogSettings?.noIndex) {
+      for (const category of categories) {
         entries.push({
-          url: href,
+          url: `${base}/blog/category/${category.slug}`,
           lastModified: category.updatedAt,
           changeFrequency: 'weekly',
           priority: 0.5,
         });
       }
-    }
 
-    for (const tag of tags) {
-      const countryIds = new Set(tag.posts.map((row) => row.post.countryId));
-      for (const countryId of countryIds) {
-        const href = url(countryId, `blog/tag/${tag.slug}`);
-        if (!href) continue;
+      for (const tag of tags) {
         entries.push({
-          url: href,
+          url: `${base}/blog/tag/${tag.slug}`,
           lastModified: tag.updatedAt ?? tag.createdAt,
           changeFrequency: 'weekly',
           priority: 0.4,
         });
       }
-    }
 
-    for (const post of posts) {
-      const href = url(post.countryId, `blog/${post.slug}`);
-      if (!href) continue;
-      entries.push({
-        url: href,
-        lastModified: post.updatedAt,
-        changeFrequency: 'monthly',
-        priority: 0.6,
-      });
+      // De-duplicated by slug: the same article stored against two markets is
+      // still one URL, and listing it twice would be listing a duplicate.
+      const seen = new Set<string>();
+      for (const post of posts) {
+        if (seen.has(post.slug)) continue;
+        seen.add(post.slug);
+        entries.push({
+          url: `${base}/blog/${post.slug}`,
+          lastModified: post.updatedAt,
+          changeFrequency: 'monthly',
+          priority: 0.6,
+        });
+      }
     }
 
     return entries;

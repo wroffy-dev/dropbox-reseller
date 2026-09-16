@@ -521,3 +521,33 @@ export async function recordPostView(postId: string): Promise<void> {
     // Ignored on purpose — see above.
   }
 }
+
+/**
+ * Does the root blog actually have this slug?
+ *
+ * Used by the redirect that retires the market-prefixed blog URLs. A prefixed
+ * URL for an article that never existed should 404 rather than bounce the
+ * visitor to an archive they did not ask for, so the redirect only fires when
+ * there is a real equivalent to send them to.
+ */
+export const blogSlugExists = cache(
+  async (kind: 'post' | 'category' | 'tag', slug: string): Promise<boolean> => {
+    if (!slug) return false;
+    if (kind === 'post') {
+      const post = await prisma.blogPost.findFirst({
+        where: { slug, deletedAt: null },
+        select: { id: true },
+      });
+      return Boolean(post);
+    }
+    if (kind === 'category') {
+      const category = await prisma.blogCategory.findFirst({
+        where: { slug },
+        select: { id: true },
+      });
+      return Boolean(category);
+    }
+    const tag = await prisma.blogTag.findFirst({ where: { slug }, select: { id: true } });
+    return Boolean(tag);
+  },
+);

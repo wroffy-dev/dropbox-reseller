@@ -80,6 +80,23 @@ since before an edit, the submission is rejected with "our privacy notice
 changed while you were filling this in" rather than recording agreement to
 wording the person never saw.
 
+#### Version 0 means "nothing published yet"
+
+A site with no notice published in the admin still has to show one, so the
+form falls back to the wording compiled into the code and records it as
+**version 0**. A stored notice always starts at 1, so the two can never be
+confused, and a lead captured that way reads *"default — built-in wording"*
+rather than *"v0"* in Leads → Consent & privacy.
+
+Version 0 is a real, valid version and must be accepted everywhere a stored
+one is. Treating it as missing or invalid rejects the whole submission
+envelope, which the visitor sees as "that submission could not be read" on a
+form they filled in correctly — and it would do so on every public form of
+every fresh deployment, because nothing seeds a notice.
+
+Publishing wording in Admin → Leads & CRM → Consent notice replaces the fallback
+from version 1 onwards. Doing that is one of the open decisions below.
+
 ### Withdrawal
 
 Recording a withdrawal (Leads → a lead → Consent & privacy → *Record a

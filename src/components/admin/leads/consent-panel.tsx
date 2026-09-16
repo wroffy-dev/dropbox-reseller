@@ -143,7 +143,14 @@ export function ConsentPanel({
               <Row label="Given at" value={formatStamp(record.consentedAt)} />
               <Row
                 label="Notice version"
-                value={`${record.noticeKey} v${record.noticeVersion}`}
+                value={
+                  // Version 0 is the wording built into the site, shown when no
+                  // notice has been published in the CMS. “v0” would read like a
+                  // draft; it is not one.
+                  record.noticeVersion === 0
+                    ? `${record.noticeKey} — built-in wording`
+                    : `${record.noticeKey} v${record.noticeVersion}`
+                }
               />
               {ip.visible ? (
                 <Row

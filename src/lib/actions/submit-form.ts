@@ -38,7 +38,23 @@ type CreatedLead = Prisma.LeadGetPayload<{
  */
 export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
   const parsed = submissionEnvelopeSchema.safeParse(payload);
-  if (!parsed.success) return failure('That submission could not be read. Please try again.');
+  if (!parsed.success) {
+    /*
+     * Paths and codes only, never values: this payload is a lead — name, email,
+     * phone — and copying it into the container log would put personal data
+     * somewhere with none of the retention or access control the lead itself
+     * gets. The path is what identifies the fault anyway.
+     *
+     * Logged at all because the visitor's message cannot say what was wrong
+     * without describing the shape of the request to whoever crafted it, which
+     * leaves this the only place the fault is visible.
+     */
+    console.error(
+      '[form] envelope rejected',
+      parsed.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.code}`),
+    );
+    return failure('That submission could not be read. Please try again.');
+  }
   const envelope = parsed.data;
 
   // Spam gates: honeypot + minimum fill time.

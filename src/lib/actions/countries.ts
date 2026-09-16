@@ -105,6 +105,7 @@ export async function saveCountry(
       timezone: formData.get('timezone'),
       isDefault: formData.get('isDefault') === 'true',
       isActive: formData.get('isActive') !== 'false',
+      isPublished: formData.get('isPublished') !== 'false',
       sortOrder: formData.get('sortOrder') ?? 0,
     });
 
@@ -167,9 +168,19 @@ export async function saveCountry(
       entityId: country.id,
       summary: `${countryId ? 'Updated' : 'Added'} country “${country.name}” (${country.code})`,
       before: before
-        ? { slug: before.slug, isActive: before.isActive, isDefault: before.isDefault }
+        ? {
+            slug: before.slug,
+            isActive: before.isActive,
+            isPublished: before.isPublished,
+            isDefault: before.isDefault,
+          }
         : undefined,
-      after: { slug: country.slug, isActive: country.isActive, isDefault: country.isDefault },
+      after: {
+        slug: country.slug,
+        isActive: country.isActive,
+        isPublished: country.isPublished,
+        isDefault: country.isDefault,
+      },
     });
 
     revalidateMarkets();

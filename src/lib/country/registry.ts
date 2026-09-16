@@ -50,6 +50,7 @@ const FALLBACK_COUNTRY: CountryContext = {
   timezone: 'Asia/Kolkata',
   isDefault: true,
   isActive: true,
+  isPublished: true,
   sortOrder: 0,
   prefixes: [],
 };
@@ -83,6 +84,7 @@ function toContext(row: Country, prefixes: readonly string[]): CountryContext {
     timezone: row.timezone,
     isDefault: row.isDefault,
     isActive: row.isActive,
+    isPublished: row.isPublished,
     sortOrder: row.sortOrder,
     prefixes,
   };
@@ -100,6 +102,18 @@ export const listCountries = cache(async (): Promise<CountryContext[]> => {
 export const listActiveCountries = cache(async (): Promise<CountryContext[]> => {
   const all = await listCountries();
   return all.filter((country) => country.isActive);
+});
+
+/**
+ * Markets that belong in a sitemap.
+ *
+ * Active *and* published. An active but unpublished market still answers
+ * requests — that is the point of building one in the open — but listing it
+ * for crawlers would be announcing it.
+ */
+export const listIndexableCountries = cache(async (): Promise<CountryContext[]> => {
+  const all = await listCountries();
+  return all.filter((country) => country.isActive && country.isPublished);
 });
 
 /**

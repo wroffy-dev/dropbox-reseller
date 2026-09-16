@@ -25,6 +25,7 @@ const base: Omit<CountryContext, 'id' | 'name' | 'code' | 'slug' | 'locale' | 'i
   phoneCode: null,
   timezone: 'UTC',
   isActive: true,
+  isPublished: true,
   sortOrder: 0,
   prefixes: ['ae', 'qa'],
 };

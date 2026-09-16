@@ -62,6 +62,7 @@ export default async function CountriesAdmin({
     timezone: country.timezone,
     isDefault: country.isDefault,
     isActive: country.isActive,
+    isPublished: country.isPublished,
     sortOrder: country.sortOrder,
     pageCount: countOf(pageCounts, country.id),
     postCount: countOf(postCounts, country.id),

@@ -30,6 +30,15 @@ export type CountryContext = {
   timezone: string;
   isDefault: boolean;
   isActive: boolean;
+  /**
+   * Ready for search engines.
+   *
+   * An active but unpublished market still serves its pages to anyone with the
+   * link; it is simply absent from the sitemaps and carries noindex. Separate
+   * from isActive because "not ready to be found" and "not serving at all" are
+   * different states.
+   */
+  isPublished: boolean;
   sortOrder: number;
   /**
    * Every market prefix currently configured, the root market's empty slug

@@ -58,6 +58,32 @@ export function isReservedSegment(segment: string): boolean {
   return RESERVED_SEGMENTS.has(value) || value.includes('.');
 }
 
+/**
+ * Prefixes a market may not claim.
+ *
+ * A wider set than `RESERVED_SEGMENTS`, and deliberately not the same question.
+ * `RESERVED_SEGMENTS` answers "is this URL a system path that must never be
+ * market-prefixed?" — `/admin` is, `/products/dropbox-business` is not, because
+ * a product page genuinely lives at `/ae/products/...`.
+ *
+ * This answers "may a market's prefix be this word?", and there `blog` and
+ * `products` must be refused: both are literal segments in the app router, and
+ * Next matches a literal route before a catch-all, so a market called
+ * `products` would simply never resolve. Putting them in the routing set
+ * instead would stop every product link being prefixed at all.
+ */
+const RESERVED_COUNTRY_PREFIXES: ReadonlySet<string> = new Set([
+  ...RESERVED_SEGMENTS,
+  'blog',
+  'products',
+]);
+
+export function isReservedCountryPrefix(prefix: string): boolean {
+  const value = prefix.trim().toLowerCase();
+  if (!value) return false;
+  return RESERVED_COUNTRY_PREFIXES.has(value) || value.includes('.');
+}
+
 /** Splits a pathname into clean, decoded segments. */
 export function pathSegments(pathname: string): string[] {
   const withoutQuery = pathname.split(/[?#]/)[0] ?? '';

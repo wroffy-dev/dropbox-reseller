@@ -55,7 +55,14 @@ export async function saveConsentNotice(input: unknown): Promise<ActionResult<{ 
       content: {
         purposeText: sanitizeText(parsed.purposeText),
         enquiryLabel: sanitizeText(parsed.enquiryLabel),
-        marketingLabel: sanitizeText(parsed.marketingLabel),
+        /*
+         * Cleared on purpose stays cleared. `sanitizeText` of an empty string
+         * is an empty string, and nothing downstream substitutes the built-in
+         * wording for a stored value — so a site that does not do email
+         * marketing simply stops showing a marketing sentence, rather than
+         * having one reinstated behind the administrator's back.
+         */
+        marketingLabel: parsed.marketingLabel ? sanitizeText(parsed.marketingLabel).trim() : '',
         termsLabel: sanitizeText(parsed.termsLabel),
         withdrawalText: sanitizeText(parsed.withdrawalText),
         privacyUrl,
@@ -73,7 +80,16 @@ export async function saveConsentNotice(input: unknown): Promise<ActionResult<{ 
       summary: `Published consent notice “${parsed.key || CONSENT_NOTICE_KEY_DEFAULT}” v${created.version}`,
     });
 
+    /*
+     * Every public page, not just this screen. A form's consent block is
+     * rendered inside cached page output, so publishing wording that the admin
+     * can see but visitors cannot would be worse than not publishing it: the
+     * version the page still shows would no longer match the version the
+     * server validates against, and every submission would be told the notice
+     * had changed.
+     */
     revalidatePath('/admin/consent');
+    revalidatePath('/', 'layout');
     return success({ version: created.version }, `Published version ${created.version}.`);
   } catch (error) {
     return toActionError(error);

@@ -6,6 +6,7 @@ import { getWebsiteSettings } from '@/lib/services/settings';
 import { listActiveFormChoices } from '@/lib/services/forms';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { WebsiteSettingsForm } from '@/components/admin/settings/settings-form';
+import { ApplicationInfo } from '@/components/admin/settings/application-info';
 import { buttonClasses } from '@/components/ui/button';
 
 export const metadata: Metadata = { title: 'Website settings' };
@@ -59,6 +60,7 @@ export default async function SettingsAdmin() {
         only={['general', 'branding', 'header', 'footer']}
         forms={forms}
       />
+      <ApplicationInfo siteName={settings.siteName} />
     </div>
   );
 }

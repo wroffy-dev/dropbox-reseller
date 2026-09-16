@@ -152,11 +152,14 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
         lawfulBasis: latest.lawfulBasis,
         enquiryConsent: latest.enquiryConsent,
         marketingConsent: latest.marketingConsent,
+        marketingPresented: latest.marketingPresented,
         termsAccepted: latest.termsAccepted,
         termsRequired: latest.termsRequired,
         purposeText: latest.purposeText,
         noticeKey: latest.noticeKey,
         noticeVersion: latest.noticeVersion,
+        noticeScope: latest.noticeScope,
+        displayedLabel: latest.displayedLabel,
         noticeText: snapshot
           ? {
               enquiryLabel: String(snapshot.enquiryLabel ?? ''),

@@ -532,3 +532,77 @@ describe('saving a design', () => {
     expect(parseFormDesign(form.design).desktop.columns).toBe(4);
   });
 });
+
+describe('consent settings a form cannot hold', () => {
+  const base = (slug: string) => ({
+    name: slug,
+    slug,
+    submitLabel: 'Send',
+    successMessage: 'Thanks.',
+    collectsPersonalData: true,
+    fields: [{ type: 'EMAIL' as const, label: 'Email', name: 'email', isRequired: true }],
+  });
+
+  it('refuses to bundle optional marketing into a box the visitor must tick', async () => {
+    const slug = `mk-consent-${suffix}`;
+    const result = await saveForm(null, {
+      ...base(slug),
+      lawfulBasis: 'CONSENT',
+      offerMarketingConsent: true,
+      requireTermsAcceptance: false,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toMatch(/marketing a condition of submitting/i);
+    // The message names the switch to change, so the administrator is not left
+    // guessing which of the three settings is the problem.
+    expect(result.ok === false && result.fieldErrors?.offerMarketingConsent?.[0]).toMatch(
+      /Offer marketing consent in the tick box/,
+    );
+    expect(await prisma.form.count({ where: { slug } })).toBe(0);
+  });
+
+  it('refuses the same when Terms acceptance is what makes the box required', async () => {
+    const slug = `mk-terms-${suffix}`;
+    const result = await saveForm(null, {
+      ...base(slug),
+      lawfulBasis: 'LEGITIMATE_INTEREST',
+      offerMarketingConsent: true,
+      requireTermsAcceptance: true,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toMatch(/Terms & Conditions acceptance/);
+  });
+
+  it('saves marketing happily when the box is optional', async () => {
+    const slug = `mk-ok-${suffix}`;
+    const result = await saveForm(null, {
+      ...base(slug),
+      lawfulBasis: 'LEGITIMATE_INTEREST',
+      offerMarketingConsent: true,
+      requireTermsAcceptance: false,
+      consentCombinedLabel: 'Yes, keep me posted.',
+    });
+    expect(result.ok, result.ok === false ? result.error : '').toBe(true);
+
+    const stored = await prisma.form.findFirstOrThrow({ where: { slug } });
+    expect(stored.offerMarketingConsent).toBe(true);
+    expect(stored.consentCombinedLabel).toBe('Yes, keep me posted.');
+  });
+
+  it('saves a required box with marketing switched off', async () => {
+    const slug = `mk-req-${suffix}`;
+    const result = await saveForm(null, {
+      ...base(slug),
+      lawfulBasis: 'CONSENT',
+      offerMarketingConsent: false,
+      requireTermsAcceptance: true,
+    });
+    expect(result.ok, result.ok === false ? result.error : '').toBe(true);
+
+    const stored = await prisma.form.findFirstOrThrow({ where: { slug } });
+    // An empty label means "compose it", which is what every form that has
+    // never been given one does.
+    expect(stored.consentCombinedLabel).toBeNull();
+  });
+});

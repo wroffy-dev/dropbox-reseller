@@ -24,7 +24,9 @@ import { resolveActionCountry } from '@/lib/country/admin';
 import { listAccessibleCountries } from '@/lib/country/access';
 import {
   consentDisplayState,
+  marketingDisplayState,
   CONSENT_DISPLAY_LABELS,
+  MARKETING_DISPLAY_LABELS,
 } from '@/lib/privacy/consent';
 import { withdrawConsent } from '@/lib/services/consent';
 import { requestContext } from '@/lib/utils/request';
@@ -441,10 +443,13 @@ export async function exportLeads(filters: LeadFilters): Promise<ActionResult<{ 
             lawfulBasis: true,
             enquiryConsent: true,
             marketingConsent: true,
+            marketingPresented: true,
             termsAccepted: true,
             termsRequired: true,
             noticeKey: true,
             noticeVersion: true,
+            noticeScope: true,
+            displayedLabel: true,
             privacyUrl: true,
             privacyVersion: true,
             termsUrl: true,
@@ -474,8 +479,9 @@ export async function exportLeads(filters: LeadFilters): Promise<ActionResult<{ 
       'assigned_to', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term',
       'utm_content', 'first_utm_source', 'first_utm_campaign', 'landing_url',
       'referrer', 'cta_label', 'follow_up_at', 'message',
-      'consent_state', 'consent_enquiry', 'consent_marketing', 'terms_accepted',
-      'lawful_basis', 'consent_notice', 'consent_at', 'consent_withdrawn_at',
+      'consent_state', 'consent_enquiry', 'consent_marketing', 'marketing_state',
+      'terms_accepted', 'lawful_basis', 'consent_notice', 'consent_notice_scope',
+      'consent_label_shown', 'consent_at', 'consent_withdrawn_at',
       'privacy_url', 'privacy_version', 'terms_url', 'terms_version',
       ...(withIp ? ['ip_address', 'ip_status'] : []),
     ];
@@ -514,9 +520,14 @@ export async function exportLeads(filters: LeadFilters): Promise<ActionResult<{ 
       // record to answer from, which is not the same as a recorded "no".
       boolCell(lead.consents[0]?.enquiryConsent),
       boolCell(lead.consents[0]?.marketingConsent),
+      // The marketing column above answers "did they agree"; this one answers
+      // "were they asked", which an empty or false cell alone cannot.
+      lead.consents[0] ? MARKETING_DISPLAY_LABELS[marketingDisplayState(lead.consents[0])] : '',
       lead.consents[0]?.termsRequired ? boolCell(lead.consents[0]?.termsAccepted) : '',
       lead.consents[0]?.lawfulBasis ?? '',
       lead.consents[0] ? `${lead.consents[0].noticeKey} v${lead.consents[0].noticeVersion}` : '',
+      lead.consents[0]?.noticeScope ?? (lead.consents[0] ? 'every market' : ''),
+      (lead.consents[0]?.displayedLabel ?? '').replace(/\s+/g, ' '),
       lead.consents[0]?.consentedAt.toISOString() ?? '',
       lead.consents[0]?.withdrawnAt?.toISOString() ?? '',
       lead.consents[0]?.privacyUrl ?? '',

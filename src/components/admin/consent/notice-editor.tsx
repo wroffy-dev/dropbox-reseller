@@ -114,14 +114,15 @@ export function NoticeEditor({
 
       <Card>
         <CardHeader
-          title="The tick boxes"
-          description="Three separate permissions. Marketing is never required to submit a form."
+          title="What the tick box covers"
+          description="A form shows one tick box; these sentences are what it can cover. Each is recorded separately, and marketing is never a condition of submitting."
         />
         <CardBody className="space-y-4">
           <fieldset disabled={!canEdit || pending} className="space-y-4">
             <Field
-              label="Enquiry processing (required)"
+              label="Enquiry processing"
               htmlFor="enquiryLabel"
+              hint="Shown on forms whose lawful basis is Consent, where the tick box is required."
               error={errors.enquiryLabel?.[0]}
             >
               <Textarea
@@ -132,15 +133,20 @@ export function NoticeEditor({
               />
             </Field>
             <Field
-              label="Marketing (optional)"
+              label="Marketing (optional — may be left empty)"
               htmlFor="marketingLabel"
-              hint="Only shown on forms that offer it, and never blocks a submission."
+              hint={
+                values.marketingLabel.trim()
+                  ? 'Clear this box to stop asking for marketing consent anywhere on the site. Marketing never blocks a submission, and only appears on forms whose tick box is optional.'
+                  : 'Empty: no form will ask for marketing consent, and no marketing sentence is rendered. Write something here to start offering it.'
+              }
               error={errors.marketingLabel?.[0]}
             >
               <Textarea
                 id="marketingLabel"
                 rows={2}
                 value={values.marketingLabel}
+                placeholder="Leave empty if this site does not send marketing"
                 onChange={(event) => set('marketingLabel', event.target.value)}
               />
             </Field>

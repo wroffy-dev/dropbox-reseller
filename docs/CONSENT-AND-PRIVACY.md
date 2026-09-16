@@ -30,7 +30,10 @@ administrator builds in the CMS — submits through one server action,
 `submitForm` in `src/lib/actions/submit-form.ts`. Consent is enforced there, so
 adding a new form cannot accidentally create a route that skips it.
 
-### Three permissions, kept apart
+### One tick box, three permissions
+
+A public form shows **one** checkbox. Behind it there are still three separate
+permissions, because the CRM has to be able to answer each of them separately:
 
 | Permission | Required? | Stored as |
 |---|---|---|
@@ -38,19 +41,67 @@ adding a new form cannot accidentally create a route that skips it.
 | Marketing | Never | `ConsentRecord.marketingConsent` |
 | Terms acceptance | Only when the form asks for it | `ConsentRecord.termsAccepted` |
 
-They are three columns rather than one because they are three different
-decisions. A single tick that meant all three would be the "blanket consent
-covering unrelated purposes" that neither regime permits, and it would leave
-the CRM unable to answer "may we market to this person?" without guessing.
+Three boxes made a visitor work through three decisions to send one enquiry, and
+two of them were not decisions at all — they were a gate with two latches. One
+box, with everything it covers written out beneath it, asks the same question
+once.
 
-Marketing is never a condition of submitting. The server does not reject a
-submission for leaving it unticked, and there is a test that asserts this.
+**Each permission is `ticked && displayed`.** A purpose the block did not put on
+screen is recorded as `false` no matter what the payload contains, which is what
+makes "hidden marketing is never recorded as accepted" true by construction
+rather than by remembering to check it at each call site. `interpretConsent` is
+the one place that decides this.
 
-### Every box starts unticked
+`ConsentRecord.marketingPresented` records whether marketing was on screen at
+all, so **"not offered"** and **"offered and declined"** stay different facts.
+It is `null` on every record written before this existed, and that reads "not
+recorded" rather than being guessed either way.
 
-The consent block (`src/components/forms/consent-block.tsx`) initialises its
-state to `false` and is never seeded from anything else. A pre-ticked box has
-not recorded a decision.
+### Marketing is optional, and may be switched off entirely
+
+Three things must all be true before a form asks for marketing consent:
+
+1. the form has **Offer marketing consent in the tick box** on,
+2. the live notice has **non-empty marketing wording**, and
+3. the tick box is **not required**.
+
+The third is the one that cannot be configured around. Marketing riding on a box
+the visitor must tick to submit would make "send me marketing" the price of
+getting a reply, so the admin refuses to save that combination — naming the
+switch to change — and `resolveConsentRequirement` drops marketing from any form
+that already holds it. No form can put marketing behind a mandatory tick.
+
+Clearing the marketing wording in Admin → Leads & CRM → Consent notice is a
+decision, not a gap: nothing renders, no blank line or empty container is left
+behind, and the built-in wording is **not** substituted back. The built-in
+wording applies only while nothing has been published at all.
+
+### The wording beside the box
+
+`Form.consentCombinedLabel` holds the sentence, editable per form in Admin →
+Forms → *a form* → Settings. Empty composes one from exactly the purposes the
+box covers — "I agree to my details being used to respond to this enquiry and
+the Terms & Conditions." — so it can never name something that is not on screen.
+
+The exact sentence shown is stored on every submission in
+`ConsentRecord.displayedLabel`, and the full picture of what was rendered in
+`noticeSnapshot.displayed`. Neither is ever backfilled: a record written before
+the combined box has `null`, and is never rewritten as having accepted wording
+nobody showed it.
+
+Nothing about this makes the site compliant with anything. It is a set of
+controls that supports DPDP/GDPR requirements; the decisions are still below.
+
+### The box starts unticked
+
+Unticked on mount, never seeded from anything, and no "by submitting you agree"
+wording standing in for a choice. A box that arrives pre-ticked has not recorded
+a decision, whatever the evidence row later says about it.
+
+A tick is read only from the tokens a checkbox actually posts — `true`, `on`,
+`1`, `yes`. `z.coerce.boolean()` is deliberately not used: it reads the string
+`"false"` as `true`, because it is a non-empty string, which would record
+consent nobody gave.
 
 ### Enforcement is server-side
 
@@ -62,6 +113,8 @@ entirely therefore **fails** the requirement rather than skipping it.
 ```
 tests/integration/consent.test.ts
   → "rejects a direct submission that omits the consent object entirely"
+tests/integration/consent-combined.test.ts
+  → the built-in notice, a published notice, a stale one, and market scoping
 ```
 
 ### Notices are versioned and immutable
@@ -96,6 +149,20 @@ every fresh deployment, because nothing seeds a notice.
 
 Publishing wording in Admin → Leads & CRM → Consent notice replaces the fallback
 from version 1 onwards. Doing that is one of the open decisions below.
+
+#### Publishing is scoped to one market
+
+"Current" is per notice key **and per market**. Publishing UAE wording
+supersedes the previous UAE notice for that key and nothing else — not the
+shared notice every other market falls back to, and not another country's.
+Superseding by key alone meant publishing wording for one market silently left
+every other market with no live notice at all, falling back to the built-in
+wording without anyone being told.
+
+Version numbers are allocated per key across every scope, so `key` + `version`
+in a consent record identifies exactly one row of wording. Two administrators
+publishing at once is handled by retrying the version number rather than failing
+in front of whoever was second.
 
 ### Withdrawal
 
@@ -177,7 +244,9 @@ yet wired up** — see the open decisions below.
 | Control | Location |
 |---|---|
 | Notice wording, purpose, withdrawal text, policy links and versions | Admin → Leads & CRM → **Consent notice** |
-| Per-form lawful basis, marketing box, Terms box, "collects personal data" | Admin → Forms → *a form* → **Settings** tab → Consent |
+| Marketing wording — including clearing it to stop asking anywhere | Admin → Leads & CRM → **Consent notice** → Marketing |
+| Per-form lawful basis, marketing, Terms, "collects personal data" | Admin → Forms → *a form* → **Settings** tab → Consent |
+| The sentence beside the tick box | Admin → Forms → *a form* → **Settings** tab → Tick box wording |
 | Consent column and filter | Admin → **Leads** |
 | Evidence, history, withdrawal, IP | Admin → Leads → *a lead* → **Consent & privacy** |
 | Submitted fields with original labels | Admin → Leads → *a lead* → **Submitted form** |

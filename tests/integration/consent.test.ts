@@ -75,11 +75,19 @@ describe('consent enforcement', () => {
     // would have sent. It must fail the requirement, not skip it.
     const result = await submitForm(envelope());
     expect(result.ok).toBe(false);
-    expect(result.ok === false && result.fieldErrors?._consentEnquiry?.[0]).toMatch(/respond/i);
+    expect(result.ok === false && result.fieldErrors?._consent?.[0]).toMatch(/tick the box/i);
     expect(await prisma.lead.count({ where: { formId } })).toBe(0);
   });
 
-  it('rejects a submission that ticks marketing but not the enquiry consent', async () => {
+  it('rejects a submission that sends the box unticked', async () => {
+    const result = await submitForm(envelope({ consent: { accepted: false } }));
+    expect(result.ok).toBe(false);
+    expect(await prisma.lead.count({ where: { formId } })).toBe(0);
+  });
+
+  it('rejects a crafted payload that claims marketing without ticking the box', async () => {
+    // The old three-box shape, with only the optional one ticked. The box that
+    // authorises the enquiry is what decides, and it was not ticked.
     const result = await submitForm(
       envelope({ consent: { enquiry: false, marketing: true, terms: true } }),
     );
@@ -87,18 +95,8 @@ describe('consent enforcement', () => {
     expect(await prisma.lead.count({ where: { formId } })).toBe(0);
   });
 
-  it('rejects a submission that skips required Terms acceptance', async () => {
-    const result = await submitForm(
-      envelope({ consent: { enquiry: true, marketing: false, terms: false } }),
-    );
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.fieldErrors?._consentTerms?.[0]).toMatch(/Terms/i);
-  });
-
-  it('accepts an enquiry with marketing left unticked, and records that honestly', async () => {
-    const result = await submitForm(
-      envelope({ consent: { enquiry: true, marketing: false, terms: true } }),
-    );
+  it('accepts a ticked box, and records marketing as not offered', async () => {
+    const result = await submitForm(envelope({ consent: { accepted: true } }));
     expect(result.ok, result.ok === false ? result.error : '').toBe(true);
 
     const lead = await prisma.lead.findFirstOrThrow({
@@ -108,10 +106,16 @@ describe('consent enforcement', () => {
     expect(lead.consents).toHaveLength(1);
     const consent = lead.consents[0];
     expect(consent.enquiryConsent).toBe(true);
-    // Optional means optional: leaving it alone must not block the submission
-    // and must not be recorded as agreement.
+    /*
+     * This form's box is required (lawful basis Consent, and Terms acceptance
+     * on), so marketing cannot ride on it — it is not displayed, and one tick
+     * therefore cannot subscribe anybody. Recorded as not presented, which is
+     * a different fact from "declined".
+     */
     expect(consent.marketingConsent).toBe(false);
+    expect(consent.marketingPresented).toBe(false);
     expect(consent.termsAccepted).toBe(true);
+    expect(consent.displayedLabel).toMatch(/Terms & Conditions/);
     expect(consent.lawfulBasis).toBe('CONSENT');
     expect(consent.privacyVersion).toBe('2026-01');
     expect(consent.noticeVersion).toBeGreaterThan(0);

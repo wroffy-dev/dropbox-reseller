@@ -123,6 +123,7 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
       offerMarketingConsent: true,
       requireTermsAcceptance: true,
       collectsPersonalData: true,
+      consentCombinedLabel: true,
     },
   });
   if (!formConsentSettings) return failure('This form is no longer available.');
@@ -130,12 +131,15 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
   const requirement = await resolveConsentRequirement(formConsentSettings, country.id);
   const consentVerdict = validateConsent(requirement, envelope.consent);
 
+  /*
+   * One control, so one error key. `_consent` is the tick box itself and
+   * `_consentNotice` is the notice having moved on underneath it — two
+   * different things to tell someone, and the renderer shows either against
+   * the box.
+   */
   const consentErrors: Record<string, string[]> = consentVerdict.ok
     ? {}
-    : {
-        [`_consent${consentVerdict.field.charAt(0).toUpperCase()}${consentVerdict.field.slice(1)}`]:
-          [consentVerdict.message],
-      };
+    : { [consentVerdict.field === 'notice' ? '_consentNotice' : '_consent']: [consentVerdict.message] };
 
   // Only the fields the visitor could actually have answered are judged: a
   // question hidden by conditional logic must not be required of them, and a
@@ -346,7 +350,11 @@ export async function submitForm(payload: unknown): Promise<SubmitFormResult> {
           leadId: createdLead?.id ?? null,
           submissionId: submission.id,
           countryId: country.id,
-          noticeId: null,
+          // The stored notice this cites, when it came from one. The snapshot
+          // beside it is what keeps the record readable if the row is later
+          // removed; this is what lets the admin link back to it while it is
+          // still there.
+          noticeId: requirement.noticeId,
           ...evidence,
           noticeSnapshot: evidence.noticeSnapshot as Prisma.InputJsonValue,
         },

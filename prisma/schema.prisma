@@ -1346,13 +1346,19 @@ model Form {
   /// enquiry tick box mandatory server-side; the others record the basis and
   /// let the CRM show "Not applicable" rather than an apparent gap.
   lawfulBasis            LawfulBasis @default(CONSENT)
-  /// Offer the optional marketing tick box. Never required to submit.
-  offerMarketingConsent  Boolean     @default(true)
+  /// Offer marketing consent inside the tick box. Never required to submit,
+  /// and only possible when the box is optional and the live notice actually
+  /// has marketing wording. Off by default: marketing is opted into.
+  offerMarketingConsent  Boolean     @default(false)
   /// Ask for Terms acceptance as its own tick box.
   requireTermsAcceptance Boolean     @default(false)
   /// Turns the consent block off for a form that genuinely collects nothing
   /// personal. Defaults true: every existing form collects an email.
   collectsPersonalData   Boolean     @default(true)
+  /// The wording beside this form's single combined tick box. Null composes
+  /// one from the purposes the box actually covers, which is what every form
+  /// built before the combined box does.
+  consentCombinedLabel   String?     @db.Text
 
   // Spam protection. Defaults to false so every form published before this
   // existed keeps submitting exactly as it did.
@@ -2248,6 +2254,18 @@ model ConsentRecord {
   /// Only meaningful when the form asked for Terms acceptance.
   termsAccepted    Boolean @default(false)
   termsRequired    Boolean @default(false)
+
+  /// Was marketing wording actually on screen? Null on every record written
+  /// before the combined box existed — "not recorded", never guessed either
+  /// way, so historical evidence is not reinterpreted.
+  marketingPresented Boolean?
+  /// The exact sentence beside the tick box, as the visitor saw it. Null for
+  /// records written before there was one, and for forms that show no box.
+  displayedLabel     String?  @db.Text
+  /// Which market's notice was shown: null for the shared one, otherwise the
+  /// country code. Stored as a code rather than an id so the evidence still
+  /// reads correctly after a market is removed.
+  noticeScope        String?
 
   privacyUrl     String
   privacyVersion String?

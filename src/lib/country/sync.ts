@@ -266,6 +266,7 @@ async function syncForms(ctx: Ctx, log: SyncLogEntry[]): Promise<void> {
         collectsPersonalData: form.collectsPersonalData,
         offerMarketingConsent: form.offerMarketingConsent,
         requireTermsAcceptance: form.requireTermsAcceptance,
+        consentCombinedLabel: form.consentCombinedLabel,
         requireCaptcha: form.requireCaptcha,
         // A null design means "use the defaults", which is what omitting it does.
         ...(form.design ? { design: form.design as Prisma.InputJsonValue } : {}),

@@ -11,7 +11,7 @@ import {
 } from '@/lib/actions/countries';
 import { Card, CardBody } from '@/components/ui/card';
 import { Table, TableWrap, Th, Td, Tr } from '@/components/ui/table';
-import { Field, Input, Select, Switch } from '@/components/ui/field';
+import { Field, Input, Select, Switch, Textarea } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, ConfirmDialog } from '@/components/ui/dialog';
@@ -513,6 +513,20 @@ function CountrySettingsForm({
     </Field>
   );
 
+  /** A multi-line field, for the one-path-per-line crawler rules. */
+  const area = (key: string, label: string, hint?: string) => (
+    <Field label={label} htmlFor={`cs-${key}`} hint={hint}>
+      <Textarea
+        id={`cs-${key}`}
+        rows={4}
+        value={values[key] ?? ''}
+        placeholder={'/thanks\n/internal-preview'}
+        disabled={!canEdit}
+        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => set(key, e.target.value)}
+      />
+    </Field>
+  );
+
   return (
     <form onSubmit={onSubmit} className="mt-6">
       <Card>
@@ -584,6 +598,50 @@ function CountrySettingsForm({
               {text('longitude', 'Longitude')}
             </div>
             {text('defaultDescription', 'Default description')}
+          </SettingsSection>
+
+          <SettingsDivider />
+
+          <SettingsSection
+            title="Crawler rules"
+            description={`Paths here are written relative to this market and compiled into the site's single robots.txt at the host root. ${country.slug ? `A rule of “/thanks” becomes “/${country.slug}/thanks”.` : 'This market is served from the root, so a rule of “/thanks” stays “/thanks”.'}`}
+          >
+            <div className="rounded-lg border border-amber-500/30 bg-amber-50/50 p-3 text-xs leading-relaxed text-amber-900">
+              <strong className="font-semibold">There is only one robots.txt.</strong> Crawlers read
+              it from the host root, so {country.slug ? `/${country.slug}/robots.txt` : '/robots.txt'}{' '}
+              is not a separate file — these rules are merged into the one below every market shares.
+              <br />
+              <strong className="font-semibold">Blocking is not hiding.</strong> Disallow stops a
+              crawler <em>fetching</em> a URL; noindex asks it not to <em>list</em> one. A blocked
+              page is never fetched, so its noindex is never read and it can still appear in
+              results. To keep a page out of search, leave it crawlable and set noindex.
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {area(
+                'robotsDisallow',
+                'Disallow paths',
+                'One per line. Paths that serve the CSS, JavaScript and images a page needs are refused — blocking those makes search engines judge the page on a broken version of itself.',
+              )}
+              {area('robotsAllow', 'Allow paths', 'One per line. Use to carve an exception out of a broader Disallow.')}
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <Switch
+                checked={values.noIndexCountry === 'true'}
+                onChange={(next) => set('noIndexCountry', String(next))}
+                label="Ask search engines not to index this market"
+                hint="Sent as a meta tag and an X-Robots-Tag header on every page. Deliberately not a Disallow rule, for the reason above."
+                disabled={!canEdit}
+              />
+              <Switch
+                checked={values.excludeFromSitemap === 'true'}
+                onChange={(next) => set('excludeFromSitemap', String(next))}
+                label="Leave this market out of the sitemaps"
+                hint="The pages still serve; they are simply not listed."
+                disabled={!canEdit}
+              />
+            </div>
           </SettingsSection>
         </CardBody>
       </Card>

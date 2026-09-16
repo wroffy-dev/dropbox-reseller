@@ -81,7 +81,15 @@ export async function buildMetadata(input: SeoInput): Promise<Metadata> {
   const canonical = input.canonicalUrl?.trim() || absoluteCountryUrl(country, path);
   const ogImage = input.ogImageUrl || local.defaultOgImageUrl || site.ogImageUrl || null;
 
-  const noIndex = seo.noIndexSite || Boolean(input.noIndex);
+  /*
+   * Three independent switches, any one of which is enough: the whole site, the
+   * market, or this page. The market-level one is a meta tag and header rather
+   * than a robots.txt rule on purpose — a page a crawler is blocked from
+   * fetching never has its noindex read, so blocking would achieve the
+   * opposite of what it looks like.
+   */
+  const noIndex =
+    seo.noIndexSite || Boolean(local.noIndexCountry) || Boolean(input.noIndex);
 
   /*
    * Alternates are built from the same market-relative path, so the annotation

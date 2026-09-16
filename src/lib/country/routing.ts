@@ -44,6 +44,8 @@ export const RESERVED_SEGMENTS: ReadonlySet<string> = new Set([
   'favicon.ico',
   'robots.txt',
   'sitemap.xml',
+  // The per-market sitemap files live under /sitemaps/<prefix>.xml.
+  'sitemaps',
   'manifest.json',
   'health',
   'ready',

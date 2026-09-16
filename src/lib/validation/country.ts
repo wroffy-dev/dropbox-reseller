@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { RESERVED_SEGMENTS } from '@/lib/country/routing';
+import { isReservedCountryPrefix } from '@/lib/country/routing';
 
 /**
  * Country validation.
@@ -26,7 +26,7 @@ export const countrySlugSchema = z
   .refine((value) => value === '' || /^[a-z0-9-]+$/.test(value), {
     message: 'Use lower-case letters, numbers and hyphens only',
   })
-  .refine((value) => !RESERVED_SEGMENTS.has(value), {
+  .refine((value) => !isReservedCountryPrefix(value), {
     message: 'That prefix is reserved by the application',
   });
 
@@ -53,6 +53,14 @@ export const countrySchema = z.object({
   phoneCode: optional(8),
   timezone: z.string().trim().min(1).max(64),
   isDefault: z.coerce.boolean().default(false),
+  /**
+   * Ready for search engines.
+   *
+   * Separate from isActive so a market can be built in the open — reachable by
+   * anyone with the link, absent from every sitemap — before it is announced.
+   * Defaults true so no existing market changes.
+   */
+  isPublished: z.coerce.boolean().default(true),
   isActive: z.coerce.boolean().default(true),
   sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
 });

@@ -19,6 +19,8 @@ import { SettingsSection, SettingsDivider } from '@/components/admin/settings-se
 import { useToast } from '@/components/ui/toast';
 import { Spinner } from '@/components/ui/icons';
 import { SUPPORTED_CURRENCIES } from '@/lib/utils/money';
+import { CountryPicker } from './country-picker';
+import { suggestedSlug, suggestedLocale } from '@/lib/country/iso';
 import { cn } from '@/lib/utils/cn';
 
 /**
@@ -42,6 +44,7 @@ export type CountryRow = {
   timezone: string;
   isDefault: boolean;
   isActive: boolean;
+  isPublished: boolean;
   sortOrder: number;
   pageCount: number;
   postCount: number;
@@ -62,6 +65,7 @@ const BLANK: CountryRow = {
   timezone: 'UTC',
   isDefault: false,
   isActive: true,
+  isPublished: true,
   sortOrder: 10,
   pageCount: 0,
   postCount: 0,
@@ -118,6 +122,7 @@ export function CountriesManager({
     data.set('timezone', editing.timezone);
     data.set('isDefault', String(editing.isDefault));
     data.set('isActive', String(editing.isActive));
+    data.set('isPublished', String(editing.isPublished));
     data.set('sortOrder', String(editing.sortOrder));
 
     const result = await saveCountry(editing.id || null, data);
@@ -195,6 +200,9 @@ export function CountriesManager({
                     <Badge tone={country.isActive ? 'success' : 'neutral'}>
                       {country.isActive ? 'Live' : 'Inactive'}
                     </Badge>
+                    {country.isActive && !country.isPublished ? (
+                      <Badge tone="warning">Unpublished</Badge>
+                    ) : null}
                   </Td>
                   <Td align="right">
                     <div className="flex items-center justify-end gap-1">
@@ -274,29 +282,52 @@ export function CountriesManager({
       >
         {editing ? (
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Name" htmlFor="country-name" required error={errors.name}>
-              <Input
-                id="country-name"
-                value={editing.name}
-                placeholder="Qatar"
-                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-              />
-            </Field>
-            <Field
-              label="ISO code"
-              htmlFor="country-code"
-              required
-              error={errors.code}
-              hint="Two letters, e.g. QA."
-            >
-              <Input
-                id="country-code"
-                value={editing.code}
-                maxLength={2}
-                placeholder="QA"
-                onChange={(e) => setEditing({ ...editing, code: e.target.value.toUpperCase() })}
-              />
-            </Field>
+            <div className="sm:col-span-2">
+              <Field
+                label="Country"
+                htmlFor="country-picker"
+                required
+                error={errors.code ?? errors.name}
+                hint={
+                  editing.id
+                    ? 'Changing the country rewrites the stored ISO code. The prefix, locale and currency below stay as you have them.'
+                    : 'Search all 249 ISO 3166-1 countries. Choosing one fills in the prefix, locale and currency — all editable.'
+                }
+              >
+                <CountryPicker
+                  id="country-picker"
+                  value={editing.code}
+                  invalid={Boolean(errors.code)}
+                  /*
+                   * Countries already added cannot be chosen again, so a
+                   * duplicate is impossible to submit rather than rejected
+                   * after the fact. The row being edited is excluded, or it
+                   * would disable itself.
+                   */
+                  disabledCodes={countries
+                    .filter((country) => country.id !== editing.id)
+                    .map((country) => country.code)}
+                  onSelect={(country) =>
+                    setEditing((current) =>
+                      current
+                        ? {
+                            ...current,
+                            code: country.code,
+                            name: country.name,
+                            // Suggestions only, and only where the field is
+                            // still empty or was itself a suggestion — an
+                            // administrator who typed "uk" keeps it.
+                            slug: current.isDefault ? '' : suggestedSlug(country.code),
+                            locale: suggestedLocale(country.code),
+                            currency: country.currency || current.currency,
+                            currencySymbol: country.symbol || current.currencySymbol,
+                          }
+                        : current,
+                    )
+                  }
+                />
+              </Field>
+            </div>
             <Field
               label="URL prefix"
               htmlFor="country-slug"
@@ -388,6 +419,12 @@ export function CountriesManager({
                 onChange={(next) => setEditing({ ...editing, isActive: next })}
                 label="Serve this country publicly"
                 hint="An inactive country keeps all of its content but stops answering requests."
+              />
+              <Switch
+                checked={editing.isPublished}
+                onChange={(next) => setEditing({ ...editing, isPublished: next })}
+                label="Published to search engines"
+                hint="Off keeps the market reachable by anyone with the link but out of every sitemap, so it can be built in the open before it is announced."
               />
               <Switch
                 checked={editing.isDefault}

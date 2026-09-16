@@ -151,6 +151,7 @@ export function testCountryContext(overrides: Record<string, unknown> = {}) {
     timezone: 'Asia/Kolkata',
     isDefault: true,
     isActive: true,
+    isPublished: true,
     sortOrder: 0,
     prefixes: ['ae'] as readonly string[],
     ...overrides,

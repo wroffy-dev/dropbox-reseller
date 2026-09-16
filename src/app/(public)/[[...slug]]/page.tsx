@@ -1,7 +1,8 @@
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { resolveCountryPath } from '@/lib/country/registry';
 import { contentSlug } from '@/lib/country/routing';
+import { blogSlugExists } from '@/lib/services/blog';
 import type { CountryContext } from '@/lib/country/types';
 import { cmsPageMetadata, CmsPageSurface } from '../_surfaces/cms-page';
 import {
@@ -71,11 +72,50 @@ function classify(segments: string[]): Surface {
   return { kind: 'page', slug: segments.join('/') };
 }
 
+/** Blog surfaces, which exist at the site root and nowhere else. */
+const BLOG_SURFACES = new Set(['blog', 'post', 'category', 'tag']);
+
 async function resolve(params: Params): Promise<{ country: CountryContext; surface: Surface }> {
   const requested = (params.slug ?? []).join('/');
   const { country, path } = await resolveCountryPath(`/${requested}`);
   const slug = contentSlug(path);
-  return { country, surface: classify(slug ? slug.split('/') : []) };
+  const surface = classify(slug ? slug.split('/') : []);
+
+  /*
+   * A blog path under a market prefix is retired here.
+   *
+   * Articles are written once and are not per-market, so `/ae/blog/x` was a
+   * second URL serving the same article — duplicate content competing with
+   * `/blog/x` for its own ranking. These URLs existed, so they redirect rather
+   * than disappear, permanently and only where the root actually has the
+   * equivalent: a prefixed URL for an article that never existed is a 404, not
+   * a redirect to an archive the visitor did not ask for.
+   */
+  if (!country.isDefault && BLOG_SURFACES.has(surface.kind)) {
+    const target = await rootBlogEquivalent(surface);
+    if (target) permanentRedirect(target);
+    notFound();
+  }
+
+  return { country, surface };
+}
+
+/** The root URL for a blog surface, or null when the root has no equivalent. */
+async function rootBlogEquivalent(surface: Surface): Promise<string | null> {
+  switch (surface.kind) {
+    case 'blog':
+      return '/blog';
+    case 'post':
+      return (await blogSlugExists('post', surface.slug)) ? `/blog/${surface.slug}` : null;
+    case 'category':
+      return (await blogSlugExists('category', surface.slug))
+        ? `/blog/category/${surface.slug}`
+        : null;
+    case 'tag':
+      return (await blogSlugExists('tag', surface.slug)) ? `/blog/tag/${surface.slug}` : null;
+    default:
+      return null;
+  }
 }
 
 export async function generateMetadata({

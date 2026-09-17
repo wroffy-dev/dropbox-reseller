@@ -71,8 +71,25 @@ export function collectEnvProblems(source: EnvSource = process.env): EnvProblem[
     if (!value) continue;
     try {
       const url = new URL(value);
-      if (url.protocol !== 'https:') {
+      /*
+       * https everywhere except the loopback interface.
+       *
+       * The rule exists to stop a session cookie travelling a network in
+       * plaintext. On `localhost` there is no network to travel, and requiring
+       * a certificate there made a local production run impossible to
+       * configure — the setup wizard would refuse every address such a
+       * deployment can actually be reached on.
+       */
+      const host = url.hostname.replace(/^\[|\]$/g, '');
+      const loopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+      if (url.protocol !== 'https:' && !loopback) {
         problems.push({ variable: name, problem: 'must use https:// in production' });
+      }
+      if (['0.0.0.0', '::', '0:0:0:0:0:0:0:0'].includes(host)) {
+        problems.push({
+          variable: name,
+          problem: 'is the address the server binds to, not one a browser can open',
+        });
       }
     } catch {
       problems.push({ variable: name, problem: 'is not a valid absolute URL' });

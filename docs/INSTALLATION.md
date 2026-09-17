@@ -61,6 +61,24 @@ clear.
 
 ---
 
+## The site address
+
+Whatever you enter becomes `NEXTAUTH_URL`, and every sign-in redirect is sent
+there. Two things are refused rather than accepted:
+
+- **A bind address.** A container reached on `0.0.0.0:3000` reports that as its
+  Host. `https://0.0.0.0:3000` is not an address a browser can open — it answers
+  `ERR_ADDRESS_INVALID` — so it is never suggested and never accepted.
+- **Plain http on a real host.** A session cookie should not cross a network in
+  the clear. `http://localhost` and `http://127.0.0.1` are allowed, because
+  there is no network there to protect and a local install has to be possible.
+
+The address is prefilled from the request, using the scheme the request
+actually arrived on — https only when a proxy says so. Guessing https for a
+plain-http deployment handed people an address their own site does not serve.
+
+---
+
 ## After the last screen
 
 Setup finishes by sending you to the sign-in page, and the first sign-in goes
@@ -223,13 +241,33 @@ wizard-installed copy pinned to the schema it was installed with.
 
 ---
 
-## The volume
+## The volume — the one thing that must not be skipped
 
-`/data/config` must be a persistent volume, like `/data/uploads`. On Azure
-Container Apps that means an Azure Files share; in Compose or on a VPS, a named
-volume.
+`/data/config` must be a **persistent volume**, like `/data/uploads`. On Azure
+Container Apps that means an Azure Files share; in Compose it is the
+`app-config` volume, already wired up in `docker-compose.yml`.
 
-Without one the wizard still runs, but its configuration is on a layer the next
-deployment discards — and the copy would ask to be installed again. The first
-environment check reports whether the directory is writable before anything
-else is collected.
+Without one, the wizard runs, reports success, and its configuration is written
+to a layer the next restart throws away. The container then comes back with no
+connection string and no `AUTH_SECRET`, which surfaces as `MissingSecret` on
+the sign-in screen and Prisma errors in the log — long after anybody connects
+the two events.
+
+That failure is now refused rather than discovered. In a container, the first
+environment check tests the directory against the mount table, not just for
+write access: writable and persistent are different questions, and only the
+second one matters here. Outside a container the question is not asked, because
+an ordinary directory persists.
+
+### If it has already happened
+
+The database is fine — it is the configuration that was lost. Mount a volume at
+`/data/config`, restart, and open the site: with no configuration the wizard
+offers itself again, and entering the same database **reconnects** to it.
+
+It will not create a second administrator; it detects the existing account,
+skips that step and only writes the configuration back. Sign in with the
+account you already had — its password is in the database and is not touched.
+
+Everyone is signed out once, because the key that signed their sessions is
+regenerated. That is unavoidable when it is the key that was lost.

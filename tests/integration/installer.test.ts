@@ -16,9 +16,10 @@ const configDir = mkdtempSync(path.join(tmpdir(), 'install-config-'));
 process.env.APP_CONFIG_DIR = configDir;
 
 const { prisma } = await import('@/lib/db/prisma');
-const { readConfig, writeConfig, configPath, configuredKeys } = await import(
+const { readConfig, writeConfig, configPath, configuredKeys, configIsPersistent } = await import(
   '@/lib/install/config-store'
 );
+const { collectEnvProblems } = await import('@/lib/env-validation');
 const { loadStoredConfig, resetStoredConfigCache } = await import('@/lib/install/runtime-env');
 const { getInstallState, resetInstallStateCache } = await import('@/lib/install/state');
 const { lockInstallation, installationIsLocked } = await import('@/lib/install/lock');
@@ -154,6 +155,34 @@ describe('deciding whether this copy is installed', () => {
   });
 });
 
+describe('the site address the wizard accepts', () => {
+  /*
+   * Everything here guards one value. It becomes NEXTAUTH_URL, every sign-in
+   * redirect is sent to it, and the installer closes behind it — so a bad one
+   * is only discovered when nobody can sign in and there is no wizard left.
+   */
+  const base = { NODE_ENV: 'production', DATABASE_URL: 'postgresql://u:p@h:5432/d' };
+
+  it('refuses a bind address, which a browser cannot open', () => {
+    for (const host of ['0.0.0.0:3000', '[::]:3000']) {
+      const problems = collectEnvProblems({ ...base, NEXTAUTH_URL: `https://${host}` });
+      expect(problems.some((p) => /binds to/.test(p.problem))).toBe(true);
+    }
+  });
+
+  it('still demands https for a real host', () => {
+    const problems = collectEnvProblems({ ...base, NEXTAUTH_URL: 'http://example.com' });
+    expect(problems.some((p) => /https/.test(p.problem))).toBe(true);
+  });
+
+  it('allows http on the loopback interface, where there is no network to protect', () => {
+    for (const host of ['localhost:3000', '127.0.0.1:3000', '[::1]:3000']) {
+      const problems = collectEnvProblems({ ...base, NEXTAUTH_URL: `http://${host}` });
+      expect(problems.filter((p) => p.variable === 'NEXTAUTH_URL')).toEqual([]);
+    }
+  });
+});
+
 describe('errors never carry credentials', () => {
   it('removes the exact connection string it was given', () => {
     const url = 'postgresql://admin:hunter2@db.internal:5432/app';
@@ -188,6 +217,31 @@ describe('the connection string is checked before anything opens it', () => {
     const result = await testConnection('postgresql://u:s3cr3tpw@127.0.0.1:1/nope');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).not.toContain('s3cr3tpw');
+  });
+});
+
+describe('knowing whether the configuration will survive a restart', () => {
+  it('reports a real answer rather than only whether it can be written', () => {
+    const storage = configIsPersistent();
+    expect(typeof storage.persistent).toBe('boolean');
+    expect(typeof storage.known).toBe('boolean');
+  });
+
+  it('treats a path under no mount point as not persistent', () => {
+    /*
+     * The failure this exists for: a container's own filesystem is writable,
+     * so the wizard completed, reported success, and the next restart replaced
+     * the layer it had written to — leaving a site with no database and no
+     * AUTH_SECRET.
+     */
+    const previous = process.env.APP_CONFIG_DIR;
+    process.env.APP_CONFIG_DIR = '/definitely-not-a-mount-point/config';
+    try {
+      const storage = configIsPersistent();
+      if (storage.known) expect(storage.persistent).toBe(false);
+    } finally {
+      process.env.APP_CONFIG_DIR = previous;
+    }
   });
 });
 

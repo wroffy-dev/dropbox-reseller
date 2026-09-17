@@ -28,6 +28,7 @@ const { configPath, readConfig } = await import('@/lib/install/config-store');
 const { resetStoredConfigCache } = await import('@/lib/install/runtime-env');
 const { resetInstallStateCache, getInstallState } = await import('@/lib/install/state');
 const { configureDatabase, finishInstallation } = await import('@/lib/actions/install');
+const { resetPrismaClient } = await import('@/lib/db/prisma');
 
 let admin: PrismaClient;
 
@@ -214,6 +215,84 @@ describe('installing a copy that has nothing', () => {
     resetInstallStateCache();
     expect(await getInstallState()).toBe('installed');
   });
+
+  /*
+   * Losing the configuration is not losing the installation.
+   *
+   * The way to get here is a wizard install whose config file sat on a
+   * container's own filesystem and was destroyed by the next restart: the
+   * database survived, the connection string and the secrets did not. The app
+   * then sees no database, offers the wizard again, and the wizard used to be a
+   * dead end — it refuses to create a second administrator and had no other way
+   * through.
+   */
+  it('reconnects to a database that already has an account, without creating another', async () => {
+    rmSync(configPath(), { force: true });
+    /*
+     * What a restarted container actually looks like: the file is gone and
+     * nothing in the environment names a database. Clearing the variable is the
+     * part that makes this a faithful simulation — with it still set, the
+     * application can see the accounts in that database and judges itself
+     * installed, which is the state a restart does *not* come back in.
+     */
+    delete process.env.DATABASE_URL;
+    // The secrets went with the file. Everyone is signed out by this, which is
+    // the unavoidable cost of losing the key that signed their sessions.
+    for (const key of ['AUTH_SECRET', 'ENCRYPTION_KEY', 'MFA_ENCRYPTION_KEY']) {
+      delete process.env[key];
+    }
+    resetStoredConfigCache();
+    resetInstallStateCache();
+
+    const reconnect = await configureDatabase({ databaseUrl: freshUrl });
+    expect(reconnect.ok, reconnect.ok === false ? reconnect.error : '').toBe(true);
+    // It says so, rather than letting the operator think this is a fresh start.
+    expect(reconnect.ok && reconnect.data!.hasAccounts).toBe(true);
+
+    /*
+     * Constructing a Prisma client re-reads the project's `.env`, which puts
+     * the development database back into the environment — and because a
+     * platform variable always wins over the stored file, the stored one would
+     * then be ignored. A container has no `.env`, so this pins the environment
+     * to what a restart there would actually leave: the file's own value.
+     */
+    process.env.DATABASE_URL = freshUrl;
+    resetPrismaClient();
+
+    // No administrator details: a reconnection does not ask for any.
+    const finished = await finishInstallation({ siteUrl: 'https://shop.example.com' });
+    expect(finished.ok, finished.ok === false ? finished.error : '').toBe(true);
+    if (!finished.ok) return;
+
+    // The original owner, not a new one, and still exactly one account.
+    expect(finished.data!.adminEmail).toBe('owner@example.com');
+    const fresh = new PrismaClient({ datasources: { db: { url: freshUrl } }, log: [] });
+    try {
+      expect(await fresh.user.count()).toBe(1);
+    } finally {
+      await fresh.$disconnect().catch(() => {});
+    }
+
+    // And the configuration it lost is back.
+    const stored = readConfig();
+    expect(stored.DATABASE_URL).toBe(freshUrl);
+    expect(stored.installedAt).toBeTruthy();
+
+    /*
+     * Every secret the application needs is available — from the file, or from
+     * the environment where the platform supplies one. Which of the two is
+     * deliberately not asserted: generating a value the platform already sets
+     * would overwrite it, so "missing from the file" is the correct outcome
+     * whenever the environment has it. The run's own checks cover the same
+     * ground, and refuse to lock without them.
+     */
+    for (const key of ['AUTH_SECRET', 'ENCRYPTION_KEY', 'MFA_ENCRYPTION_KEY'] as const) {
+      const available = (process.env[key]?.trim() || stored[key]?.trim()) ?? '';
+      expect(available.length).toBeGreaterThanOrEqual(16);
+    }
+    expect(finished.data!.checks.every((check) => check.ok)).toBe(true);
+    resetInstallStateCache();
+  }, 120_000);
 
   it('refuses every installer action now that it is closed', async () => {
     const again = await finishInstallation({

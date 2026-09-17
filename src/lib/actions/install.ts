@@ -3,7 +3,14 @@
 import { z } from 'zod';
 import { prisma, resetPrismaClient } from '@/lib/db/prisma';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
-import { readConfig, writeConfig, configIsWritable, configuredKeys } from '@/lib/install/config-store';
+import {
+  readConfig,
+  writeConfig,
+  configIsWritable,
+  configIsPersistent,
+  configuredKeys,
+  configDirectory,
+} from '@/lib/install/config-store';
 import { loadStoredConfig, resetStoredConfigCache } from '@/lib/install/runtime-env';
 import { getInstallState, resetInstallStateCache } from '@/lib/install/state';
 import { testConnection, applyMigrations, prepareSchema, validateConnectionString } from '@/lib/install/database';
@@ -42,7 +49,27 @@ import { CONFIG_KEYS } from '@/lib/install/config-store';
 
 /** Refuses once the application is set up. The installer's whole security model. */
 async function assertInstallerOpen(): Promise<void> {
-  if ((await getInstallState()) === 'installed') {
+  const stored = readConfig();
+
+  /*
+   * Finished is finished, and it is the only thing that closes the installer.
+   */
+  if (stored.installedAt) {
+    throw new Error('This installation is already complete.');
+  }
+
+  /*
+   * A run that has already passed the database step carries on.
+   *
+   * Without this the wizard closed on itself halfway through a reconnection:
+   * storing the connection string lets the application see the accounts in that
+   * database, `getInstallState()` then answers "installed", and the very next
+   * step is refused — on the run that was putting the configuration back.
+   *
+   * `startedAt` is only ever written by the database step, which had to find
+   * the installer open to run at all, so this cannot be a way in.
+   */
+  if (!stored.startedAt && (await getInstallState()) === 'installed') {
     throw new Error('This installation is already complete.');
   }
 
@@ -91,13 +118,30 @@ export async function inspectEnvironment(): Promise<ActionResult<EnvironmentRepo
     const writable = configIsWritable();
     const platformDatabase = Boolean(process.env.DATABASE_URL?.trim());
 
+    /*
+     * Writable is not enough. A container's own filesystem is writable and is
+     * replaced by the next deployment, so a wizard run against one completes,
+     * reports success, and loses everything on the next restart.
+     */
+    const storage = configIsPersistent();
+    const persistent = !writable.ok || !storage.known || storage.persistent;
+
     const checks: EnvironmentReport['checks'] = [
       {
         label: 'Configuration storage',
         ok: writable.ok,
         detail: writable.ok
-          ? 'The settings collected here can be saved and will survive a restart.'
+          ? 'The settings collected here can be saved.'
           : writable.reason,
+      },
+      {
+        label: 'Settings survive a restart',
+        ok: persistent,
+        detail: persistent
+          ? storage.known
+            ? 'Stored on a mounted volume, so a restart or redeployment keeps it.'
+            : 'An ordinary directory on this machine, which persists.'
+          : `${configDirectory()} is inside the container rather than on a mounted volume. Setup would appear to work and its configuration would be destroyed by the next restart — the site would then come back with no database and no sign-in key. Mount a volume at ${configDirectory()} and reload this page.`,
       },
       {
         label: 'Node.js runtime',
@@ -133,7 +177,22 @@ const databaseSchema = z.object({
   databaseUrl: z.string().min(1).max(2000),
 });
 
-export type DatabaseOutcome = { migrated: boolean };
+export type DatabaseOutcome = {
+  migrated: boolean;
+  /**
+   * The database already holds accounts.
+   *
+   * Which means this is not a first install but a **reconnection**: the most
+   * common way to get here is a wizard install whose configuration was written
+   * to a container's own filesystem and destroyed by the next restart. The
+   * database survived; the connection string and the secrets did not.
+   *
+   * Without this the wizard was a dead end in exactly that situation — it
+   * refuses to create a second administrator, and there was no other way
+   * through.
+   */
+  hasAccounts: boolean;
+};
 
 /**
  * Tests, migrates, prepares, and only then stores.
@@ -169,7 +228,8 @@ export async function configureDatabase(input: unknown): Promise<ActionResult<Da
     }
 
     // Only now, with a database that is reachable, migrated and populated.
-    writeConfig({ DATABASE_URL: url });
+    // `startedAt` marks the run as under way; see `assertInstallerOpen`.
+    writeConfig({ DATABASE_URL: url, startedAt: new Date().toISOString() });
     resetStoredConfigCache();
     loadStoredConfig();
     // The application's own client may have been built against no database at
@@ -177,7 +237,14 @@ export async function configureDatabase(input: unknown): Promise<ActionResult<Da
     resetPrismaClient();
     resetInstallStateCache();
 
-    return success({ migrated: true }, 'The database is ready.');
+    const accounts = await prisma.user.count().catch(() => 0);
+
+    return success(
+      { migrated: true, hasAccounts: accounts > 0 },
+      accounts > 0
+        ? 'Connected. This database already has an account, so setup will reconnect to it rather than create one.'
+        : 'The database is ready.',
+    );
   } catch (error) {
     return toActionError(error);
   }
@@ -189,9 +256,15 @@ export async function configureDatabase(input: unknown): Promise<ActionResult<Da
 
 const finishSchema = z.object({
   siteUrl: z.string().min(1).max(500),
-  adminName: z.string().min(1).max(120),
-  adminEmail: z.string().email().max(200),
-  adminPassword: z.string().min(1).max(200),
+  /*
+   * Optional, because a reconnection to a database that already has accounts
+   * does not create one. They are still required by the form when an account is
+   * actually being made — enforced against the database rather than the shape
+   * of the request, which a caller controls.
+   */
+  adminName: z.string().max(120).default(''),
+  adminEmail: z.string().max(200).default(''),
+  adminPassword: z.string().max(200).default(''),
 });
 
 export type InstallSummary = {
@@ -208,10 +281,6 @@ export async function finishInstallation(input: unknown): Promise<ActionResult<I
     await assertInstallerOpen();
     const parsed = finishSchema.parse(input);
 
-    const weaknesses = passwordWeaknesses(parsed.adminPassword);
-    if (weaknesses.length > 0) {
-      return failure(`The administrator password needs ${weaknesses.join(', ')}.`);
-    }
 
     let siteUrl: URL;
     try {
@@ -222,11 +291,44 @@ export async function finishInstallation(input: unknown): Promise<ActionResult<I
     if (siteUrl.protocol !== 'http:' && siteUrl.protocol !== 'https:') {
       return failure('The site address must start with http:// or https://');
     }
+
+    /*
+     * A bind address is not a site address.
+     *
+     * `0.0.0.0` means "listen on every interface"; a container reached that way
+     * reports it as its Host, so it is what this screen would otherwise be
+     * handed. It goes into `NEXTAUTH_URL`, every sign-in redirect is sent
+     * there, and a browser answers `ERR_ADDRESS_INVALID` — with the installer
+     * already closed behind it.
+     */
+    const hostname = siteUrl.hostname.replace(/^\[|\]$/g, '');
+    if (['0.0.0.0', '::', '0:0:0:0:0:0:0:0'].includes(hostname)) {
+      return failure(
+        'That is the address the server listens on, not one a browser can open. Enter the address people will actually visit — for example https://example.com, or http://localhost:3000 for a local install.',
+      );
+    }
+
     const origin = siteUrl.origin;
 
     loadStoredConfig();
     if (!process.env.DATABASE_URL?.trim()) {
       return failure('Configure the database before creating an administrator.');
+    }
+
+    // Only checked when an account is about to be created; a reconnection does
+    // not ask for one.
+    const creatingAccount = (await prisma.user.count().catch(() => 0)) === 0;
+    if (creatingAccount) {
+      if (!parsed.adminName.trim() || !parsed.adminEmail.trim()) {
+        return failure('Enter a name and an email address for the administrator.');
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(parsed.adminEmail.trim())) {
+        return failure('That is not a valid email address.');
+      }
+      const weaknesses = passwordWeaknesses(parsed.adminPassword);
+      if (weaknesses.length > 0) {
+        return failure(`The administrator password needs ${weaknesses.join(', ')}.`);
+      }
     }
 
     const secrets = generateMissingSecrets();
@@ -282,11 +384,29 @@ export async function finishInstallation(input: unknown): Promise<ActionResult<I
     resetStoredConfigCache();
     loadStoredConfig();
 
-    const admin = await createFirstAdministrator(prisma, {
-      name: parsed.adminName,
-      email: parsed.adminEmail,
-      password: parsed.adminPassword,
+    /*
+     * Reconnecting to a database that already has accounts, rather than
+     * installing into an empty one.
+     *
+     * Creating a second administrator here would be wrong twice over: the
+     * existing owner did not ask for one, and an unauthenticated screen that
+     * mints an admin against a populated database is a way in. So the account
+     * step is skipped and only the configuration is rewritten — which is the
+     * thing that was actually lost.
+     */
+    const existing = await prisma.user.findFirst({
+      where: { deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: { email: true },
     });
+
+    const admin = existing
+      ? { email: existing.email }
+      : await createFirstAdministrator(prisma, {
+          name: parsed.adminName,
+          email: parsed.adminEmail,
+          password: parsed.adminPassword,
+        });
 
     /*
      * Everything is verified before anything is locked.

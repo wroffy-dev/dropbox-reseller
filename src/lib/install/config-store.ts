@@ -126,7 +126,10 @@ export function readConfig(): InstallConfig {
  * only needed during setup, rather than leaving it behind for the life of the
  * installation.
  */
-export function writeConfig(patch: Partial<InstallConfig> & Record<string, unknown>): void {
+export function writeConfig(
+  /** A key set to `null` is removed; see below. */
+  patch: Record<string, string | number | null | undefined>,
+): void {
   const directory = configDirectory();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
 

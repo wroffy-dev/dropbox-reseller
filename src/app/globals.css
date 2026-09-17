@@ -308,6 +308,29 @@
 }
 
 @layer components {
+  /* ---------------------------------------------------------------- footer */
+  /*
+    Colours come from the --footer-* tokens BrandStyle emits, so the link and
+    icon hover states follow whatever an administrator configured in Settings →
+    Footer without a rebuild. Each falls back to `inherit`, so a footer nobody
+    has restyled looks exactly as it did before these tokens existed.
+  */
+  .footer-link {
+    color: var(--footer-link, inherit);
+  }
+  .footer-link:hover,
+  .footer-link:focus-visible {
+    color: var(--footer-link-hover, inherit);
+  }
+  .footer-social {
+    color: var(--footer-link, inherit);
+  }
+  .footer-social:hover,
+  .footer-social:focus-visible {
+    color: var(--footer-link-hover, inherit);
+    border-color: var(--footer-link-hover, currentColor);
+  }
+
   /*
     Section design runtime.
 

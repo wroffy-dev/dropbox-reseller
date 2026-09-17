@@ -1864,6 +1864,10 @@ model Navigation {
   slug      String
   location  NavigationLocation @default(HEADER)
 
+  /// Hides the whole menu — a footer column an admin wants off the site for a
+  /// while, without deleting the links inside it.
+  isVisible Boolean @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1890,6 +1894,8 @@ model NavigationItem {
   icon           String?
   openInNewTab   Boolean     @default(false)
   isHighlighted  Boolean     @default(false)
+  /// Adds rel="nofollow". Meaningful on outbound links; ignored for internal ones.
+  isNoFollow     Boolean     @default(false)
   sortOrder      Int         @default(0)
   isVisible      Boolean     @default(true)
 
@@ -1912,6 +1918,26 @@ model NavigationItem {
   @@index([blogCategoryId])
 }
 
+/// Social profiles, as an ordered list an admin can extend.
+///
+/// This replaced five fixed URL columns on WebsiteSettings, which could not be
+/// reordered, disabled, or added to. The migration that introduced this model
+/// copied those columns into rows before dropping them.
+model SocialLink {
+  id        String  @id @default(cuid())
+  /// Chooses the icon — one of SOCIAL_NETWORKS in src/lib/social/networks.ts.
+  network   String
+  label     String
+  url       String
+  sortOrder Int     @default(0)
+  isVisible Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isVisible, sortOrder])
+}
+
 // ---------------------------------------------------------------------------
 // SETTINGS (singletons — id is always "singleton")
 // ---------------------------------------------------------------------------
@@ -1928,13 +1954,6 @@ model WebsiteSettings {
   contactPhone    String?
   whatsappNumber  String?
   address         String? @db.Text
-
-  // Socials
-  linkedinUrl  String?
-  twitterUrl   String?
-  facebookUrl  String?
-  instagramUrl String?
-  youtubeUrl   String?
 
   // Branding
   logoUrl     String?
@@ -1984,11 +2003,40 @@ model WebsiteSettings {
   headerSecondaryCtaLabel String?
   headerSecondaryCtaUrl   String?
 
-  // Footer
-  footerDescription       String? @db.Text
-  footerNewsletterEnabled Boolean @default(false)
-  footerNewsletterFormId  String?
-  copyrightText           String?
+  // Footer — brand column
+  footerDescription     String? @db.Text
+  footerLogoUrl         String?
+  footerLogoWidth       String  @default("9rem")
+  footerShowLogo        Boolean @default(true)
+  footerShowDescription Boolean @default(true)
+  copyrightText         String?
+
+  // Footer — newsletter. The form itself is a normal Form record, so a
+  // subscription travels the same path as every other lead on the site.
+  footerNewsletterEnabled     Boolean @default(false)
+  footerNewsletterFormId      String?
+  footerNewsletterHeading     String  @default("Stay updated")
+  footerNewsletterDescription String? @db.Text
+  footerNewsletterPlaceholder String  @default("Enter your email")
+  footerNewsletterButtonLabel String  @default("Send")
+  footerNewsletterSuccess     String  @default("Thanks — you are on the list.")
+
+  // Footer — appearance. Empty means "inherit the brand palette", which is how
+  // the footer looked before these existed.
+  footerBackground     String @default("")
+  footerHeadingColor   String @default("")
+  footerTextColor      String @default("")
+  footerLinkColor      String @default("")
+  footerLinkHoverColor String @default("")
+  footerButtonBg       String @default("")
+  footerButtonText     String @default("")
+  footerInputBg        String @default("")
+  footerInputBorder    String @default("")
+  footerDividerColor   String @default("")
+  footerPaddingTop     String @default("4rem")
+  footerPaddingBottom  String @default("2.5rem")
+  footerColumnGap      String @default("2.5rem")
+  footerRowGap         String @default("2.5rem")
 
   // Layout — global defaults every section can override
   containerWidth       String @default("72rem")

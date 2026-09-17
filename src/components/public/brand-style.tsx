@@ -37,6 +37,45 @@ function weight(value: string | null | undefined, fallback: number): number {
 
 const TRANSFORMS = new Set(['none', 'uppercase', 'lowercase', 'capitalize']);
 
+const HEX = /^#[0-9a-fA-F]{6}$/;
+
+/** A configured hex colour, or the fallback when the admin left it empty. */
+function color(value: string | null | undefined, fallback: string): string {
+  const trimmed = (value ?? '').trim();
+  return HEX.test(trimmed) ? trimmed : fallback;
+}
+
+/**
+ * Footer tokens.
+ *
+ * Every colour here is optional in the admin, and an empty one inherits a
+ * default built for the dark footer the site ships with — the brand secondary
+ * behind white text. An admin who sets a light background is expected to set
+ * the text colours too; that is why each one is exposed rather than derived.
+ */
+function footerTokens(settings: WebsiteSettings): string {
+  const background = color(settings.footerBackground, `rgb(${rgbTriple(settings.colorSecondary, '11 27 52')})`);
+  const heading = color(settings.footerHeadingColor, '#FFFFFF');
+  const text = color(settings.footerTextColor, 'rgba(255,255,255,0.72)');
+
+  return [
+    `--footer-bg:${background}`,
+    `--footer-heading:${heading}`,
+    `--footer-text:${text}`,
+    `--footer-link:${color(settings.footerLinkColor, text)}`,
+    `--footer-link-hover:${color(settings.footerLinkHoverColor, heading)}`,
+    `--footer-btn-bg:${color(settings.footerButtonBg, `rgb(${rgbTriple(settings.colorPrimary, '0 97 255')})`)}`,
+    `--footer-btn-text:${color(settings.footerButtonText, '#FFFFFF')}`,
+    `--footer-input-bg:${color(settings.footerInputBg, 'rgba(255,255,255,0.06)')}`,
+    `--footer-input-border:${color(settings.footerInputBorder, 'rgba(255,255,255,0.18)')}`,
+    `--footer-divider:${color(settings.footerDividerColor, 'rgba(255,255,255,0.12)')}`,
+    `--footer-pt:${len(settings.footerPaddingTop, '4rem')}`,
+    `--footer-pb:${len(settings.footerPaddingBottom, '2.5rem')}`,
+    `--footer-col-gap:${len(settings.footerColumnGap, '2.5rem')}`,
+    `--footer-row-gap:${len(settings.footerRowGap, '2.5rem')}`,
+  ].join(';');
+}
+
 /**
  * Injects the admin-configured palette, typography and layout tokens as CSS
  * custom properties, and requests exactly the Google Font families and weights
@@ -102,6 +141,7 @@ export function BrandStyle({ settings }: { settings: WebsiteSettings }) {
 --btn-padding-x:${len(settings.buttonPaddingX, '1.25rem')};
 --btn-padding-y:${len(settings.buttonPaddingY, '0.625rem')};
 --btn-transform:${transform};
+${footerTokens(settings)};
 }`;
 
   const responsive = [

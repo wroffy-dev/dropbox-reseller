@@ -100,6 +100,11 @@ information.
   navigation and button text, weights, sizes, line height and letter spacing,
   plus container width, section spacing, radii and button styling. Only the
   fonts and weights actually selected are downloaded by the site.
+- A fully managed footer: logo and description under Settings → Footer, link
+  columns as footer menus under Navigation (reorder, hide, nofollow, new tab),
+  an ordered social list, and colours and spacing under Website design →
+  Footer. The email sign-up column posts to a form you choose, so subscribers
+  arrive in Leads with the usual source, page, referrer and UTM attribution.
 
 ---
 

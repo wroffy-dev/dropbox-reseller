@@ -10,6 +10,8 @@ import { canSetParent } from '@/lib/utils/tree';
 import { uniqueSlug, slugify } from '@/lib/utils/slug';
 import { sanitizeText } from '@/lib/utils/sanitize';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
+import { scopeForUser } from '@/lib/country/admin';
+import { offerIn, removeFrom } from '@/lib/country/availability';
 
 const PARENT_LABELS = {
   self: 'A category cannot be its own parent.',
@@ -73,6 +75,13 @@ export async function savePageCategory(
       ? await prisma.pageCategory.update({ where: { id: categoryId }, data })
       : await prisma.pageCategory.create({ data });
 
+    // Offered in the market it was created in. An edit must not re-offer a
+    // category this market had removed, so this is create-only.
+    if (!categoryId) {
+      const scope = await scopeForUser(user);
+      await offerIn('PAGE_CATEGORY', [category.id], scope.country.id);
+    }
+
     await recordAudit({
       actor: user,
       action: categoryId ? 'updated' : 'created',
@@ -126,17 +135,41 @@ export async function deletePageCategory(input: unknown): Promise<ActionResult> 
       if (!target) return failure('That destination category no longer exists.');
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.page.updateMany({
-        where: { categoryId },
-        data: { categoryId: movePagesTo },
-      });
-      // Children rise to the deleted category's own parent.
-      await tx.pageCategory.updateMany({
-        where: { parentId: categoryId },
-        data: { parentId: category.parentId },
-      });
-      await tx.pageCategory.delete({ where: { id: categoryId } });
+    const scope = await scopeForUser(user);
+
+    /*
+     * This market's pages are recategorised, and this market stops offering the
+     * category. The category row itself is shared, so deleting it here would
+     * take it away from every other market too — which is what this used to do.
+     *
+     * Only when no market offers it any more is the shared row removed, and
+     * only then do subcategories need promoting: until that point the tree is
+     * still in use somewhere.
+     */
+    /*
+     * The pages move **first**.
+     *
+     * If the category turns out to be unused and gets deleted, the schema's
+     * SET NULL takes every page's category with it — so a move that ran
+     * afterwards would find nothing left to move and quietly leave the pages
+     * uncategorised, which is precisely what the administrator asked not to
+     * happen.
+     *
+     * Scoped to this market, so another market's pages keep their category.
+     */
+    const moved = await prisma.page.updateMany({
+      where: { categoryId, countryId: scope.country.id },
+      data: { categoryId: movePagesTo },
+    });
+
+    const outcome = await removeFrom('PAGE_CATEGORY', categoryId, scope.country.id, {
+      retireWhenUnused: async (tx) => {
+        await tx.pageCategory.updateMany({
+          where: { parentId: categoryId },
+          data: { parentId: category.parentId },
+        });
+        await tx.pageCategory.delete({ where: { id: categoryId } });
+      },
     });
 
     await recordAudit({
@@ -145,16 +178,20 @@ export async function deletePageCategory(input: unknown): Promise<ActionResult> 
       entity: 'PageCategory',
       entityId: categoryId,
       summary:
-        `Deleted page category “${category.name}” — ${category._count.pages} page(s) ` +
-        `${movePagesTo ? 'moved to another category' : 'left uncategorised'}, ` +
-        `${category._count.children} subcategory(ies) promoted`,
+        `Removed page category “${category.name}” from ${scope.country.name} — ${moved.count} page(s) ` +
+        `${movePagesTo ? 'moved to another category' : 'left uncategorised'}` +
+        (outcome.retired
+          ? `; no market used it, so it was deleted and ${category._count.children} subcategory(ies) were promoted`
+          : `; ${outcome.remaining} other market(s) keep it`),
     });
 
     revalidatePath('/admin/pages/categories');
     revalidatePath('/admin/pages');
     return success(
       undefined,
-      `Category deleted. ${category._count.pages} page(s) ${movePagesTo ? 'moved' : 'are now uncategorised'}.`,
+      outcome.retired
+        ? `Category removed. No other market used it, so it has been deleted. ${moved.count} page(s) ${movePagesTo ? 'moved' : 'are now uncategorised'}.`
+        : `Removed from ${scope.country.name}. ${outcome.remaining} other market(s) still use it. ${moved.count} page(s) ${movePagesTo ? 'moved' : 'are now uncategorised'}.`,
     );
   } catch (error) {
     return toActionError(error);

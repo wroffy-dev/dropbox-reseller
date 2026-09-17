@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Pencil, Trash, Globe } from 'lucide-react';
+import { Plus, Pencil, Trash, Globe, Copy } from 'lucide-react';
 import {
   saveCountry,
   setCountryActive,
@@ -218,6 +218,28 @@ export function CountriesManager({
                       >
                         <Globe className="h-4 w-4" />
                       </a>
+                      {/*
+                        * Every market except the source gets the button, and it
+                        * is a link to that market's own row — selecting it is
+                        * what brings up the panel below, so the button and the
+                        * panel can never disagree about which market is being
+                        * synced.
+                        *
+                        * The source market never shows it: there is nothing to
+                        * copy into the market everything is copied from, and
+                        * offering it would invite exactly the mistake the
+                        * server action refuses.
+                        */}
+                      {!country.isDefault && sourceName && canEdit ? (
+                        <a
+                          href={`?country=${country.id}#sync`}
+                          className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-brand transition-colors hover:bg-brand/10"
+                          title={`Add ${sourceName}'s content to ${country.name}`}
+                        >
+                          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                          Sync from {sourceName}
+                        </a>
+                      ) : null}
                       {canEdit ? (
                         <>
                           <button
@@ -266,12 +288,14 @@ export function CountriesManager({
         * action refuses.
         */}
       {selected && !selected.isDefault && sourceName ? (
+        <div id="sync" className="scroll-mt-24">
         <SyncPanel
           key={`sync-${selected.id}`}
           sourceName={sourceName}
           target={{ id: selected.id, name: selected.name, currency: selected.currency }}
           canSync={canEdit}
         />
+        </div>
       ) : null}
 
       <Dialog

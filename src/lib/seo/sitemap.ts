@@ -66,6 +66,7 @@ export async function countryUrls(country: CountryContext): Promise<SitemapUrl[]
     prisma.productCountry.findMany({
       where: {
         countryId: country.id,
+        deletedAt: null,
         noIndex: false,
         status: 'PUBLISHED',
         OR: [{ publishedAt: null }, { publishedAt: { lte: new Date() } }],

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { prisma } from '@/lib/db/prisma';
 import { requirePermission, userCan } from '@/lib/auth/guards';
+import { getAdminCountryScope } from '@/lib/country/admin';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { PageCategoryManager } from '@/components/admin/pages/page-category-manager';
 import type { CategoryRow } from '@/components/admin/category-tree-manager';
@@ -11,8 +12,11 @@ export const dynamic = 'force-dynamic';
 
 export default async function PageCategories() {
   const user = await requirePermission('pages.view');
+  const scope = await getAdminCountryScope();
 
   const rows = await prisma.pageCategory.findMany({
+    // Only what this market uses. See the product categories screen.
+    where: { countries: { some: { countryId: scope.country.id } } },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     select: {
       id: true,

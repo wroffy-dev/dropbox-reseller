@@ -13,6 +13,7 @@ import { sanitizeHtml, sanitizeText } from '@/lib/utils/sanitize';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
 import { listActiveCountries } from '@/lib/country/registry';
 import { scopeForUser } from '@/lib/country/admin';
+import { offerIn, removeFrom } from '@/lib/country/availability';
 import { countryPath } from '@/lib/country/routing';
 import type { SessionUser } from '@/lib/auth/guards';
 
@@ -195,7 +196,9 @@ async function syncCountryPricing(
 
   await prisma.productCountry.upsert({
     where: { productId_countryId: { productId, countryId } },
-    update: patch,
+    // Saving a product while working in a market that had withdrawn it is a
+    // decision to offer it there again.
+    update: { ...patch, deletedAt: null },
     // A market that does not sell the product yet starts from what was just
     // entered, so saving a product never leaves it for sale nowhere.
     create: {
@@ -541,37 +544,104 @@ export async function duplicateProduct(productId: string): Promise<ActionResult<
   }
 }
 
+/**
+ * Withdraws a product from **one market**.
+ *
+ * The product screen is country-scoped — the admin is looking at one market's
+ * catalogue — so delete means "stop selling this here", not "destroy this
+ * product". Deleting `Product.deletedAt` instead would take the product out of
+ * every market at once, including the ones whose administrators were never
+ * asked; that is what this used to do, and it is why a UAE deletion removed the
+ * product from India.
+ *
+ * The market's own configuration — its prices, ordering and SEO — is archived
+ * rather than destroyed, so a mistaken removal costs nothing to undo.
+ *
+ * The global product row is only retired once **no** market offers it any more,
+ * and even then it is soft-deleted, because leads reference it and must keep
+ * their attribution.
+ */
 export async function deleteProduct(productId: string): Promise<ActionResult> {
   try {
     const user = await authorize('products.delete');
-    const product = await prisma.product.findUnique({ where: { id: productId } });
+    const scope = await scopeForUser(user);
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, name: true, slug: true },
+    });
     if (!product) return failure('That product no longer exists.');
 
-    // Soft delete: leads reference the product and must keep their attribution.
-    await prisma.product.update({
-      where: { id: productId },
-      data: {
-        deletedAt: new Date(),
-        status: 'ARCHIVED',
-        slug: `${product.slug}-deleted-${Date.now()}`,
-        isFeatured: false,
-      },
-    });
+    const removed = await withdrawFromMarket(productId, scope.country.id);
+    if (!removed) {
+      return failure(`${scope.country.name} does not offer that product.`);
+    }
 
     await recordAudit({
       actor: user,
       action: 'deleted',
-      entity: 'Product',
+      entity: 'ProductCountry',
       entityId: productId,
-      summary: `Deleted product “${product.name}”`,
+      summary: `Removed product “${product.name}” from ${scope.country.name}`,
     });
 
     revalidatePath('/admin/products');
     await revalidateProduct(product.slug);
-    return success(undefined, 'Product deleted.');
+    return success(undefined, `Removed from ${scope.country.name}.`);
   } catch (error) {
     return toActionError(error);
   }
+}
+
+/**
+ * Archives one market's configuration, and retires the shared product only if
+ * that was the last market offering it.
+ *
+ * Returns false when the market did not offer the product to begin with, so the
+ * caller can say so rather than reporting a delete that deleted nothing.
+ */
+async function withdrawFromMarket(productId: string, countryId: string): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    const config = await tx.productCountry.findUnique({
+      where: { productId_countryId: { productId, countryId } },
+      select: { id: true, deletedAt: true },
+    });
+    if (!config || config.deletedAt) return false;
+
+    await tx.productCountry.update({
+      where: { id: config.id },
+      data: { deletedAt: new Date(), status: 'ARCHIVED', isFeatured: false },
+    });
+
+    /*
+     * Only when nothing is left. A product still on sale somewhere must keep a
+     * live global row: every market's configuration hangs off it, and the
+     * catalogue queries that join through it would drop those markets' products
+     * the moment this was set.
+     */
+    const stillSold = await tx.productCountry.count({
+      where: { productId, deletedAt: null },
+    });
+    if (stillSold === 0) {
+      const product = await tx.product.findUnique({
+        where: { id: productId },
+        select: { slug: true, deletedAt: true },
+      });
+      if (product && !product.deletedAt) {
+        await tx.product.update({
+          where: { id: productId },
+          data: {
+            deletedAt: new Date(),
+            status: 'ARCHIVED',
+            // Frees the slug for a future product of the same name.
+            slug: `${product.slug}-deleted-${Date.now()}`,
+            isFeatured: false,
+          },
+        });
+      }
+    }
+
+    return true;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -615,6 +685,19 @@ export async function saveProductCategory(
       ? await prisma.productCategory.update({ where: { id: categoryId }, data })
       : await prisma.productCategory.create({ data });
 
+    /*
+     * A category created while working in a market is offered there. Without
+     * this it would exist but belong to nobody, and the screen that just
+     * created it would not list it.
+     *
+     * Only on create: an edit must not silently re-offer a category this market
+     * had removed.
+     */
+    if (!categoryId) {
+      const scope = await scopeForUser(user);
+      await offerIn('PRODUCT_CATEGORY', [category.id], scope.country.id);
+    }
+
     await recordAudit({
       actor: user,
       action: categoryId ? 'updated' : 'created',
@@ -631,32 +714,54 @@ export async function saveProductCategory(
   }
 }
 
+/**
+ * Stops **one market** offering a category.
+ *
+ * The category row is shared by every market, so deleting it here would delete
+ * it everywhere — a UAE administrator tidying their own list would empty
+ * India's. What is removed instead is this market's availability row.
+ *
+ * The shared category is only removed once no market offers it at all, which is
+ * the one case where keeping it would leave an orphan nobody can reach.
+ */
 export async function deleteProductCategory(categoryId: string): Promise<ActionResult> {
   try {
     const user = await authorize('products.delete');
+    const scope = await scopeForUser(user);
     const category = await prisma.productCategory.findUnique({
       where: { id: categoryId },
       include: { _count: { select: { products: true } } },
     });
     if (!category) return failure('That category no longer exists.');
 
-    // Products survive: the relation is set to null by the schema.
-    await prisma.productCategory.delete({ where: { id: categoryId } });
+    const outcome = await removeFrom('PRODUCT_CATEGORY', categoryId, scope.country.id, {
+      // Products survive either way: the relation is set to null by the schema.
+      retireWhenUnused: async (tx) => {
+        await tx.productCategory.delete({ where: { id: categoryId } });
+      },
+    });
+
+    if (!outcome.removed && !outcome.retired) {
+      return failure(`${scope.country.name} does not use that category.`);
+    }
 
     await recordAudit({
       actor: user,
       action: 'deleted',
       entity: 'ProductCategory',
       entityId: categoryId,
-      summary: `Deleted category “${category.name}” (${category._count.products} product(s) uncategorised)`,
+      summary: outcome.retired
+        ? `Removed category “${category.name}” from ${scope.country.name}; no market used it, so it was deleted`
+        : `Removed category “${category.name}” from ${scope.country.name} (${outcome.remaining} other market(s) keep it)`,
     });
 
     revalidatePath('/admin/products/categories');
+    revalidatePath('/admin/products');
     return success(
       undefined,
-      category._count.products > 0
-        ? `Category deleted. ${category._count.products} product(s) are now uncategorised.`
-        : 'Category deleted.',
+      outcome.retired
+        ? 'Category removed. No other market used it, so it has been deleted.'
+        : `Removed from ${scope.country.name}. ${outcome.remaining} other market(s) still use it.`,
     );
   } catch (error) {
     return toActionError(error);
@@ -677,18 +782,35 @@ export async function bulkProductAction(input: unknown): Promise<ActionResult> {
     const products = await prisma.product.findMany({ where: { id: { in: ids }, deletedAt: null } });
 
     if (action === 'delete') {
-      await prisma.$transaction(
-        products.map((product) =>
-          prisma.product.update({
-            where: { id: product.id },
-            data: {
-              deletedAt: new Date(),
-              status: 'ARCHIVED',
-              slug: `${product.slug}-deleted-${Date.now()}`,
-              isFeatured: false,
-            },
-          }),
-        ),
+      /*
+       * Country-scoped, exactly like deleting one product from its row menu.
+       * Selecting twenty rows in the UAE catalogue and pressing Delete is
+       * twenty withdrawals from the UAE, not twenty products destroyed for
+       * every market — which is what a global `product.updateMany` did here.
+       *
+       * Sequential rather than one transaction over all of them: each
+       * withdrawal has to count the remaining markets for its own product, and
+       * a single transaction over hundreds of rows is the kind that times out
+       * holding locks on the catalogue.
+       */
+      const scope = await scopeForUser(user);
+      let removed = 0;
+      for (const product of products) {
+        if (await withdrawFromMarket(product.id, scope.country.id)) removed += 1;
+      }
+
+      await recordAudit({
+        actor: user,
+        action: 'bulk.delete',
+        entity: 'ProductCountry',
+        summary: `Removed ${removed} product(s) from ${scope.country.name}`,
+      });
+
+      revalidatePath('/admin/products');
+      revalidatePath('/', 'layout');
+      return success(
+        undefined,
+        `${removed} product(s) removed from ${scope.country.name}. Other markets are unchanged.`,
       );
     } else if (action === 'feature' || action === 'unfeature') {
       if (action === 'feature') {
@@ -814,6 +936,12 @@ export async function saveBrand(
       ? await prisma.brand.update({ where: { id: brandId }, data })
       : await prisma.brand.create({ data });
 
+    // Carried in the market it was created in. See `saveProductCategory`.
+    if (!brandId) {
+      const scope = await scopeForUser(user);
+      await offerIn('BRAND', [brand.id], scope.country.id);
+    }
+
     await recordAudit({
       actor: user,
       action: brandId ? 'updated' : 'created',
@@ -831,24 +959,40 @@ export async function saveBrand(
   }
 }
 
+/**
+ * Stops **one market** carrying a brand. See `deleteProductCategory` — same
+ * reasoning, same shape: a brand is one identity shared by every market, so
+ * what a country screen removes is that market's availability row.
+ */
 export async function deleteBrand(brandId: string): Promise<ActionResult> {
   try {
     const user = await authorize('products.delete');
+    const scope = await scopeForUser(user);
     const brand = await prisma.brand.findUnique({
       where: { id: brandId },
       include: { _count: { select: { products: true } } },
     });
     if (!brand) return failure('That brand no longer exists.');
 
-    // Products survive: the relation is SET NULL, so nothing is cascaded away.
-    await prisma.brand.delete({ where: { id: brandId } });
+    const outcome = await removeFrom('BRAND', brandId, scope.country.id, {
+      // Products survive: the relation is SET NULL, so nothing is cascaded away.
+      retireWhenUnused: async (tx) => {
+        await tx.brand.delete({ where: { id: brandId } });
+      },
+    });
+
+    if (!outcome.removed && !outcome.retired) {
+      return failure(`${scope.country.name} does not carry that brand.`);
+    }
 
     await recordAudit({
       actor: user,
       action: 'deleted',
       entity: 'Brand',
       entityId: brandId,
-      summary: `Deleted brand “${brand.name}” (${brand._count.products} product(s) kept)`,
+      summary: outcome.retired
+        ? `Removed brand “${brand.name}” from ${scope.country.name}; no market carried it, so it was deleted`
+        : `Removed brand “${brand.name}” from ${scope.country.name} (${outcome.remaining} other market(s) keep it)`,
     });
 
     revalidatePath('/admin/products/brands');
@@ -856,9 +1000,13 @@ export async function deleteBrand(brandId: string): Promise<ActionResult> {
     revalidatePath('/', 'layout');
     return success(
       undefined,
-      brand._count.products > 0
-        ? `Brand deleted. ${brand._count.products} product(s) no longer have a brand.`
-        : 'Brand deleted.',
+      outcome.retired
+        ? `Brand removed. No other market carried it, so it has been deleted${
+            brand._count.products > 0
+              ? `; ${brand._count.products} product(s) no longer have a brand`
+              : ''
+          }.`
+        : `Removed from ${scope.country.name}. ${outcome.remaining} other market(s) still carry it.`,
     );
   } catch (error) {
     return toActionError(error);

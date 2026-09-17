@@ -298,6 +298,9 @@ model Country {
   productConfigs       ProductCountry[]
   variantPricing       ProductVariantCountry[]
   blogCategories       BlogCategoryCountry[]
+  productCategories    ProductCategoryCountry[]
+  pageCategories       PageCategoryCountry[]
+  brands               BrandCountry[]
   leads                Lead[]
   submissions          FormSubmission[]
   forms                Form[]
@@ -305,10 +308,10 @@ model Country {
   staffAccess          UserCountry[]
   consentNotices       ConsentNotice[]
   consentRecords       ConsentRecord[]
-  syncMappingsAsSource CountrySyncMapping[]    @relation("SyncSource")
-  syncMappingsAsTarget CountrySyncMapping[]    @relation("SyncTarget")
-  syncRunsAsSource     CountrySyncRun[]        @relation("SyncRunSource")
-  syncRunsAsTarget     CountrySyncRun[]        @relation("SyncRunTarget")
+  syncMappingsAsSource CountrySyncMapping[]     @relation("SyncSource")
+  syncMappingsAsTarget CountrySyncMapping[]     @relation("SyncTarget")
+  syncRunsAsSource     CountrySyncRun[]         @relation("SyncRunSource")
+  syncRunsAsTarget     CountrySyncRun[]         @relation("SyncRunTarget")
 
   @@index([isActive, sortOrder])
   @@index([isActive, isPublished])
@@ -654,9 +657,10 @@ model PageCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  parent   PageCategory?  @relation("PageCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children PageCategory[] @relation("PageCategoryTree")
-  pages    Page[]
+  parent    PageCategory?         @relation("PageCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  PageCategory[]        @relation("PageCategoryTree")
+  pages     Page[]
+  countries PageCategoryCountry[]
 
   @@index([slug])
   @@index([parentId])
@@ -754,10 +758,82 @@ model ProductCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  image    Media?    @relation("CategoryImage", fields: [imageId], references: [id], onDelete: SetNull)
-  products Product[]
+  image     Media?                   @relation("CategoryImage", fields: [imageId], references: [id], onDelete: SetNull)
+  products  Product[]
+  countries ProductCategoryCountry[]
 
   @@index([slug])
+}
+
+/// Which markets offer a product category.
+///
+/// The category itself is one global row — "Cloud storage" means the same
+/// thing everywhere, and duplicating it per market would give five rows that
+/// have to be renamed five times. What is per-market is whether a market
+/// *offers* it, which is this table.
+///
+/// It exists so that removing a category from one storefront removes one row
+/// here instead of the taxonomy everybody shares. Follows the shape
+/// `BlogCategoryCountry` already established.
+model ProductCategoryCountry {
+  id         String @id @default(cuid())
+  categoryId String
+  countryId  String
+
+  /// Hidden in this market without giving up its place. Removing the market's
+  /// offer deletes this row; hiding it sets this false.
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  country  Country         @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, countryId])
+  @@index([countryId, isActive])
+}
+
+/// Which markets offer a page category. See `ProductCategoryCountry`.
+model PageCategoryCountry {
+  id         String @id @default(cuid())
+  categoryId String
+  countryId  String
+
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category PageCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  country  Country      @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, countryId])
+  @@index([countryId, isActive])
+}
+
+/// Which markets carry a brand. See `ProductCategoryCountry`.
+///
+/// A brand is one identity — Dropbox is Dropbox — so the record is shared and
+/// this table says who sells it.
+model BrandCountry {
+  id        String @id @default(cuid())
+  brandId   String
+  countryId String
+
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  brand   Brand   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  country Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, countryId])
+  @@index([countryId, isActive])
 }
 
 model Brand {
@@ -772,8 +848,9 @@ model Brand {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  logo     Media?    @relation("BrandLogo", fields: [logoId], references: [id], onDelete: SetNull)
-  products Product[]
+  logo      Media?         @relation("BrandLogo", fields: [logoId], references: [id], onDelete: SetNull)
+  products  Product[]
+  countries BrandCountry[]
 
   @@index([slug])
   @@index([sortOrder])
@@ -929,8 +1006,13 @@ model ProductCountry {
   noIndex        Boolean @default(false)
   ogImageId      String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  /// Removed from **this market only**. The product itself and every other
+  /// market's configuration are untouched, and this market's prices, ordering
+  /// and SEO are kept rather than destroyed — a country-scoped delete is a
+  /// withdrawal from one storefront, not a deletion of the product.
+  deletedAt DateTime?
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   country Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
@@ -2342,10 +2424,18 @@ model CountrySyncMapping {
 
   /// The source row's updatedAt at the last successful copy, so a later run
   /// can tell whether the source actually changed.
-  sourceUpdatedAt DateTime?
+  sourceUpdatedAt   DateTime?
   /// The destination row's updatedAt just after the copy. A destination whose
   /// updatedAt has moved past this has been edited locally.
-  targetSyncedAt  DateTime?
+  targetSyncedAt    DateTime?
+  /// When the destination copy was found to be gone.
+  ///
+  /// A tombstone, and the reason this table has no foreign key to the row it
+  /// points at: deleting the copy must leave this record standing, because it
+  /// is the only evidence that the market once had the item and chose to
+  /// remove it. Without it the next run would see "missing" and helpfully put
+  /// it back, undoing a deliberate decision every single time.
+  deletedInTargetAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

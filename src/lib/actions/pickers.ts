@@ -19,7 +19,7 @@ export async function listProductOptions(): Promise<PickerOption[]> {
   const scope = await scopeForUser(user);
 
   const rows = await prisma.productCountry.findMany({
-    where: { countryId: scope.country.id, product: { deletedAt: null } },
+    where: { countryId: scope.country.id, deletedAt: null, product: { deletedAt: null } },
     orderBy: [{ sortOrder: 'asc' }, { product: { name: 'asc' } }],
     take: 200,
     select: {

@@ -111,12 +111,20 @@ afterAll(async () => {
   await prisma.productCountry.deleteMany({ where: { countryId: targetId } });
   await prisma.page.deleteMany({ where: { countryId: targetId } });
   await prisma.form.deleteMany({ where: { countryId: targetId } });
+  // Menus hold the country with onDelete: Restrict, which is the protection
+  // that stops a market being deleted out from under its own content.
+  await prisma.navigationItem.deleteMany({ where: { navigation: { countryId: targetId } } });
+  await prisma.navigation.deleteMany({ where: { countryId: targetId } });
+  await prisma.popup.deleteMany({ where: { countryId: targetId } });
+  await prisma.pageCategoryCountry.deleteMany({ where: { countryId: targetId } });
+  await prisma.productCategoryCountry.deleteMany({ where: { countryId: targetId } });
+  await prisma.brandCountry.deleteMany({ where: { countryId: targetId } });
   await prisma.productCountry.deleteMany({ where: { productId } });
   await prisma.product.deleteMany({ where: { id: productId } });
 });
 
 const sync = (over: Record<string, unknown> = {}) =>
-  syncCountryContent({ targetCountryId: targetId, mode: 'ADD_MISSING', ...over });
+  syncCountryContent({ targetCountryId: targetId, ...over });
 
 describe('sync from the default market', () => {
   it('previews without writing anything', async () => {
@@ -169,10 +177,33 @@ describe('sync from the default market', () => {
   });
 
   it('flags the values that could not be carried across', async () => {
-    const result = await sync({ previewOnly: true, mode: 'UPDATE_EXISTING' });
-    expect(result.ok).toBe(true);
-    const flags = result.ok ? (result.data?.log ?? []).flatMap((entry) => entry.localise ?? []) : [];
-    expect(flags.some((flag) => /rupees|India/i.test(flag))).toBe(true);
+    /*
+     * Flags describe what is about to be created. Everything from the earlier
+     * tests is already imported and therefore skipped, so this needs a page
+     * the destination has never seen — which is also how an administrator
+     * meets these flags in practice.
+     */
+    const page = await prisma.page.create({
+      data: {
+        countryId: sourceId,
+        title: `Pricing in India ${suffix}`,
+        slug: `india-pricing-${suffix}`,
+        status: 'PUBLISHED',
+        seoDescription: 'Plans from ₹1,250 per user across India.',
+      },
+      select: { id: true },
+    });
+
+    try {
+      const result = await sync({ previewOnly: true });
+      expect(result.ok).toBe(true);
+      const flags = result.ok
+        ? (result.data?.log ?? []).flatMap((entry) => entry.localise ?? [])
+        : [];
+      expect(flags.some((flag) => /rupees|India/i.test(flag))).toBe(true);
+    } finally {
+      await prisma.page.delete({ where: { id: page.id } });
+    }
   });
 
   it('creates no duplicates when run again', async () => {
@@ -190,7 +221,7 @@ describe('sync from the default market', () => {
     );
   });
 
-  it('preserves a local edit in the default mode, and reports it in the other', async () => {
+  it('never overwrites a local edit, however many times it is run', async () => {
     const page = await prisma.page.findFirstOrThrow({
       where: { countryId: targetId, slug: pageSlug },
     });
@@ -199,18 +230,15 @@ describe('sync from the default market', () => {
       data: { title: 'Edited locally in Qatar' },
     });
 
-    // Add-missing does not touch it at all.
+    /*
+     * There is no mode that would put India's title back. The edit is this
+     * market's work, and an import that overwrote it would be destroying the
+     * thing the administrator came here to do.
+     */
     await sync();
-    let after = await prisma.page.findFirstOrThrow({ where: { id: page.id } });
-    expect(after.title).toBe('Edited locally in Qatar');
+    await sync();
 
-    // Update-existing sees the edit and refuses to overwrite it, reporting a
-    // conflict for a person to resolve.
-    const update = await sync({ mode: 'UPDATE_EXISTING' });
-    expect(update.ok).toBe(true);
-    expect(update.ok && update.data!.conflicts).toBeGreaterThan(0);
-
-    after = await prisma.page.findFirstOrThrow({ where: { id: page.id } });
+    const after = await prisma.page.findFirstOrThrow({ where: { id: page.id } });
     expect(after.title).toBe('Edited locally in Qatar');
   });
 

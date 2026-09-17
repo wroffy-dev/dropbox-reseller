@@ -190,6 +190,7 @@ export async function getActionItems(countryId?: string): Promise<ActionItem[]> 
       prisma.page.count({ where: { ...scoped, status: 'DRAFT' } }),
       prisma.productCountry.count({
         where: {
+          deletedAt: null,
           status: 'DRAFT',
           product: { deletedAt: null },
           ...(countryId ? { countryId } : {}),

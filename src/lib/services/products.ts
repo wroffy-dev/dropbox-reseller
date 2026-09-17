@@ -193,6 +193,9 @@ export function toPublicProduct(row: ProductCountryRow, country: CountryContext)
 export function publishedProductWhere(countryId: string): Prisma.ProductCountryWhereInput {
   return {
     countryId,
+    // Withdrawn from this market. The product may still be on sale elsewhere,
+    // which is exactly why the flag is on the market's row and not the product.
+    deletedAt: null,
     status: 'PUBLISHED',
     OR: [{ publishedAt: null }, { publishedAt: { lte: new Date() } }],
     product: { deletedAt: null },
@@ -305,6 +308,7 @@ export const getProductSeo = cache(async (countryId: string, slug: string) => {
 export const findLiveProductCountries = cache(async (slug: string): Promise<string[]> => {
   const rows = await prisma.productCountry.findMany({
     where: {
+      deletedAt: null,
       status: 'PUBLISHED',
       OR: [{ publishedAt: null }, { publishedAt: { lte: new Date() } }],
       product: { deletedAt: null, slug },

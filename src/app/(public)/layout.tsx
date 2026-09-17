@@ -13,6 +13,7 @@ import { PopupHost } from "@/components/public/popup-host";
 import { JsonLd } from "@/components/seo/json-ld";
 import { organizationSchema, websiteSchema } from "@/lib/seo/structured-data";
 import { getCurrentUser } from "@/lib/auth/guards";
+import { redirectWhenNotInstalled } from "@/lib/install/guards";
 import { resolveCountryPath } from "@/lib/country/registry";
 import { getCountrySettings } from "@/lib/country/settings";
 import { resolveMarketOptions } from "@/lib/country/switch";
@@ -24,6 +25,14 @@ export default async function PublicLayout({
 }: {
   children: React.ReactNode;
 }) {
+  /*
+   * Before anything else. Every line below this reads the database — settings,
+   * navigation, the page itself — and on a copy that has not been set up yet
+   * there is nothing to read from, so the visitor is sent to the wizard rather
+   * than shown a storefront assembled from failures.
+   */
+  await redirectWhenNotInstalled();
+
   const headerList = await headers();
   const pathname = headerList.get("x-pathname") ?? "/";
 

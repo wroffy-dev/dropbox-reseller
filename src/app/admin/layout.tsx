@@ -4,6 +4,7 @@ import { getCurrentUser, requireUser } from '@/lib/auth/guards';
 import { getWebsiteSettings } from '@/lib/services/settings';
 import { getAdminCountryScope } from '@/lib/country/admin';
 import { AdminShell } from '@/components/admin/admin-shell';
+import { redirectWhenNotInstalled } from '@/lib/install/guards';
 
 /**
  * Titles for the admin — but only for somebody who is actually in it.
@@ -35,6 +36,10 @@ export async function generateMetadata(): Promise<Metadata> {
  * enrolment or verification and never renders this layout at all.
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  // Ahead of the sign-in check: on a copy that has not been set up there is no
+  // account to sign in with, so the wizard is the honest destination.
+  await redirectWhenNotInstalled();
+
   const user = await requireUser();
   const [site, role, account, scope] = await Promise.all([
     getWebsiteSettings(),

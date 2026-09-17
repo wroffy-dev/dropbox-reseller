@@ -22,7 +22,32 @@
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
-  const { assertProductionEnv } = await import('@/lib/env-validation');
+  /*
+   * The configuration the setup wizard wrote is already in `process.env` by the
+   * time this runs — `docker/load-config.cjs` is preloaded by the container's
+   * CMD and hydrates it before Next boots.
+   *
+   * It is deliberately *not* loaded from here. This file is bundled for the Edge
+   * runtime alongside middleware, and importing the config store — even
+   * dynamically, even behind the runtime check above — pulls `node:fs` into that
+   * bundle and fails the build outright. A preload runs earlier, costs nothing
+   * per request, and webpack never sees it.
+   */
+  const { assertProductionEnv, awaitingInstallation } = await import('@/lib/env-validation');
+
+  if (awaitingInstallation()) {
+    // Not an error, and deliberately not fatal: this is what a fresh copy looks
+    // like before anyone has opened it. Key *names* only — never their values.
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        event: 'startup.awaiting_installation',
+        message: 'no database configured — serving the setup wizard',
+        time: new Date().toISOString(),
+      }),
+    );
+    return;
+  }
 
   try {
     assertProductionEnv();

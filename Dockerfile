@@ -117,6 +117,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/scripts/clone-market.mjs ./script
 COPY --chown=nextjs:nodejs docker/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
+# Preloaded by the command below, so the configuration the setup wizard wrote is
+# in the environment before Next.js starts. It cannot be done from
+# instrumentation.ts, which is bundled for the Edge runtime where node:fs does
+# not exist.
+COPY --chown=nextjs:nodejs docker/load-config.cjs /app/load-config.cjs
+
 # Directories that hold data rather than code.
 #
 # /data/uploads is the media library. It is outside /app on purpose: everything
@@ -136,12 +142,23 @@ RUN chmod +x /app/entrypoint.sh
 # written by one replica is invisible to the others and gone on the next
 # revision. See docs/MEDIA-STORAGE.md.
 RUN mkdir -p /data/uploads && chown -R nextjs:nodejs /data/uploads
+# Where the setup wizard writes the configuration it collects — the connection
+# string and the secrets it generates. On the same volume as the media library
+# and for the same reason: anything under /app is replaced by the next image, so
+# configuration written there would be destroyed by the deployment meant to
+# preserve it.
+#
+# 0700 and owned by the runtime user, because a volume shared with anything else
+# should not hand this directory over with it. The file inside is written 0600.
+RUN mkdir -p /data/config \
+ && chown -R nextjs:nodejs /data/config \
+ && chmod 700 /data/config
 # The directory uploads were written to before /data/uploads. Still read, so an
 # existing volume keeps serving its files; never written to.
 RUN mkdir -p /app/public/uploads && chown -R nextjs:nodejs /app/public/uploads
 RUN mkdir -p /app/backups && chown -R nextjs:nodejs /app/backups
 
-VOLUME ["/data/uploads", "/app/backups"]
+VOLUME ["/data/uploads", "/data/config", "/app/backups"]
 
 USER nextjs
 EXPOSE 3000
@@ -154,4 +171,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3000/api/health || exit 1
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["node", "server.js"]
+CMD ["node", "-r", "/app/load-config.cjs", "server.js"]

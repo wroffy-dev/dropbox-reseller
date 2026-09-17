@@ -33,6 +33,7 @@ information.
 - [Adding a new CMS block](#adding-a-new-cms-block)
 - [Security notes](#security-notes)
 - [Troubleshooting](#troubleshooting)
+- [Installing a new copy](docs/INSTALLATION.md)
 - [Countries](docs/MULTI-COUNTRY.md)
 - [Versioning and releases](VERSION_README.md)
 - [Changelog](CHANGELOG.md)

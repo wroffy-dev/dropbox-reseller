@@ -17,8 +17,63 @@ die() {
   exit 1
 }
 
+# ---------------------------------------------------------------------------
+# Is this copy configured yet?
+# ---------------------------------------------------------------------------
+# A missing DATABASE_URL used to stop the container. That was right when the
+# only way to configure this application was to set variables on the platform:
+# a container with no database could do nothing but serve errors.
+#
+# It is wrong now. A fresh copy is *expected* to start with nothing set — the
+# setup wizard is how the connection string arrives, and the wizard is a page
+# this server has to be running to render. Exiting here would mean the one
+# screen that can fix the problem never loads.
+#
+# The wizard writes its configuration to APP_CONFIG_DIR, so a container that has
+# already been set up finds its database there rather than in the environment.
+CONFIG_FILE="${APP_CONFIG_DIR:-/data/config}/app-config.json"
+
+AWAITING_INSTALL=false
+
 if [ -z "${DATABASE_URL:-}" ]; then
-  die startup.misconfigured "DATABASE_URL is not set"
+  if [ -f "$CONFIG_FILE" ]; then
+    # Already installed through the wizard.
+    #
+    # The connection string is read out of the file and exported, so the
+    # migration step below works exactly as it does for a platform-configured
+    # deployment — which is what makes a *redeploy* safe: a new image with new
+    # migrations applies them on start, rather than leaving a wizard-installed
+    # copy pinned to the schema it was installed with.
+    #
+    # Read by node on stdout, never passed as an argument: an argument would be
+    # visible in `ps` to anything else in the container. Exporting it puts it in
+    # this process's environment, which is exactly where a platform-set variable
+    # would already be, so this adds no exposure that did not already exist.
+    DATABASE_URL="$(node -e '
+      const fs = require("node:fs");
+      try {
+        const raw = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+        process.stdout.write(typeof raw.DATABASE_URL === "string" ? raw.DATABASE_URL : "");
+      } catch {
+        process.stdout.write("");
+      }
+    ' "$CONFIG_FILE" 2>/dev/null || true)"
+
+    if [ -n "$DATABASE_URL" ]; then
+      export DATABASE_URL
+      log info startup.config_loaded "database configuration read from the stored config"
+    else
+      # The file exists but carries no connection string — an installation that
+      # was interrupted before its database step finished. The wizard is still
+      # the thing that fixes it.
+      log warn startup.config_incomplete "stored config has no database — serving the setup wizard"
+      AWAITING_INSTALL=true
+    fi
+  else
+    log info startup.awaiting_installation \
+      "no database configured — starting so the setup wizard can be reached"
+    AWAITING_INSTALL=true
+  fi
 fi
 
 # The Prisma CLI ships in the image, so call the local binary directly. Using
@@ -46,7 +101,12 @@ prisma() {
 # statement) will fail on every attempt and then fail the container. That is
 # deliberate: a replica that starts against a schema it does not match serves
 # errors, and silently continuing would hide the cause.
-if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
+# Skipped entirely while the application is waiting to be installed: there is no
+# database to migrate, and the wizard runs the migrations itself once it has a
+# connection string it has tested.
+if [ "$AWAITING_INSTALL" = "true" ]; then
+  log info migrate.skipped "no database configured yet — the setup wizard will migrate"
+elif [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
   log info migrate.start "applying database migrations"
 
   attempt=1
@@ -85,7 +145,9 @@ fi
 # and is not present in this image, so the old command failed here and the
 # failure was swallowed. A failure now stops the container, because a deployment
 # that was explicitly told to create an admin and did not is broken.
-if [ "${RUN_SEED:-false}" = "true" ]; then
+if [ "$AWAITING_INSTALL" = "true" ] && [ "${RUN_SEED:-false}" = "true" ]; then
+  log warn seed.skipped "RUN_SEED is set but no database is configured — use the setup wizard"
+elif [ "${RUN_SEED:-false}" = "true" ]; then
   SEED_BUNDLE="/app/prisma/seed.mjs"
   if [ ! -f "$SEED_BUNDLE" ]; then
     die seed.missing "RUN_SEED=true but $SEED_BUNDLE is not in the image"

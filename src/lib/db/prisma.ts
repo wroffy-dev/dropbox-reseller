@@ -1,5 +1,6 @@
 import 'server-only';
 import { PrismaClient } from '@prisma/client';
+import { loadStoredConfig } from '@/lib/install/runtime-env';
 
 /**
  * The single Prisma client for the process.
@@ -23,6 +24,11 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createClient(): PrismaClient {
+  // The stored configuration is folded into `process.env` first, so a copy
+  // configured by the setup wizard rather than by the platform finds its
+  // connection string here. A platform-set variable is left alone.
+  loadStoredConfig();
+
   return new PrismaClient({
     // `error` only in production: Prisma's `query` and `info` channels echo
     // parameters, and `warn` includes the connection string on pool timeouts.
@@ -30,9 +36,61 @@ function createClient(): PrismaClient {
   });
 }
 
-export const prisma = globalForPrisma.prisma ?? createClient();
+/**
+ * Built on first use, not on import.
+ *
+ * Before the wizard runs there is no database to connect to, and `new
+ * PrismaClient()` throws without a `DATABASE_URL`. Constructing it at import
+ * time therefore made *importing this module* fatal on a fresh copy — and since
+ * nearly everything imports it, that meant the server could not boot far enough
+ * to render the page that collects the connection string.
+ *
+ * The proxy keeps the client a plain `prisma.x.y()` value for every existing
+ * caller while moving construction to the first property access, which happens
+ * inside a request that has already decided a database should exist.
+ */
+function client(): PrismaClient {
+  globalForPrisma.prisma ??= createClient();
+  return globalForPrisma.prisma;
+}
 
-globalForPrisma.prisma = prisma;
+export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, property) {
+    const real = client();
+    const value = Reflect.get(real, property) as unknown;
+    /*
+     * Methods are bound to the real client rather than handed back loose.
+     *
+     * Without this their `this` would be the proxy, and Prisma's client holds
+     * genuine `#private` fields — reading one through an object whose class did
+     * not declare it is a TypeError, so `prisma.$transaction(...)` would throw
+     * instead of running.
+     */
+    return typeof value === 'function' ? value.bind(real) : value;
+  },
+  set(_target, property, value) {
+    return Reflect.set(client(), property, value);
+  },
+  has(_target, property) {
+    return Reflect.has(client(), property);
+  },
+  getPrototypeOf() {
+    return Reflect.getPrototypeOf(client());
+  },
+});
+
+/**
+ * Drops the cached client so the next use builds one against the configuration
+ * as it now stands. The installer calls this the moment it has written a
+ * verified connection string; nothing else should.
+ */
+export function resetPrismaClient(): void {
+  const existing = globalForPrisma.prisma;
+  globalForPrisma.prisma = undefined;
+  // Not awaited: a caller mid-request keeps its own reference, and the pool is
+  // closed by the kernel when the process exits in any case.
+  void existing?.$disconnect().catch(() => {});
+}
 
 /**
  * Graceful shutdown — handled by Next.js, deliberately not re-implemented here.

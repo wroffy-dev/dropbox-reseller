@@ -5,6 +5,7 @@ import { PERMISSIONS, SYSTEM_ROLES, ALL_PERMISSIONS } from '../src/lib/auth/perm
 import { DEFAULT_EMAIL_TEMPLATES } from '../src/lib/email/templates';
 import { demoHome, demoPricing, demoContact, demoAbout } from './seed-blocks';
 import { collectSeedProblems } from '../src/lib/env-validation';
+import { seedFoundation, INITIAL_COUNTRIES } from '../src/lib/install/bootstrap';
 
 const prisma = new PrismaClient();
 
@@ -19,96 +20,27 @@ const prisma = new PrismaClient();
  * Adding a market later needs no code: this list exists so a brand new database
  * has somewhere to put content, not as the source of truth.
  */
-const COUNTRIES = [
-  {
-    id: 'country_in',
-    name: 'India',
-    code: 'IN',
-    slug: '',
-    locale: 'en-IN',
-    currency: 'INR',
-    currencySymbol: '₹',
-    phoneCode: '+91',
-    timezone: 'Asia/Kolkata',
-    isDefault: true,
-    sortOrder: 0,
-  },
-  {
-    id: 'country_ae',
-    name: 'United Arab Emirates',
-    code: 'AE',
-    slug: 'ae',
-    locale: 'en-AE',
-    currency: 'AED',
-    currencySymbol: 'AED',
-    phoneCode: '+971',
-    timezone: 'Asia/Dubai',
-    isDefault: false,
-    sortOrder: 1,
-  },
-];
-
-async function seedCountries() {
-  for (const country of COUNTRIES) {
-    await prisma.country.upsert({
-      where: { code: country.code },
-      // An existing market is never renamed, re-slugged or reactivated: an
-      // operator may have changed any of it deliberately.
-      update: {},
-      create: { ...country, isActive: true },
-    });
-  }
-  console.log(`  countries: ${COUNTRIES.map((c) => c.code).join(', ')}`);
-}
+/*
+ * The markets, permissions and roles now live in src/lib/install/bootstrap.ts,
+ * because the setup wizard creates exactly the same rows and two copies of
+ * "what a working database contains" would drift.
+ */
+const COUNTRIES = INITIAL_COUNTRIES;
 
 /** The root market, which every piece of seeded demo content belongs to. */
 async function defaultCountryId(): Promise<string> {
   const row =
     (await prisma.country.findFirst({ where: { isDefault: true } })) ??
     (await prisma.country.findFirst({ orderBy: { sortOrder: 'asc' } }));
-  if (!row) throw new Error('No country configured — run seedCountries first.');
+  if (!row) throw new Error('No country configured — the foundation rows were not seeded.');
   return row.id;
 }
 
-async function seedPermissions() {
-  for (const [key, meta] of Object.entries(PERMISSIONS)) {
-    await prisma.permission.upsert({
-      where: { key },
-      update: { group: meta.group, label: meta.label },
-      create: { key, group: meta.group, label: meta.label },
-    });
-  }
-  console.log(`  permissions: ${ALL_PERMISSIONS.length}`);
-}
-
-async function seedRoles() {
-  const all = await prisma.permission.findMany();
-  const byKey = new Map(all.map((p) => [p.key, p.id]));
-
-  for (const role of SYSTEM_ROLES) {
-    const record = await prisma.userRole.upsert({
-      where: { slug: role.slug },
-      update: { name: role.name, description: role.description, rank: role.rank, isSystem: true },
-      create: {
-        slug: role.slug,
-        name: role.name,
-        description: role.description,
-        rank: role.rank,
-        isSystem: true,
-      },
-    });
-
-    const keys = role.permissions === 'all' ? ALL_PERMISSIONS : role.permissions;
-    await prisma.rolePermission.deleteMany({ where: { roleId: record.id } });
-    await prisma.rolePermission.createMany({
-      data: keys
-        .map((k) => byKey.get(k))
-        .filter((id): id is string => Boolean(id))
-        .map((permissionId) => ({ roleId: record.id, permissionId })),
-      skipDuplicates: true,
-    });
-    console.log(`  role: ${role.name} (${keys.length} permissions)`);
-  }
+async function seedFoundationRows() {
+  const counts = await seedFoundation(prisma);
+  console.log(`  countries: ${COUNTRIES.map((c) => c.code).join(', ')}`);
+  console.log(`  permissions: ${counts.permissions}`);
+  console.log(`  roles: ${counts.roles}`);
 }
 
 /**
@@ -899,9 +831,7 @@ async function seedCustomers() {
 async function main() {
   console.log('Seeding database…');
   // Markets come first: pages, articles, menus and leads all belong to one.
-  await seedCountries();
-  await seedPermissions();
-  await seedRoles();
+  await seedFoundationRows();
   await seedAdmin();
   await seedSettings();
 

@@ -35,7 +35,7 @@ const THIRTY_DAYS = 60 * 60 * 24 * 30;
  * Database-backed redirects are handled in the catch-all route (Node runtime),
  * so they never add a query to every request.
  */
-export default auth((request) => {
+function handle(request: NextRequest & { auth?: { user?: unknown } | null }): NextResponse {
   const { nextUrl } = request;
   const isLoggedIn = Boolean(request.auth?.user);
 
@@ -53,7 +53,34 @@ export default auth((request) => {
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   captureAttribution(request, response);
   return response;
-});
+}
+
+/**
+ * Auth.js is wrapped around this only once there is a secret to sign with.
+ *
+ * On a copy that has not been set up there is no `AUTH_SECRET` — the setup
+ * wizard is what generates it — and Auth.js throws `MissingSecret` the moment
+ * it is asked for a session. Since this middleware runs on very nearly every
+ * request, that turned every page into a 500, including the wizard itself: the
+ * one screen able to create the secret could not render without it.
+ *
+ * Skipping the wrapper is not a weakening. With no secret there are no sessions
+ * to read, `request.auth` would be empty anyway, and the only thing the wrapper
+ * contributes here is the signed-in redirect away from the sign-in screen —
+ * which cannot apply when nobody can be signed in. Authorisation was never done
+ * here in any case; `requireUser()` does it on every page and Server Action, and
+ * unlike middleware it can read the database.
+ *
+ * Read once at module scope rather than per request: by the time this module is
+ * evaluated the configuration has already been hydrated into the environment by
+ * `docker/load-config.cjs`, and a process that has just been installed is
+ * restarted by the platform.
+ */
+const authConfigured = Boolean(process.env.AUTH_SECRET?.trim());
+
+export default authConfigured
+  ? auth(handle as Parameters<typeof auth>[0])
+  : (handle as unknown as Parameters<typeof auth>[0]);
 
 function captureAttribution(request: NextRequest, response: NextResponse) {
   const { nextUrl } = request;

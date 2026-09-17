@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { requirePermission } from '@/lib/auth/guards';
 import { getPostForPreview } from '@/lib/services/blog';
-import { getWebsiteSettings } from '@/lib/services/settings';
+import { getSocialLinks, getWebsiteSettings } from '@/lib/services/settings';
 import { getNavigations, getPrimaryNavigation } from '@/lib/services/navigation';
 import { getCountryById, getDefaultCountry } from '@/lib/country/registry';
 import { getCountrySettings } from '@/lib/country/settings';
@@ -43,12 +43,13 @@ export default async function BlogPreviewRender({
   // The preview renders in the market the article belongs to.
   const country = (await getCountryById(post.countryId)) ?? (await getDefaultCountry());
 
-  const [site, local, nav, footerMenus, legalMenus] = await Promise.all([
+  const [site, local, nav, footerMenus, legalMenus, socials] = await Promise.all([
     getWebsiteSettings(),
     getCountrySettings(country),
     getPrimaryNavigation(country),
     getNavigations(country, 'FOOTER'),
     getNavigations(country, 'LEGAL'),
+    getSocialLinks(),
   ]);
 
   return (
@@ -80,6 +81,7 @@ export default async function BlogPreviewRender({
         homeUrl={countryPath(country)}
         columns={footerMenus}
         legal={legalMenus[0]?.items ?? []}
+        socials={socials}
       />
     </>
   );

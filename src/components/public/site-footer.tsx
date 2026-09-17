@@ -1,27 +1,12 @@
 import type * as React from 'react';
 import Link from 'next/link';
 import { Mail, Phone, MapPin } from 'lucide-react';
-import {
-  LinkedInIcon,
-  XIcon,
-  FacebookIcon,
-  InstagramIcon,
-  YouTubeIcon,
-  type IconComponent,
-} from '@/components/ui/icons';
-import type { WebsiteSettings } from '@prisma/client';
+import { resolveSocialIcon } from '@/components/ui/icons';
+import type { SocialLink, WebsiteSettings } from '@prisma/client';
 import { getPublicFormById } from '@/lib/services/forms';
 import { PublicFormRenderer } from '@/components/forms/public-form';
 import type { ResolvedNavigation, ResolvedNavItem } from '@/lib/services/navigation';
 import type { CountrySettingsView } from '@/lib/country/types';
-
-const SOCIALS: Array<{ key: keyof WebsiteSettings; label: string; Icon: IconComponent }> = [
-  { key: 'linkedinUrl', label: 'LinkedIn', Icon: LinkedInIcon },
-  { key: 'twitterUrl', label: 'X', Icon: XIcon },
-  { key: 'facebookUrl', label: 'Facebook', Icon: FacebookIcon },
-  { key: 'instagramUrl', label: 'Instagram', Icon: InstagramIcon },
-  { key: 'youtubeUrl', label: 'YouTube', Icon: YouTubeIcon },
-];
 
 /**
  * The site footer.
@@ -43,6 +28,7 @@ export async function SiteFooter({
   homeUrl = '/',
   columns,
   legal,
+  socials,
 }: {
   settings: WebsiteSettings;
   /** The current market's contact details and copy. */
@@ -51,6 +37,8 @@ export async function SiteFooter({
   homeUrl?: string;
   columns: ResolvedNavigation[];
   legal: ResolvedNavItem[];
+  /** Published profiles, already ordered and filtered by `getSocialLinks()`. */
+  socials: SocialLink[];
 }) {
   /*
    * An existing form rather than a footer-only email box: its fields, consent
@@ -63,11 +51,23 @@ export async function SiteFooter({
       ? await getPublicFormById(settings.footerNewsletterFormId)
       : null;
 
-  const socials = SOCIALS.map(({ key, label, Icon }) => ({
-    label,
-    Icon,
-    href: typeof settings[key] === 'string' ? (settings[key] as string) : null,
-  })).filter((s): s is { label: string; Icon: IconComponent; href: string } => Boolean(s.href));
+  /*
+   * Profiles come from `SocialLink` rows, not from five fixed columns on
+   * website settings.
+   *
+   * The columns are gone: five of them meant the set of networks was a schema
+   * decision, so adding a sixth needed a migration and a deployment. A row per
+   * profile lets an administrator add, reorder, relabel or hide one, and the
+   * icon is looked up from the stored network key — an unknown key falls back
+   * to a generic link rather than breaking the footer.
+   *
+   * Ordering and the hidden-row filter are applied by `getSocialLinks()`, so
+   * the footer and the organisation schema cannot disagree about what is
+   * published.
+   */
+  const profiles = socials
+    .filter((link) => link.url.trim())
+    .map((link) => ({ label: link.label, Icon: resolveSocialIcon(link.network), href: link.url }));
 
   return (
     <footer className="border-t border-hairline bg-[rgb(var(--brand-secondary))] text-white/70">
@@ -132,7 +132,7 @@ export async function SiteFooter({
               {local.salesEmail ? (
                 <li className="flex items-start gap-2.5">
                   <Mail className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                  <a href={`mailto:${local.salesEmail}`} className="hover:text-white">
+                  <a href={`mailto:${local.salesEmail}`} className="footer-link transition-colors hover:text-white">
                     {local.salesEmail}
                   </a>
                 </li>
@@ -140,7 +140,7 @@ export async function SiteFooter({
               {local.salesPhone ? (
                 <li className="flex items-start gap-2.5">
                   <Phone className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                  <a href={`tel:${local.salesPhone.replace(/\s/g, '')}`} className="hover:text-white">
+                  <a href={`tel:${local.salesPhone.replace(/\s/g, '')}`} className="footer-link transition-colors hover:text-white">
                     {local.salesPhone}
                   </a>
                 </li>
@@ -164,7 +164,7 @@ export async function SiteFooter({
                       href={item.href}
                       target={item.openInNewTab ? '_blank' : undefined}
                       rel={item.openInNewTab ? 'noopener noreferrer' : undefined}
-                      className="transition-colors hover:text-white"
+                      className="footer-link transition-colors hover:text-white"
                     >
                       {item.label}
                     </Link>
@@ -186,7 +186,7 @@ export async function SiteFooter({
                 <ul className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
                   {legal.map((item) => (
                     <li key={item.id}>
-                      <Link href={item.href} className="transition-colors hover:text-white">
+                      <Link href={item.href} className="footer-link transition-colors hover:text-white">
                         {item.label}
                       </Link>
                     </li>
@@ -195,16 +195,16 @@ export async function SiteFooter({
               </nav>
             ) : null}
 
-            {socials.length > 0 ? (
+            {profiles.length > 0 ? (
               <ul className="flex items-center gap-3">
-                {socials.map(({ label, href, Icon }) => (
+                {profiles.map(({ label, href, Icon }) => (
                   <li key={label}>
                     <a
                       href={href}
                       target="_blank"
                       rel="noopener noreferrer"
                       aria-label={label}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 hover:text-white"
+                      className="footer-social inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 hover:text-white"
                     >
                       <Icon className="h-4 w-4" aria-hidden="true" />
                     </a>

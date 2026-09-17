@@ -42,14 +42,23 @@ export type BlogArticleContext = {
   forms: { cta: string; sidebar: string; bottom: string };
 };
 
+/**
+ * The site's own social profiles, as the blog's widgets see them.
+ *
+ * Five named columns became an ordered `SocialLink` table, so this carries the
+ * rows rather than a fixed shape. The social widget still offers its own
+ * per-widget overrides for the networks it knows about; what changed is only
+ * where the fallback comes from, which is why it is keyed by network.
+ */
 export type SiteSocials = {
   siteName: string;
-  linkedinUrl: string | null;
-  twitterUrl: string | null;
-  facebookUrl: string | null;
-  instagramUrl: string | null;
-  youtubeUrl: string | null;
+  links: Array<{ network: string; label: string; url: string }>;
 };
+
+/** The site's profile for one network, or nothing. */
+export function socialUrlFor(socials: SiteSocials | undefined, network: string): string | null {
+  return socials?.links.find((link) => link.network === network)?.url ?? null;
+}
 
 export type BlogRenderContext = {
   /** The market this blog surface is being rendered for. */

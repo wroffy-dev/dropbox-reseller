@@ -5,7 +5,7 @@ import {
   getBlogTags,
   categoryIdsWithChildren,
 } from '@/lib/services/blog';
-import { getWebsiteSettings } from '@/lib/services/settings';
+import { getSocialLinks, getWebsiteSettings } from '@/lib/services/settings';
 import { parseBlockContent } from '@/lib/cms/blocks';
 import type { BlogGridContent } from '@/lib/cms/blog-blocks';
 import type { BlogRenderContext } from '@/lib/cms/blog-render';
@@ -41,12 +41,13 @@ export async function BlogArchive({
   tagSlug?: string | null;
   searchParams: { page?: string; q?: string; tag?: string };
 }) {
-  const [sections, settings, categories, tags, site] = await Promise.all([
+  const [sections, settings, categories, tags, site, socials] = await Promise.all([
     getBlogSections('LISTING'),
     getBlogSettings(),
     getBlogCategories(country.id),
     getBlogTags(country.id, 60),
     getWebsiteSettings(),
+    getSocialLinks(),
   ]);
 
   const query = (searchParams.q ?? '').trim();
@@ -110,11 +111,13 @@ export async function BlogArchive({
     article: null,
     socials: {
       siteName: site.siteName,
-      linkedinUrl: site.linkedinUrl,
-      twitterUrl: site.twitterUrl,
-      facebookUrl: site.facebookUrl,
-      instagramUrl: site.instagramUrl,
-      youtubeUrl: site.youtubeUrl,
+      // Ordered and already filtered to the visible rows, so the blog's social
+      // widget shows exactly what the footer and the organisation schema do.
+      links: socials.map((link) => ({
+        network: link.network,
+        label: link.label,
+        url: link.url,
+      })),
     },
   };
 

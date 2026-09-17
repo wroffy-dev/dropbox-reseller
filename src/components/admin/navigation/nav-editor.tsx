@@ -50,6 +50,7 @@ export type EditorItem = {
   description: string;
   openInNewTab: boolean;
   isHighlighted: boolean;
+  isNoFollow: boolean;
   isVisible: boolean;
   children: EditorItem[];
 };
@@ -80,6 +81,7 @@ export function blankItem(): EditorItem {
     description: '',
     openInNewTab: false,
     isHighlighted: false,
+    isNoFollow: false,
     isVisible: true,
     children: [],
   };
@@ -157,6 +159,7 @@ export function NavigationEditor({
         blogCategoryId: item.blogCategoryId || null,
         description: item.description || null,
         openInNewTab: item.openInNewTab,
+        isNoFollow: item.isNoFollow,
         isHighlighted: item.isHighlighted,
         isVisible: item.isVisible,
         children: toPayload(item.children),
@@ -556,6 +559,12 @@ function ItemFields({
           checked={item.isHighlighted}
           onChange={(next) => onChange({ isHighlighted: next })}
           label="Highlight this item"
+        />
+        <Switch
+          checked={item.isNoFollow}
+          onChange={(next) => onChange({ isNoFollow: next })}
+          label="Add rel=&quot;nofollow&quot;"
+          hint="For outbound links you do not want to pass ranking to."
         />
       </div>
     </fieldset>

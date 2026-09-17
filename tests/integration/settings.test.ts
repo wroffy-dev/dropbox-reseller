@@ -8,12 +8,14 @@ const { saveWebsiteSettings, saveEmailSettings } = await import('@/lib/actions/s
 const { saveNavigation, saveNavigationItems, deleteNavigation } = await import(
   '@/lib/actions/navigation'
 );
+const { saveSocialLinks } = await import('@/lib/actions/social-links');
 const { decryptSecret } = await import('@/lib/utils/crypto');
 
 const suffix = uniqueSuffix();
 let navigationId = '';
 let websiteBackup: Record<string, unknown> | null = null;
 let emailBackup: Record<string, unknown> | null = null;
+let socialBackup: Array<Record<string, unknown>> = [];
 
 const BASE_SETTINGS = {
   siteName: 'Test Site',
@@ -50,10 +52,17 @@ beforeAll(async () => {
 
   websiteBackup = await prisma.websiteSettings.findUnique({ where: { id: 'singleton' } });
   emailBackup = await prisma.emailSettings.findUnique({ where: { id: 'singleton' } });
+  // saveSocialLinks replaces the whole table, so the seeded rows other suites
+  // read are put back afterwards.
+  socialBackup = await prisma.socialLink.findMany();
 });
 
 afterAll(async () => {
   if (navigationId) await prisma.navigation.deleteMany({ where: { id: navigationId } });
+  await prisma.socialLink.deleteMany({});
+  if (socialBackup.length > 0) {
+    await prisma.socialLink.createMany({ data: socialBackup as never });
+  }
   if (websiteBackup) {
     await prisma.websiteSettings.update({ where: { id: 'singleton' }, data: websiteBackup });
   }
@@ -162,14 +171,76 @@ describe('website settings', () => {
         ...BASE_SETTINGS,
         headerCtaLabel: 'Click',
         headerCtaUrl: 'javascript:alert(1)',
-        linkedinUrl: 'javascript:alert(2)',
+        footerLogoUrl: 'javascript:alert(2)',
       }),
     );
     expect(result.ok).toBe(true);
 
     const settings = await prisma.websiteSettings.findUniqueOrThrow({ where: { id: 'singleton' } });
     expect(settings.headerCtaUrl).toBeNull();
-    expect(settings.linkedinUrl).toBeNull();
+    expect(settings.footerLogoUrl).toBeNull();
+  });
+
+  it('keeps an empty footer colour as inherit and rejects a malformed one', async () => {
+    const inherit = await saveWebsiteSettings(
+      formData({ ...BASE_SETTINGS, footerBackground: '', footerTextColor: '#FFFFFF' }),
+    );
+    expect(inherit.ok).toBe(true);
+
+    const stored = await prisma.websiteSettings.findUniqueOrThrow({ where: { id: 'singleton' } });
+    expect(stored.footerBackground).toBe('');
+    expect(stored.footerTextColor).toBe('#FFFFFF');
+
+    const bad = await saveWebsiteSettings(
+      formData({ ...BASE_SETTINGS, footerBackground: 'darkish' }),
+    );
+    expect(bad.ok).toBe(false);
+  });
+
+  it('falls back to the documented defaults for blank newsletter copy', async () => {
+    const result = await saveWebsiteSettings(
+      formData({ ...BASE_SETTINGS, footerNewsletterHeading: '', footerNewsletterButtonLabel: '' }),
+    );
+    expect(result.ok).toBe(true);
+
+    const settings = await prisma.websiteSettings.findUniqueOrThrow({ where: { id: 'singleton' } });
+    expect(settings.footerNewsletterHeading).toBe('Stay updated');
+    expect(settings.footerNewsletterButtonLabel).toBe('Send');
+  });
+});
+
+describe('social links', () => {
+  it('stores the list in drag order and drops a javascript: URL', async () => {
+    const ok = await saveSocialLinks({
+      links: [
+        { network: 'x', label: 'X', url: 'https://x.com/acme', isVisible: true },
+        { network: 'linkedin', label: '', url: 'https://linkedin.com/company/acme', isVisible: false },
+      ],
+    });
+    expect(ok.ok).toBe(true);
+
+    const rows = await prisma.socialLink.findMany({ orderBy: { sortOrder: 'asc' } });
+    expect(rows.map((r) => r.network)).toEqual(['x', 'linkedin']);
+    // A blank label falls back to the network's own name.
+    expect(rows[1]!.label).toBe('LinkedIn');
+    expect(rows[1]!.isVisible).toBe(false);
+
+    const rejected = await saveSocialLinks({
+      links: [{ network: 'x', label: 'X', url: 'javascript:alert(1)', isVisible: true }],
+    });
+    expect(rejected.ok).toBe(false);
+    // The rejected save leaves the stored list untouched.
+    expect(await prisma.socialLink.count()).toBe(2);
+  });
+
+  it('replaces the whole list rather than appending to it', async () => {
+    await saveSocialLinks({
+      links: [{ network: 'youtube', label: 'YouTube', url: 'https://youtube.com/@acme', isVisible: true }],
+    });
+
+    const rows = await prisma.socialLink.findMany();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.network).toBe('youtube');
   });
 });
 

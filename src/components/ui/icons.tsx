@@ -168,3 +168,55 @@ export function YouTubeIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function WhatsAppIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M17.47 14.38c-.3-.15-1.75-.86-2.02-.96s-.47-.15-.67.15-.77.96-.94 1.16-.35.22-.64.08a8.1 8.1 0 0 1-2.39-1.47 9 9 0 0 1-1.65-2.06c-.17-.3-.02-.46.13-.6q.2-.23.3-.38a1.5 1.5 0 0 0 .2-.33.37.37 0 0 0-.02-.35c-.07-.15-.67-1.6-.91-2.2s-.49-.5-.67-.51h-.57a1.1 1.1 0 0 0-.8.37 3.3 3.3 0 0 0-1.04 2.46A5.8 5.8 0 0 0 6.99 13a13.1 13.1 0 0 0 5.03 4.42 17 17 0 0 0 1.68.62 4 4 0 0 0 1.85.12 3.03 3.03 0 0 0 1.99-1.4 2.45 2.45 0 0 0 .17-1.4c-.07-.13-.27-.2-.57-.35zM12.05 21.8h-.01a9.8 9.8 0 0 1-4.99-1.37l-.36-.21-3.71.97.99-3.62-.24-.37a9.8 9.8 0 0 1-1.5-5.23 9.83 9.83 0 0 1 16.79-6.95 9.77 9.77 0 0 1 2.88 6.96 9.83 9.83 0 0 1-9.85 9.82M20.52 3.45A12.2 12.2 0 0 0 11.96 0C5.42 0 .1 5.32.1 11.85c0 2.09.55 4.13 1.58 5.93L0 24l6.37-1.67a11.9 11.9 0 0 0 5.58 1.42h.01c6.54 0 11.86-5.32 11.86-11.86a11.8 11.8 0 0 0-3.3-8.44" />
+    </svg>
+  );
+}
+
+export function TelegramIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0m5.56 8.21-1.86 8.76c-.14.62-.51.78-1.03.48l-2.85-2.1-1.37 1.32c-.15.16-.28.28-.58.28l.21-2.92 5.32-4.8c.23-.2-.05-.32-.36-.12l-6.57 4.14-2.83-.89c-.62-.2-.63-.62.13-.92l11.06-4.26c.51-.18.96.12.79.91" />
+    </svg>
+  );
+}
+
+export function GitHubIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M12 .3a12 12 0 0 0-3.79 23.4c.6.11.82-.26.82-.58v-2.23c-3.34.73-4.04-1.42-4.04-1.42-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.11-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.01 0c2.29-1.55 3.3-1.23 3.3-1.23.65 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.8 5.63-5.48 5.92.43.37.82 1.1.82 2.22v3.29c0 .32.21.7.82.58A12 12 0 0 0 12 .3" />
+    </svg>
+  );
+}
+
+/**
+ * Icon for a SocialLink row. An unrecognised network — a row left behind by a
+ * network that was later removed — renders the generic globe rather than
+ * nothing at all.
+ */
+export function resolveSocialIcon(network: string): IconComponent {
+  switch (network) {
+    case 'linkedin':
+      return LinkedInIcon;
+    case 'x':
+      return XIcon;
+    case 'facebook':
+      return FacebookIcon;
+    case 'instagram':
+      return InstagramIcon;
+    case 'youtube':
+      return YouTubeIcon;
+    case 'whatsapp':
+      return WhatsAppIcon;
+    case 'telegram':
+      return TelegramIcon;
+    case 'github':
+      return GitHubIcon;
+    default:
+      return Globe;
+  }
+}

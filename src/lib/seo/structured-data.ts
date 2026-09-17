@@ -1,5 +1,5 @@
 import 'server-only';
-import type { WebsiteSettings } from '@prisma/client';
+import type { SocialLink, WebsiteSettings } from '@prisma/client';
 import { countryPath } from '@/lib/country/routing';
 import type { CountryContext, CountrySettingsView } from '@/lib/country/types';
 import { absoluteUrl, absoluteCountryUrl } from './metadata';
@@ -19,10 +19,17 @@ export function organizationSchema(
   country: CountryContext,
   local: CountrySettingsView,
   site: WebsiteSettings,
+  /*
+   * The profiles this site links to, as `SocialLink` rows.
+   *
+   * They used to be five fixed columns on `WebsiteSettings`; they are now an
+   * ordered table, so an administrator can add a network the code has never
+   * heard of. Defaulted to empty so a caller that has not fetched them emits no
+   * `sameAs` rather than failing.
+   */
+  socials: Array<Pick<SocialLink, 'url'>> = [],
 ): Json {
-  const sameAs = [site.linkedinUrl, site.twitterUrl, site.facebookUrl, site.instagramUrl, site.youtubeUrl].filter(
-    Boolean,
-  );
+  const sameAs = socials.map((link) => link.url).filter(Boolean);
 
   const postalAddress =
     local.addressLine1 || local.city || local.region || local.postalCode || local.address

@@ -115,6 +115,30 @@ async function seedAdmin() {
   console.log('  NOTE: set RUN_SEED=false and clear SEED_ADMIN_PASSWORD now that the admin exists.');
 }
 
+/**
+ * Social profiles for the footer.
+ *
+ * Only seeded when the table is empty, so a site that has configured its own —
+ * or had them carried over from the old fixed columns by the footer_cms
+ * migration — is never overwritten.
+ */
+async function seedSocialLinks() {
+  const count = await prisma.socialLink.count();
+  if (count > 0) {
+    console.log('  social links: already present');
+    return;
+  }
+
+  await prisma.socialLink.createMany({
+    data: [
+      { network: 'linkedin', label: 'LinkedIn', url: 'https://www.linkedin.com/', sortOrder: 10 },
+      { network: 'x', label: 'X', url: 'https://x.com/', sortOrder: 20 },
+      { network: 'youtube', label: 'YouTube', url: 'https://www.youtube.com/', sortOrder: 30 },
+    ],
+  });
+  console.log('  social links: 3');
+}
+
 async function seedSettings() {
   await prisma.websiteSettings.upsert({
     where: { id: 'singleton' },
@@ -129,14 +153,13 @@ async function seedSettings() {
       contactEmail: 'sales@example.com',
       contactPhone: '+91 80 4718 0000',
       address: '2nd Floor, Prestige Tower, Bengaluru 560001, India',
-      linkedinUrl: 'https://www.linkedin.com/',
       announcementEnabled: true,
       announcementText: 'Free migration for teams moving from Google Drive or Box — until 31 March.',
       announcementUrl: '/contact',
       headerCtaLabel: 'Talk to Sales',
       headerCtaUrl: '/contact',
       footerDescription:
-        'An authorised Dropbox reseller. Licences, migration, onboarding and support for teams of every size.',
+        'Your trusted partner for Dropbox licensing, deployment, migration, and support for businesses across India.',
       copyrightText: '© CloudShelf. Dropbox is a trademark of Dropbox, Inc.',
     },
   });
@@ -468,7 +491,22 @@ async function seedForms() {
       notifyEmails: 'sales@example.com',
   });
 
+  // The footer's "stay updated" column posts to this one. It is an ordinary
+  // form with a single email field, which is what lets a subscription travel
+  // the same path — validation, rate limiting, lead, notification — as every
+  // other enquiry on the site.
+  const newsletter = await upsertSharedForm('newsletter', {
+      slug: 'newsletter',
+      name: 'Newsletter',
+      description: 'Footer email sign-up. One field, so it fits a single input.',
+      submitLabel: 'Send',
+      successMessage: 'Thanks — you are on the list.',
+      leadSource: 'Footer newsletter',
+  });
+
   const fields = [
+    { form: newsletter.id, type: 'EMAIL' as const, label: 'Email', name: 'email', required: true, width: 'full', order: 1, placeholder: 'you@company.com' },
+
     { form: contact.id, type: 'NAME' as const, label: 'Full name', name: 'name', required: true, width: 'half', order: 1, placeholder: 'Priya Menon' },
     { form: contact.id, type: 'EMAIL' as const, label: 'Work email', name: 'email', required: true, width: 'half', order: 2, placeholder: 'you@company.com' },
     { form: contact.id, type: 'PHONE' as const, label: 'Phone', name: 'phone', required: false, width: 'half', order: 3, placeholder: '+91 98765 43210' },
@@ -518,7 +556,18 @@ async function seedForms() {
 
   // Point every product CTA at the quote form.
   await prisma.product.updateMany({ where: { ctaFormId: null }, data: { ctaFormId: quote.id } });
-  console.log('  forms: contact-sales, request-quote');
+  // The footer column stays switched off until a form exists to receive it.
+  await prisma.websiteSettings.update({
+    where: { id: 'singleton' },
+    data: {
+      footerNewsletterFormId: newsletter.id,
+      footerNewsletterEnabled: true,
+      footerNewsletterDescription:
+        'Reach us for any queries related to Dropbox software, licensing, migration, or support.',
+    },
+  });
+
+  console.log('  forms: contact-sales, request-quote, newsletter');
 }
 
 async function seedPages() {
@@ -706,18 +755,32 @@ async function seedNavigation() {
       { navigationId: header.id, label: 'About', linkType: 'INTERNAL', url: '/about', sortOrder: 40 },
       { navigationId: header.id, label: 'Contact', linkType: 'INTERNAL', url: '/contact', sortOrder: 50 },
 
-      { navigationId: footer.id, label: 'About', linkType: 'INTERNAL', url: '/about', sortOrder: 10 },
-      { navigationId: footer.id, label: 'Contact', linkType: 'INTERNAL', url: '/contact', sortOrder: 20 },
-      { navigationId: footer.id, label: 'Pricing', linkType: 'INTERNAL', url: '/pricing', sortOrder: 30 },
-
-      { navigationId: footerResources.id, label: 'Blog', linkType: 'INTERNAL', url: '/blog', sortOrder: 10 },
-      { navigationId: footerResources.id, label: 'Migration guide', linkType: 'INTERNAL', url: '/blog/google-drive-to-dropbox-migration-checklist', sortOrder: 20 },
+      { navigationId: footerResources.id, label: 'About Us', linkType: 'INTERNAL', url: '/about', sortOrder: 10 },
+      { navigationId: footerResources.id, label: 'Contact Us', linkType: 'INTERNAL', url: '/contact', sortOrder: 20 },
+      { navigationId: footerResources.id, label: 'Pricing', linkType: 'INTERNAL', url: '/pricing', sortOrder: 30 },
+      { navigationId: footerResources.id, label: 'Blog', linkType: 'INTERNAL', url: '/blog', sortOrder: 40 },
 
       { navigationId: legal.id, label: 'Privacy', linkType: 'INTERNAL', url: '/privacy', sortOrder: 10 },
       { navigationId: legal.id, label: 'Terms', linkType: 'INTERNAL', url: '/terms', sortOrder: 20 },
     ],
   });
-  console.log('  navigation: header, footer, legal');
+  // The Products column lists the real products, so it stays right when the
+  // catalogue changes rather than repeating their names as loose text.
+  let footerOrder = 10;
+  for (const product of products) {
+    await prisma.navigationItem.create({
+      data: {
+        navigationId: footer.id,
+        label: product.name,
+        linkType: 'PRODUCT',
+        productId: product.id,
+        sortOrder: footerOrder,
+      },
+    });
+    footerOrder += 10;
+  }
+
+  console.log('  navigation: products, support, legal');
 }
 
 async function seedLeads() {
@@ -844,6 +907,7 @@ async function main() {
     await seedPages();
     await seedBlog();
     await seedNavigation();
+    await seedSocialLinks();
     await seedLeads();
     await seedCustomers();
   } else {

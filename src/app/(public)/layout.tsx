@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { prisma } from "@/lib/db/prisma";
 import { getPublishedPage } from "@/lib/services/pages";
-import { getWebsiteSettings } from "@/lib/services/settings";
+import { getSocialLinks, getWebsiteSettings } from "@/lib/services/settings";
 import {
   getNavigations,
   getPrimaryNavigation,
@@ -49,13 +49,14 @@ export default async function PublicLayout({
   // this adds no extra query for the page route itself.
   const chrome = await resolveChrome(country, path);
 
-  const [site, local, nav, footerMenus, legalMenus, markets, popups] = await Promise.all([
+  const [site, local, nav, footerMenus, legalMenus, markets, socials, popups] = await Promise.all([
     getWebsiteSettings(),
     getCountrySettings(country),
     getPrimaryNavigation(country),
     getNavigations(country, "FOOTER"),
     getNavigations(country, "LEGAL"),
     resolveMarketOptions(country, path),
+    getSocialLinks(),
     prisma.popup.findMany({
       where: {
         isActive: true,
@@ -136,6 +137,7 @@ export default async function PublicLayout({
           homeUrl={countryPath(country)}
           columns={footerMenus}
           legal={legalMenus[0]?.items ?? []}
+          socials={socials}
         />
       ) : null}
       <PopupHost
@@ -166,7 +168,9 @@ export default async function PublicLayout({
             .map((t) => t.page.slug),
         }))}
       />
-      <JsonLd data={[organizationSchema(country, local, site), websiteSchema(country, site)]} />
+      <JsonLd
+        data={[organizationSchema(country, local, site, socials), websiteSchema(country, site)]}
+      />
     </>
   );
 }

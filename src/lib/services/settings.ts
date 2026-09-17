@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db/prisma';
 import type {
   EmailSettings,
   SeoSettings,
+  SocialLink,
   TrackingSettings,
   WebsiteSettings,
 } from '@prisma/client';
@@ -57,6 +58,26 @@ export async function getEmailSettingsSafe(): Promise<SafeEmailSettings> {
   const settings = await getEmailSettings();
   const { password, ...rest } = settings;
   return { ...rest, hasPassword: Boolean(password) };
+}
+
+/**
+ * Social profiles for the public site, in admin order.
+ *
+ * Hidden rows are dropped here rather than at the call site, so the footer and
+ * the organisation schema cannot disagree about what is published.
+ */
+export const getSocialLinks = cache(async (): Promise<SocialLink[]> => {
+  return prisma.socialLink.findMany({
+    where: { isVisible: true },
+    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+  });
+});
+
+/** Every row, hidden ones included — for the admin editor. */
+export async function getAllSocialLinks(): Promise<SocialLink[]> {
+  return prisma.socialLink.findMany({
+    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+  });
 }
 
 export const SETTINGS_SINGLETON_ID = SINGLETON;

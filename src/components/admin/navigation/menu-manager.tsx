@@ -6,7 +6,7 @@ import { Plus, Trash, Pencil } from 'lucide-react';
 import { saveNavigation, deleteNavigation } from '@/lib/actions/navigation';
 import { NavigationEditor, type EditorItem, type NavTargets } from './nav-editor';
 import { Dialog, ConfirmDialog } from '@/components/ui/dialog';
-import { Field, Input, Select } from '@/components/ui/field';
+import { Field, Input, Select, Switch } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { Spinner } from '@/components/ui/icons';
@@ -17,6 +17,7 @@ export type MenuSummary = {
   name: string;
   slug: string;
   location: string;
+  isVisible: boolean;
   items: EditorItem[];
 };
 
@@ -29,7 +30,7 @@ const LOCATION_LABELS: Record<string, string> = {
   SIDEBAR: 'Sidebar',
 };
 
-const BLANK = { id: '', name: '', location: 'HEADER' };
+const BLANK = { id: '', name: '', location: 'HEADER', isVisible: true };
 
 export function MenuManager({
   menus,
@@ -73,6 +74,7 @@ export function MenuManager({
     // Only read when creating: the action never moves an existing menu between
     // markets, and validates this id against the user's access either way.
     data.set('countryId', countryId);
+    data.set('isVisible', String(editing.isVisible));
 
     const result = await saveNavigation(editing.id || null, data);
     setPending(false);
@@ -109,7 +111,8 @@ export function MenuManager({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{menu.name}</span>
                     <span className="block text-xs text-muted">
-                      {LOCATION_LABELS[menu.location] ?? menu.location} · {menu.items.length} item(s)
+                      {LOCATION_LABELS[menu.location] ?? menu.location} · {menu.items.length}{' '}
+                      item(s){menu.isVisible ? '' : ' · hidden'}
                     </span>
                   </span>
                 </button>
@@ -138,7 +141,12 @@ export function MenuManager({
               variant="outline"
               size="sm"
               onClick={() =>
-                setEditing({ id: active.id, name: active.name, location: active.location })
+                setEditing({
+                  id: active.id,
+                  name: active.name,
+                  location: active.location,
+                  isVisible: active.isVisible,
+                })
               }
             >
               <Pencil className="h-4 w-4" aria-hidden="true" />
@@ -225,6 +233,12 @@ export function MenuManager({
                 ))}
               </Select>
             </Field>
+            <Switch
+              checked={editing.isVisible}
+              onChange={(next) => setEditing({ ...editing, isVisible: next })}
+              label="Visible on the site"
+              hint="Switching this off hides the whole column, links included."
+            />
           </div>
         ) : null}
       </Dialog>

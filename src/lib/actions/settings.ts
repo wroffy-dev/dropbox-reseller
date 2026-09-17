@@ -26,6 +26,14 @@ const hexColor = z
 
 const fontWeight = z.string().trim().regex(/^[1-9]00$/, 'Choose a weight between 100 and 900');
 
+/** A hex colour, or empty to inherit whatever the brand palette provides. */
+const optionalHexColor = z
+  .string()
+  .trim()
+  .optional()
+  .transform((v) => v ?? '')
+  .refine((v) => v === '' || /^#[0-9a-fA-F]{6}$/.test(v), 'Use a 6-digit hex colour like #0B1B34');
+
 /** A CSS length the admin typed, e.g. "16px", "1.5rem", "80%". */
 const LENGTH_RE = /^\d{1,4}(\.\d+)?(px|rem|em|%)$/;
 const NUMBER_RE = /^\d(\.\d+)?$/;
@@ -82,12 +90,6 @@ const websiteSettingsSchema = z.object({
   contactPhone: optional(40),
   whatsappNumber: optional(40),
   address: optional(400),
-
-  linkedinUrl: optional(300),
-  twitterUrl: optional(300),
-  facebookUrl: optional(300),
-  instagramUrl: optional(300),
-  youtubeUrl: optional(300),
 
   logoUrl: optional(500),
   logoDarkUrl: optional(500),
@@ -150,7 +152,48 @@ const websiteSettingsSchema = z.object({
   footerDescription: optional(600),
   footerNewsletterEnabled: z.coerce.boolean().default(false),
   footerNewsletterFormId: optional(40),
+  footerLogoUrl: optional(500),
+  footerLogoWidth: cssLength('9rem', 'Use a width like 144px or 9rem'),
+  footerShowLogo: z.coerce.boolean().default(true),
+  footerShowDescription: z.coerce.boolean().default(true),
   copyrightText: optional(300),
+
+  footerNewsletterHeading: z.string().trim().max(80).optional().transform((v) => v || 'Stay updated'),
+  footerNewsletterDescription: optional(400),
+  footerNewsletterPlaceholder: z
+    .string()
+    .trim()
+    .max(80)
+    .optional()
+    .transform((v) => v || 'Enter your email'),
+  footerNewsletterButtonLabel: z
+    .string()
+    .trim()
+    .max(40)
+    .optional()
+    .transform((v) => v || 'Send'),
+  footerNewsletterSuccess: z
+    .string()
+    .trim()
+    .max(200)
+    .optional()
+    .transform((v) => v || 'Thanks — you are on the list.'),
+
+  // Footer appearance. Colours are optional: empty inherits the brand palette.
+  footerBackground: optionalHexColor,
+  footerHeadingColor: optionalHexColor,
+  footerTextColor: optionalHexColor,
+  footerLinkColor: optionalHexColor,
+  footerLinkHoverColor: optionalHexColor,
+  footerButtonBg: optionalHexColor,
+  footerButtonText: optionalHexColor,
+  footerInputBg: optionalHexColor,
+  footerInputBorder: optionalHexColor,
+  footerDividerColor: optionalHexColor,
+  footerPaddingTop: cssLength('4rem', 'Use a value like 64px or 4rem'),
+  footerPaddingBottom: cssLength('2.5rem', 'Use a value like 40px or 2.5rem'),
+  footerColumnGap: cssLength('2.5rem', 'Use a value like 40px or 2.5rem'),
+  footerRowGap: cssLength('2.5rem', 'Use a value like 40px or 2.5rem'),
   defaultCurrency: z.string().trim().length(3),
   maintenanceMode: z.coerce.boolean().default(false),
 });
@@ -170,6 +213,8 @@ export async function saveWebsiteSettings(formData: FormData): Promise<ActionRes
       announcementEnabled: raw.announcementEnabled === 'true',
       footerNewsletterEnabled: raw.footerNewsletterEnabled === 'true',
       maintenanceMode: raw.maintenanceMode === 'true',
+      footerShowLogo: raw.footerShowLogo !== 'false',
+      footerShowDescription: raw.footerShowDescription !== 'false',
     });
 
     // URL-ish fields are normalised through the same guard the renderer uses,
@@ -183,16 +228,19 @@ export async function saveWebsiteSettings(formData: FormData): Promise<ActionRes
       footerDescription: input.footerDescription ? sanitizeText(input.footerDescription) : null,
       // An empty select means "no form", which is the same as off.
       footerNewsletterFormId: input.footerNewsletterFormId || null,
+      footerLogoUrl: safeUrl(input.footerLogoUrl),
+      footerNewsletterHeading: sanitizeText(input.footerNewsletterHeading),
+      footerNewsletterDescription: input.footerNewsletterDescription
+        ? sanitizeText(input.footerNewsletterDescription)
+        : null,
+      footerNewsletterPlaceholder: sanitizeText(input.footerNewsletterPlaceholder),
+      footerNewsletterButtonLabel: sanitizeText(input.footerNewsletterButtonLabel),
+      footerNewsletterSuccess: sanitizeText(input.footerNewsletterSuccess),
       copyrightText: input.copyrightText ? sanitizeText(input.copyrightText) : null,
       announcementText: input.announcementText ? sanitizeText(input.announcementText) : null,
       announcementUrl: safeUrl(input.announcementUrl),
       headerCtaUrl: safeUrl(input.headerCtaUrl),
       headerSecondaryCtaUrl: safeUrl(input.headerSecondaryCtaUrl),
-      linkedinUrl: safeUrl(input.linkedinUrl),
-      twitterUrl: safeUrl(input.twitterUrl),
-      facebookUrl: safeUrl(input.facebookUrl),
-      instagramUrl: safeUrl(input.instagramUrl),
-      youtubeUrl: safeUrl(input.youtubeUrl),
       logoUrl: safeUrl(input.logoUrl),
       logoDarkUrl: safeUrl(input.logoDarkUrl),
       faviconUrl: safeUrl(input.faviconUrl),

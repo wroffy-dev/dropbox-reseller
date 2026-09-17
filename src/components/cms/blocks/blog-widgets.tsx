@@ -25,7 +25,7 @@ import type {
   WidgetSocialContent,
 } from '@/lib/cms/blog-blocks';
 import type { BlogRenderContext } from '@/lib/cms/blog-render';
-import { blogPath, categoryPath, tagPath, postPath } from '@/lib/cms/blog-render';
+import { blogPath, categoryPath, tagPath, postPath, socialUrlFor } from '@/lib/cms/blog-render';
 import type { CountryContext } from '@/lib/country/types';
 import { buildPanelStyles, type PanelDesign } from '@/lib/cms/design';
 import {
@@ -567,17 +567,18 @@ export async function WidgetButton({ content, id }: WidgetProps<WidgetButtonCont
 
 export async function WidgetSocial({ content, ctx, id }: WidgetProps<WidgetSocialContent>) {
   const site = ctx.blog?.socials;
+  const siteUrl = (network: string) => socialUrlFor(site, network);
 
   const candidates: Array<{ label: string; href: string | null; Icon: IconComponent }> = [
-    { label: 'LinkedIn', href: safeUrl(content.linkedinUrl || site?.linkedinUrl), Icon: LinkedInIcon },
-    { label: 'X', href: safeUrl(content.twitterUrl || site?.twitterUrl), Icon: XIcon },
-    { label: 'Facebook', href: safeUrl(content.facebookUrl || site?.facebookUrl), Icon: FacebookIcon },
+    { label: 'LinkedIn', href: safeUrl(content.linkedinUrl || siteUrl('linkedin')), Icon: LinkedInIcon },
+    { label: 'X', href: safeUrl(content.twitterUrl || siteUrl('x')), Icon: XIcon },
+    { label: 'Facebook', href: safeUrl(content.facebookUrl || siteUrl('facebook')), Icon: FacebookIcon },
     {
       label: 'Instagram',
-      href: safeUrl(content.instagramUrl || site?.instagramUrl),
+      href: safeUrl(content.instagramUrl || siteUrl('instagram')),
       Icon: InstagramIcon,
     },
-    { label: 'YouTube', href: safeUrl(content.youtubeUrl || site?.youtubeUrl), Icon: YouTubeIcon },
+    { label: 'YouTube', href: safeUrl(content.youtubeUrl || siteUrl('youtube')), Icon: YouTubeIcon },
   ];
 
   const links = candidates.filter(

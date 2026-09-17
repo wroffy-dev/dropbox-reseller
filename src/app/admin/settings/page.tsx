@@ -2,10 +2,11 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { DatabaseBackup, Mail, Palette, Globe } from 'lucide-react';
 import { requirePermission, userCan } from '@/lib/auth/guards';
-import { getWebsiteSettings } from '@/lib/services/settings';
+import { getAllSocialLinks, getWebsiteSettings } from '@/lib/services/settings';
 import { listActiveFormChoices } from '@/lib/services/forms';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { WebsiteSettingsForm } from '@/components/admin/settings/settings-form';
+import { SocialLinksForm } from '@/components/admin/settings/social-links-form';
 import { ApplicationInfo } from '@/components/admin/settings/application-info';
 import { buttonClasses } from '@/components/ui/button';
 
@@ -14,7 +15,13 @@ export const dynamic = 'force-dynamic';
 
 export default async function SettingsAdmin() {
   const user = await requirePermission('settings.manage');
-  const [settings, forms] = await Promise.all([getWebsiteSettings(), listActiveFormChoices()]);
+  const [settings, socials, forms] = await Promise.all([
+    getWebsiteSettings(),
+    getAllSocialLinks(),
+    // The shared helper rather than an inline query: it already filters to
+    // active, undeleted forms and orders them the same way everywhere.
+    listActiveFormChoices(),
+  ]);
 
   // Send everything except the timestamps; the form owns the whole record.
   const { id, updatedAt, ...rest } = settings;
@@ -59,6 +66,16 @@ export default async function SettingsAdmin() {
         canEdit={userCan(user, 'settings.manage')}
         only={['general', 'branding', 'header', 'footer']}
         forms={forms}
+      />
+      <SocialLinksForm
+        initial={socials.map((link) => ({
+          id: link.id,
+          network: link.network,
+          label: link.label,
+          url: link.url,
+          isVisible: link.isVisible,
+        }))}
+        canEdit={userCan(user, 'settings.manage')}
       />
       <ApplicationInfo siteName={settings.siteName} />
     </div>

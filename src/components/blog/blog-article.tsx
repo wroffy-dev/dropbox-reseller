@@ -1,5 +1,5 @@
 import { getBlogSections, getBlogSettings, getSidebarForPost } from '@/lib/services/blog-cms';
-import { getWebsiteSettings } from '@/lib/services/settings';
+import { getSocialLinks, getWebsiteSettings } from '@/lib/services/settings';
 import type { BlogPostDetail } from '@/lib/services/blog';
 import { buildTableOfContents } from '@/lib/cms/blog-toc';
 import { parsePostOptions, resolveToggle, POST_TOGGLES } from '@/lib/cms/blog-settings';
@@ -34,10 +34,11 @@ export async function BlogArticle({
   /** The market the article belongs to; every link it renders stays inside it. */
   country: CountryContext;
 }) {
-  const [sections, settings, site] = await Promise.all([
+  const [sections, settings, site, socials] = await Promise.all([
     getBlogSections('ARTICLE'),
     getBlogSettings(),
     getWebsiteSettings(),
+    getSocialLinks(),
   ]);
 
   const widgets = settings.layout.sidebarEnabled
@@ -88,11 +89,13 @@ export async function BlogArticle({
     },
     socials: {
       siteName: site.siteName,
-      linkedinUrl: site.linkedinUrl,
-      twitterUrl: site.twitterUrl,
-      facebookUrl: site.facebookUrl,
-      instagramUrl: site.instagramUrl,
-      youtubeUrl: site.youtubeUrl,
+      // Ordered and already filtered to the visible rows, so the blog's social
+      // widget shows exactly what the footer and the organisation schema do.
+      links: socials.map((link) => ({
+        network: link.network,
+        label: link.label,
+        url: link.url,
+      })),
     },
   };
 

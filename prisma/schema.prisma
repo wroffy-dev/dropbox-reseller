@@ -1023,6 +1023,10 @@ model ProductCountry {
   @@index([countryId, status, publishedAt])
   @@index([countryId, sortOrder])
   @@index([countryId, isFeatured, featuredOrder])
+  /// Every country-scoped catalogue read filters on both columns — the admin
+  /// list, the pickers, the sitemap and the market switcher all ask "what does
+  /// this market still offer".
+  @@index([countryId, deletedAt])
   @@index([productId])
 }
 
@@ -1399,7 +1403,11 @@ model Media {
 model Form {
   id          String  @id @default(cuid())
   name        String
-  slug        String  @unique
+  /// Unique per market, not globally, so India and the UAE can each own a
+  /// "contact" form and neither has to be called "contact-ae". Two forms shared
+  /// by every market (countryId null) may not share a slug either — SQL treats
+  /// NULLs as distinct, so that one case is enforced by `saveForm` instead.
+  slug        String
   /// Null means the form is shared by every market, which is what every form
   /// built before markets existed is. Setting it restricts the form to one.
   countryId   String?
@@ -1466,6 +1474,7 @@ model Form {
   popups         Popup[]          @relation("PopupForm")
   leadMagnets    LeadMagnet[]     @relation("LeadMagnetForm")
 
+  @@unique([countryId, slug])
   @@index([slug])
   @@index([countryId])
 }

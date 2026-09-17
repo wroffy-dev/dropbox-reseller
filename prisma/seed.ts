@@ -494,13 +494,27 @@ async function seedProducts() {
   console.log(`  products: ${PRODUCTS.length}`);
 }
 
+/**
+ * Creates a market-independent form, or returns the one already there.
+ *
+ * Not an `upsert`: the natural key is (countryId, slug), and a shared form's
+ * countryId is null, which SQL cannot match in a unique lookup.
+ */
+async function upsertSharedForm(slug: string, create: Prisma.FormUncheckedCreateInput) {
+  const existing = await prisma.form.findFirst({ where: { slug, countryId: null } });
+  if (existing) return existing;
+  return prisma.form.create({ data: create });
+}
+
 async function seedForms() {
   const advanced = await prisma.product.findUnique({ where: { slug: 'dropbox-business-advanced' } });
 
-  const contact = await prisma.form.upsert({
-    where: { slug: 'contact-sales' },
-    update: {},
-    create: {
+  /*
+   * Seeded forms are shared by every market. A slug is unique *within* a
+   * market, and SQL treats two NULLs as distinct, so a shared form has no
+   * compound key to upsert on — it is looked up and created instead.
+   */
+  const contact = await upsertSharedForm('contact-sales', {
       slug: 'contact-sales',
       name: 'Contact Sales',
       description: 'Primary enquiry form used on the contact page and header CTA.',
@@ -509,13 +523,9 @@ async function seedForms() {
       leadSource: 'Contact form',
       notifyEmails: 'sales@example.com',
       consentText: 'By submitting this form you agree to be contacted about your enquiry.',
-    },
   });
 
-  const quote = await prisma.form.upsert({
-    where: { slug: 'request-quote' },
-    update: {},
-    create: {
+  const quote = await upsertSharedForm('request-quote', {
       slug: 'request-quote',
       name: 'Request a Quote',
       description: 'Product CTA form. Pre-fills the product the visitor clicked.',
@@ -524,7 +534,6 @@ async function seedForms() {
       leadSource: 'Product CTA',
       defaultProductId: advanced?.id ?? null,
       notifyEmails: 'sales@example.com',
-    },
   });
 
   const fields = [
@@ -787,7 +796,7 @@ async function seedLeads() {
   }
 
   const products = await prisma.product.findMany();
-  const form = await prisma.form.findUnique({ where: { slug: 'contact-sales' } });
+  const form = await prisma.form.findFirst({ where: { slug: 'contact-sales' } });
   const staff = await prisma.user.findFirst({ where: { roles: { slug: 'super-admin' } } });
 
   const samples = [

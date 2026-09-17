@@ -61,6 +61,20 @@ clear.
 
 ---
 
+## After the last screen
+
+Setup finishes by sending you to the sign-in page, and the first sign-in goes
+straight to two-step enrolment: this account is a super admin, and the
+application requires an authenticator app for one. Have your phone to hand.
+
+The completion summary is not rendered in the browser. It cannot be: closing
+the installer is the last thing setup does, so the page it would have been
+drawn on has already become a 404. What was created is recorded in the
+container log instead, as an `install.completed` line naming the configuration
+keys it kept — names only, never values.
+
+---
+
 ## Where configuration lives
 
 One JSON file, on the persistent volume:

@@ -9,6 +9,8 @@ import { getInstallState, resetInstallStateCache } from '@/lib/install/state';
 import { testConnection, applyMigrations, prepareSchema, validateConnectionString } from '@/lib/install/database';
 import { generateMissingSecrets } from '@/lib/install/secrets';
 import { createFirstAdministrator, passwordWeaknesses } from '@/lib/install/bootstrap';
+import { collectEnvProblems } from '@/lib/env-validation';
+import { CONFIG_KEYS } from '@/lib/install/config-store';
 
 /**
  * The setup wizard's server side.
@@ -227,13 +229,51 @@ export async function finishInstallation(input: unknown): Promise<ActionResult<I
       return failure('Configure the database before creating an administrator.');
     }
 
+    const secrets = generateMissingSecrets();
+
+    /*
+     * Would the configuration this is about to write survive the next restart?
+     *
+     * The container applies `collectEnvProblems` at boot and *exits* when it
+     * finds one. So a configuration the wizard is happy with but the gate is
+     * not produces the worst possible outcome: setup completes, the installer
+     * closes behind it, and the application then refuses to start — with no
+     * wizard left to correct it.
+     *
+     * That is not hypothetical. An `http://` site address is accepted by every
+     * check in this action and rejected by the gate, which bricked a
+     * freshly-installed copy on its first restart.
+     *
+     * So the same rules run here, against the configuration as it *would be*,
+     * before a single value is written. Only the keys this wizard owns are
+     * considered — storage and mail are configured later, in the admin panel,
+     * and are not this screen's to refuse.
+     */
+    const prospective = {
+      ...process.env,
+      NODE_ENV: process.env.NODE_ENV,
+      NEXTAUTH_URL: origin,
+      NEXT_PUBLIC_SITE_URL: origin,
+      ...secrets,
+    };
+    const owned = new Set<string>(CONFIG_KEYS);
+    const blocking = collectEnvProblems(prospective).filter((problem) =>
+      owned.has(problem.variable),
+    );
+    if (blocking.length > 0) {
+      return failure(
+        `This configuration would stop the application starting:\n${blocking
+          .map((problem) => `• ${problem.variable} ${problem.problem}`)
+          .join('\n')}`,
+      );
+    }
+
     /*
      * Secrets first, and written before the account exists.
      *
      * An account created against a missing AUTH_SECRET could not be signed in
      * to, and the wizard would already have closed behind it.
      */
-    const secrets = generateMissingSecrets();
     writeConfig({
       ...secrets,
       NEXTAUTH_URL: origin,

@@ -121,6 +121,44 @@ describe('installing a copy that has nothing', () => {
     expect(await getInstallState()).toBe('needs-install');
   });
 
+  it('refuses a configuration the next restart would reject, and stays open', async () => {
+    /*
+     * The trap this closes: the gate the container applies at boot rejects a
+     * non-https site address in production and *exits*. A wizard that accepted
+     * one would complete, close behind itself, and leave an application that
+     * cannot start and has no installer left to fix it.
+     */
+    const wasProduction = process.env.NODE_ENV;
+    Object.defineProperty(process.env, 'NODE_ENV', {
+      value: 'production',
+      configurable: true,
+      writable: true,
+      enumerable: true,
+    });
+    try {
+      const result = await finishInstallation({
+        siteUrl: 'http://shop.example.com',
+        adminName: 'Owner',
+        adminEmail: 'owner@example.com',
+        adminPassword: 'Correct-Horse-9-Battery!',
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/https/i);
+    } finally {
+      Object.defineProperty(process.env, 'NODE_ENV', {
+        value: wasProduction,
+        configurable: true,
+        writable: true,
+        enumerable: true,
+      });
+    }
+
+    // Nothing was written and nobody was created.
+    expect(readConfig().installedAt).toBeUndefined();
+    resetInstallStateCache();
+    expect(await getInstallState()).toBe('needs-install');
+  });
+
   it('creates the administrator, generates the secrets and locks the installer', async () => {
     /*
      * A fresh copy has no secrets set. The test harness supplies them for every

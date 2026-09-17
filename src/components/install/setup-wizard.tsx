@@ -294,7 +294,23 @@ export function SetupWizard({ siteOrigin }: { siteOrigin: string }) {
                     adminEmail,
                     adminPassword,
                   });
-                  if (result.ok) setSummary(result.data ?? null);
+                  if (result.ok) {
+                    setSummary(result.data ?? null);
+                    /*
+                     * Straight to the sign-in screen, without waiting.
+                     *
+                     * The action has just closed the installer, and a Server
+                     * Action re-renders the route it was called from — which is
+                     * now a 404, because that is what `/install` answers once
+                     * setup is done. Rendering a summary here would mean
+                     * rendering it on a page that has already removed itself,
+                     * and what the operator actually saw was the 404.
+                     *
+                     * `replace` rather than `assign`, so Back does not return to
+                     * a wizard that no longer exists.
+                     */
+                    window.location.replace(result.data?.signInPath ?? '/');
+                  }
                   return result;
                 }, 'done')
               }

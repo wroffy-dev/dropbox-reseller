@@ -9,8 +9,19 @@ import { ConsentBanner } from '@/components/analytics/consent-banner';
 import { ToastProvider } from '@/components/ui/toast';
 import { getRequestCountry } from '@/lib/country/request';
 import { siteUrl } from '@/lib/env';
+import { getInstallState } from '@/lib/install/state';
 
 export async function generateMetadata(): Promise<Metadata> {
+  /*
+   * Every value below is a database row, and on a copy that has not been set up
+   * there is no database to read them from. Returning defaults keeps the setup
+   * wizard renderable — metadata is resolved even for a route that only needs a
+   * form, so a read that throws here takes the whole page down with it.
+   */
+  if ((await getInstallState()) === 'needs-install') {
+    return { title: 'Set up', robots: { index: false, follow: false } };
+  }
+
   const [site, seo] = await Promise.all([getWebsiteSettings(), getSeoSettings()]);
   return {
     metadataBase: new URL(siteUrl()),
@@ -28,6 +39,28 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  /*
+   * The shell a copy gets before it has been set up.
+   *
+   * Branding, tracking, the consent banner and the market's locale are all
+   * database rows, and this layout wraps *every* route — including the setup
+   * wizard. Reading them on a copy with no database threw, which turned the one
+   * screen able to create that database into a 500.
+   *
+   * Nothing is lost by leaving them out: there are no settings to honour yet,
+   * and no visitor to track. The stylesheet and the toast host are kept because
+   * the wizard uses both.
+   */
+  if ((await getInstallState()) === 'needs-install') {
+    return (
+      <html lang="en" suppressHydrationWarning>
+        <body>
+          <ToastProvider>{children}</ToastProvider>
+        </body>
+      </html>
+    );
+  }
+
   const [site, tracking, scripts, cookieStore, country] = await Promise.all([
     getWebsiteSettings(),
     getTrackingSettings(),

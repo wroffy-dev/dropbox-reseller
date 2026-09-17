@@ -71,6 +71,16 @@ export type ConfigKey = (typeof CONFIG_KEYS)[number];
 export type InstallConfig = Partial<Record<ConfigKey, string>> & {
   /** ISO timestamp. Its presence is what "this copy has been installed" means. */
   installedAt?: string;
+  /**
+   * ISO timestamp, set when the database step succeeds and cleared when setup
+   * finishes.
+   *
+   * It is what lets a run that has legitimately begun carry on to the end. The
+   * moment a connection string is stored, the application can see the accounts
+   * in that database and would otherwise judge itself installed — closing the
+   * installer on the very run that was configuring it.
+   */
+  startedAt?: string;
   /** The schema version of this file, so a later release can migrate it. */
   version?: number;
 };
@@ -146,6 +156,76 @@ export function writeConfig(
   // rename preserves the temporary file's mode, but an existing file replaced
   // by it may predate this and carry a wider one.
   chmodSync(file, 0o600);
+}
+
+/**
+ * Will what we write here still be here after a restart?
+ *
+ * Writable is not the same as persistent, and the difference is the whole
+ * failure this check exists to catch. A container's own filesystem is perfectly
+ * writable — the wizard completes, reports success, and the next
+ * `docker compose up` replaces the layer it wrote to. The container then comes
+ * back with no connection string and no `AUTH_SECRET`, which surfaces as
+ * `MissingSecret` and a site that will not start, long after anybody connects
+ * it to the setup they ran.
+ *
+ * So the directory is checked against the mount table. A path that is a mount
+ * point, or sits under one, is backed by something outside this container.
+ * Anything else is a layer that the next deployment throws away.
+ *
+ * Only meaningful in a container, which is why an unreadable mount table is
+ * reported as "cannot tell" rather than as a problem: a developer running this
+ * on their own machine has an ordinary directory that persists perfectly well.
+ */
+export function configIsPersistent(): { persistent: boolean; known: boolean } {
+  const directory = path.resolve(configDirectory());
+
+  /*
+   * Only asked inside a container.
+   *
+   * Everywhere else the question does not arise: a directory on a developer's
+   * machine, or on a VM, persists because the filesystem does, and it is not
+   * under a mount point of its own. Answering "not persistent" there would
+   * block a perfectly good local install over a distinction that only exists
+   * when the filesystem is a disposable layer.
+   */
+  if (!inContainer()) return { persistent: true, known: false };
+
+  let table: string;
+  try {
+    table = readFileSync('/proc/mounts', 'utf8');
+  } catch {
+    return { persistent: true, known: false };
+  }
+
+  const points = table
+    .split('\n')
+    .map((line) => line.split(' ')[1])
+    .filter(Boolean)
+    // Mount entries escape spaces and other characters as octal.
+    .map((point) => point.replace(/\\(\d{3})/g, (_, code) => String.fromCharCode(parseInt(code, 8))));
+
+  const mounted = points.some(
+    (point) => point !== '/' && (directory === point || directory.startsWith(`${point}/`)),
+  );
+  return { persistent: mounted, known: true };
+}
+
+/**
+ * Is this process running inside a container?
+ *
+ * Two signals, because neither is universal: the marker file Docker writes, and
+ * the control groups the process belongs to, which name the runtime on Docker,
+ * containerd and Podman alike. A false negative is safe — it only means the
+ * persistence question is not asked.
+ */
+function inContainer(): boolean {
+  try {
+    if (existsSync('/.dockerenv') || existsSync('/run/.containerenv')) return true;
+    return /docker|containerd|kubepods|podman|lxc/i.test(readFileSync('/proc/1/cgroup', 'utf8'));
+  } catch {
+    return false;
+  }
 }
 
 /** Is the configuration directory somewhere this process can actually write? */

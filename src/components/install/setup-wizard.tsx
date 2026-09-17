@@ -54,6 +54,8 @@ export function SetupWizard({ siteOrigin }: { siteOrigin: string }) {
   const [adminEmail, setAdminEmail] = React.useState('');
   const [adminPassword, setAdminPassword] = React.useState('');
   const [summary, setSummary] = React.useState<InstallSummary | null>(null);
+  /** True when the chosen database already has accounts: a reconnection. */
+  const [reconnecting, setReconnecting] = React.useState(false);
 
   React.useEffect(() => {
     void (async () => {
@@ -209,7 +211,13 @@ export function SetupWizard({ siteOrigin }: { siteOrigin: string }) {
 
             <div className="flex gap-2">
               <Button
-                onClick={() => void run(() => configureDatabase({ databaseUrl }), 'account')}
+                onClick={() =>
+                  void run(async () => {
+                    const result = await configureDatabase({ databaseUrl });
+                    if (result.ok) setReconnecting(Boolean(result.data?.hasAccounts));
+                    return result;
+                  }, 'account')
+                }
                 disabled={busy || databaseUrl.trim().length === 0}
               >
                 {busy ? (
@@ -236,10 +244,20 @@ export function SetupWizard({ siteOrigin }: { siteOrigin: string }) {
       {step === 'account' ? (
         <Card>
           <CardHeader
-            title="Create the administrator"
-            description="The first and only account. Security keys are generated automatically at this step."
+            title={reconnecting ? 'Reconnect this site' : 'Create the administrator'}
+            description={
+              reconnecting
+                ? 'This database already has an account, so setup will reconnect to it rather than create another. Any missing security keys are generated now.'
+                : 'The first and only account. Security keys are generated automatically at this step.'
+            }
           />
           <CardBody className="space-y-4">
+            {reconnecting ? (
+              <Alert tone="info">
+                Sign in with the account you already have. Setup will not create a new one, and will
+                not change the existing password.
+              </Alert>
+            ) : null}
             <Field
               label="Site address"
               htmlFor="site-url"
@@ -253,6 +271,8 @@ export function SetupWizard({ siteOrigin }: { siteOrigin: string }) {
                 placeholder="https://example.com"
               />
             </Field>
+            {reconnecting ? null : (
+              <>
             <Field label="Your name" htmlFor="admin-name" required>
               <Input
                 id="admin-name"
@@ -284,6 +304,8 @@ export function SetupWizard({ siteOrigin }: { siteOrigin: string }) {
                 autoComplete="new-password"
               />
             </Field>
+              </>
+            )}
 
             <Button
               onClick={() =>
@@ -314,7 +336,7 @@ export function SetupWizard({ siteOrigin }: { siteOrigin: string }) {
                   return result;
                 }, 'done')
               }
-              disabled={busy || !adminName || !adminEmail || !adminPassword}
+              disabled={busy || (!reconnecting && (!adminName || !adminEmail || !adminPassword))}
             >
               {busy ? (
                 <>
@@ -322,7 +344,7 @@ export function SetupWizard({ siteOrigin }: { siteOrigin: string }) {
                   Finishing…
                 </>
               ) : (
-                'Create account and finish'
+                reconnecting ? 'Reconnect and finish' : 'Create account and finish'
               )}
             </Button>
           </CardBody>

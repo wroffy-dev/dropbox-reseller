@@ -23,16 +23,23 @@ export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
   /*
-   * The configuration the setup wizard wrote is already in `process.env` by the
-   * time this runs — `docker/load-config.cjs` is preloaded by the container's
-   * CMD and hydrates it before Next boots.
+   * The configuration the setup wizard wrote, folded into `process.env` before
+   * anything reads it.
    *
-   * It is deliberately *not* loaded from here. This file is bundled for the Edge
-   * runtime alongside middleware, and importing the config store — even
-   * dynamically, even behind the runtime check above — pulls `node:fs` into that
-   * bundle and fails the build outright. A preload runs earlier, costs nothing
-   * per request, and webpack never sees it.
+   * The container's CMD preloads `docker/load-config.cjs`, which does this
+   * earlier and is still the belt — but it is the only thing that did, so
+   * `next start`, `next dev` and any other way of running the server came up
+   * with no connection string and no `AUTH_SECRET` after a perfectly good
+   * install. That reads as `MissingSecret` on the sign-in screen.
+   *
+   * `node:fs` is reached through `process.getBuiltinModule` rather than an
+   * import. This file is bundled for the Edge runtime alongside middleware, and
+   * an import — static or dynamic, behind the runtime check above or not — pulls
+   * `node:fs` into that bundle and fails the build. A runtime lookup by name is
+   * invisible to the bundler and never evaluated on Edge.
    */
+  hydrateStoredConfig();
+
   const { assertProductionEnv, awaitingInstallation } = await import('@/lib/env-validation');
 
   if (awaitingInstallation()) {
@@ -97,5 +104,62 @@ function describeDatabase(): string {
     return `${url.hostname}${url.port ? `:${url.port}` : ''}${url.pathname}`;
   } catch {
     return 'unparseable';
+  }
+}
+
+/**
+ * Reads the stored configuration and applies what the environment is missing.
+ *
+ * A deliberate duplicate of `docker/load-config.cjs`, kept small and dependency
+ * free. The two exist for different moments: the preload runs before Node has
+ * loaded the application at all, this runs for every other way of starting the
+ * server. Whichever goes first wins, and the second finds nothing to do.
+ *
+ * A variable already set by the platform is never overridden, and no value is
+ * ever logged — the line below names keys.
+ */
+function hydrateStoredConfig(): void {
+  const KEYS = [
+    'DATABASE_URL',
+    'AUTH_SECRET',
+    'NEXTAUTH_URL',
+    'NEXT_PUBLIC_SITE_URL',
+    'ENCRYPTION_KEY',
+    'MFA_ENCRYPTION_KEY',
+  ] as const;
+
+  try {
+    const fs = process.getBuiltinModule('node:fs');
+    const nodePath = process.getBuiltinModule('node:path');
+    const file = nodePath.join(
+      (process.env.APP_CONFIG_DIR || '/data/config').trim(),
+      'app-config.json',
+    );
+    if (!fs.existsSync(file)) return;
+
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    const applied: string[] = [];
+    for (const key of KEYS) {
+      const value = typeof stored[key] === 'string' ? stored[key].trim() : '';
+      if (!value || process.env[key]?.trim()) continue;
+      process.env[key] = value;
+      applied.push(key);
+    }
+
+    if (applied.length > 0) {
+      console.log(
+        JSON.stringify({
+          level: 'info',
+          event: 'startup.config_hydrated',
+          message: 'configuration loaded from the stored file',
+          keys: applied,
+          time: new Date().toISOString(),
+        }),
+      );
+    }
+  } catch {
+    // Reported by the application, which can render an explanation. Throwing
+    // here would stop the server booting far enough to do that.
+    console.error('[startup] the stored configuration could not be read — treating it as absent');
   }
 }

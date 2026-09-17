@@ -37,11 +37,21 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-dropbox}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-dropbox_reseller}?schema=public
-      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
-      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
-      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      # Left empty by default, so the setup wizard can supply them on first run.
+      #
+      # A value set here always wins over what the wizard stored — that is the
+      # rule — so filling these in is still the way to configure the stack from
+      # the outside. What changed is that leaving them empty is now a working
+      # configuration rather than a failure to start.
+      #
+      # `NEXTAUTH_URL` in particular must stay unset unless you mean it: giving
+      # it a default meant the wizard's answer was silently ignored, and the
+      # site then redirected to whatever the default said.
+      DATABASE_URL: ${DATABASE_URL-postgresql://${POSTGRES_USER:-dropbox}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-dropbox_reseller}?schema=public}
+      AUTH_SECRET: ${AUTH_SECRET-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY-}
+      NEXTAUTH_URL: ${NEXTAUTH_URL-}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL-}
       # Filesystem storage by default: no bucket, no account, no key.
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       UPLOAD_DIR: ${UPLOAD_DIR:-/data/uploads}
@@ -84,6 +94,12 @@ services:
       # The media library. This is production data, not a cache: without it,
       # every uploaded image is destroyed by the next `docker compose up
       # --build`. Needed for STORAGE_DRIVER=local; droppable only with S3/R2.
+      # What the setup wizard writes: the connection string and the secrets it
+      # generates. Without this volume the wizard appears to work and its
+      # configuration is destroyed by the next `docker compose up` — the
+      # container comes back with no database and no AUTH_SECRET, which reads as
+      # "MissingSecret" and a site that cannot start.
+      - app-config:/data/config
       - media-data:/data/uploads
       # Where uploads were written before /data/uploads. Mounted read-write but
       # never written to, so a stack upgraded from an older version keeps
@@ -95,6 +111,7 @@ services:
 
 volumes:
   postgres-data:
+  app-config:
   media-data:
   uploads:
   backups:

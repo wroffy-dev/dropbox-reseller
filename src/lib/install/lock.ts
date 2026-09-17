@@ -58,7 +58,8 @@ export async function lockInstallation(): Promise<LockResult> {
   const removals: Record<string, null> = {};
   for (const key of SETUP_ONLY_KEYS) removals[key] = null;
 
-  writeConfig({ ...removals, installedAt });
+  // `startedAt` goes with it: the run it marked has finished.
+  writeConfig({ ...removals, startedAt: null, installedAt });
 
   // The next read of either must see the new state rather than what was cached
   // while the wizard was still open.

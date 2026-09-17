@@ -22,7 +22,35 @@
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
-  const { assertProductionEnv } = await import('@/lib/env-validation');
+  /*
+   * The configuration the setup wizard wrote is folded into `process.env`
+   * before anything is validated, so a copy installed through the browser is
+   * indistinguishable from one configured on the platform by the time the
+   * checks below run.
+   *
+   * Dynamically imported, like the validator: this file is bundled for the Edge
+   * runtime alongside middleware, and a static import here is paid on every
+   * request's cold start.
+   */
+  const { loadStoredConfig } = await import('@/lib/install/runtime-env');
+  const supplied = loadStoredConfig();
+
+  const { assertProductionEnv, awaitingInstallation } = await import('@/lib/env-validation');
+
+  if (awaitingInstallation()) {
+    // Not an error, and deliberately not fatal: this is what a fresh copy looks
+    // like before anyone has opened it. Key *names* only — never their values.
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        event: 'startup.awaiting_installation',
+        message: 'no database configured — serving the setup wizard',
+        storedKeys: supplied,
+        time: new Date().toISOString(),
+      }),
+    );
+    return;
+  }
 
   try {
     assertProductionEnv();

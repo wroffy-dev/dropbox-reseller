@@ -3,6 +3,7 @@ import {
   collectEnvProblems,
   collectSeedProblems,
   assertProductionEnv,
+  awaitingInstallation,
   type EnvSource,
 } from '@/lib/env';
 
@@ -227,8 +228,18 @@ describe('the boot gate', () => {
     expect(() => assertProductionEnv({ NODE_ENV: 'development' })).not.toThrow();
   });
 
+  /*
+   * A connection string is what marks a deployment as configured at all. These
+   * cases supply one and leave the rest missing, which is a genuine
+   * misconfiguration: somebody set the database and forgot the secrets.
+   */
+  const configuredButIncomplete = {
+    NODE_ENV: 'production',
+    DATABASE_URL: 'postgresql://user:pw@host:5432/db',
+  };
+
   it('throws in production when something critical is missing', () => {
-    expect(() => assertProductionEnv({ NODE_ENV: 'production' })).toThrow(
+    expect(() => assertProductionEnv(configuredButIncomplete)).toThrow(
       /Environment is not ready for production/,
     );
   });
@@ -236,14 +247,31 @@ describe('the boot gate', () => {
   it('names every problem so one restart fixes them all', () => {
     let message = '';
     try {
-      assertProductionEnv({ NODE_ENV: 'production' });
+      assertProductionEnv(configuredButIncomplete);
     } catch (error) {
       message = (error as Error).message;
     }
 
-    for (const name of ['DATABASE_URL', 'AUTH_SECRET', 'MFA_ENCRYPTION_KEY']) {
+    for (const name of ['AUTH_SECRET', 'MFA_ENCRYPTION_KEY', 'NEXTAUTH_URL']) {
       expect(message).toContain(name);
     }
+  });
+
+  /*
+   * A copy nobody has configured yet is not a misconfigured one.
+   *
+   * Without a connection string the setup wizard has not run, and the variables
+   * it is going to write are missing precisely because it has not run. Failing
+   * the container here would stop the one screen that could fix it from ever
+   * rendering — so this is the case that must *not* throw.
+   */
+  it('lets a copy that has never been configured boot, so the wizard can run', () => {
+    expect(() => assertProductionEnv({ NODE_ENV: 'production' })).not.toThrow();
+    expect(awaitingInstallation({ NODE_ENV: 'production' })).toBe(true);
+  });
+
+  it('stops treating it as uninstalled the moment a database is configured', () => {
+    expect(awaitingInstallation(configuredButIncomplete)).toBe(false);
   });
 
   /**

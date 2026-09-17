@@ -115,6 +115,7 @@ export {
   collectEnvProblems,
   collectSeedProblems,
   assertProductionEnv,
+  awaitingInstallation,
   type EnvProblem,
   type EnvSource,
 } from './env-validation';

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getWebsiteSettings } from '@/lib/services/settings';
 import { LoginForm } from '@/components/admin/login-form';
+import { redirectWhenNotInstalled } from '@/lib/install/guards';
 
 export const metadata: Metadata = {
   title: 'Sign in',
@@ -13,6 +14,10 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ callbackUrl?: string; error?: string }>;
 }) {
+  // Nobody can sign in to a copy with no accounts in it, and the settings read
+  // below needs a database. Setup comes first.
+  await redirectWhenNotInstalled();
+
   const [params, site] = await Promise.all([searchParams, getWebsiteSettings()]);
 
   return (

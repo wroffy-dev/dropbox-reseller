@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { storage } from '@/lib/storage';
+import { getInstallState } from '@/lib/install/state';
 
 export const dynamic = 'force-dynamic';
 /** Never cached, never prerendered — a cached health check is not a health check. */
@@ -31,6 +32,32 @@ export const revalidate = 0;
 export async function GET() {
   const startedAt = Date.now();
   const media = await storageStatus();
+
+  /*
+   * A copy waiting to be set up is healthy.
+   *
+   * It has no database yet by definition, so the probe below would report 503 —
+   * and the Docker HEALTHCHECK and Container Apps would restart the container,
+   * repeatedly, while somebody was halfway through the setup wizard. Reporting
+   * "awaiting installation" says the replica is serving and explains why there
+   * is no database, which is what an operator needs and what the orchestrator
+   * needs to leave it alone.
+   *
+   * It reveals nothing a visitor could not learn by opening the site, which
+   * redirects them to the wizard.
+   */
+  if ((await getInstallState()) === 'needs-install') {
+    return NextResponse.json(
+      {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        database: 'awaiting installation',
+        storage: media,
+        latencyMs: Date.now() - startedAt,
+      },
+      { headers: { 'cache-control': 'no-store' } },
+    );
+  }
 
   try {
     await prisma.$queryRaw`SELECT 1`;

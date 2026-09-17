@@ -209,9 +209,27 @@ export function collectSeedProblems(source: EnvSource = process.env): EnvProblem
  * Only enforced when NODE_ENV is production: a developer running `next dev`
  * without SMTP or R2 configured should not be blocked.
  */
+/**
+ * Is this a copy nobody has configured yet?
+ *
+ * Without a connection string there is nothing for the rest of these checks to
+ * be about: the setup wizard has not run, and the variables it is going to
+ * write are missing *because* it has not run. Failing the container here would
+ * mean the one screen that could fix it never renders.
+ *
+ * `DATABASE_URL` is the test rather than the wizard's own record because this
+ * runs before anything has read the database, and because a deployment that
+ * sets the connection string on the platform has genuinely been configured —
+ * whatever else it is missing is a real misconfiguration and still fatal.
+ */
+export function awaitingInstallation(source: EnvSource = process.env): boolean {
+  return !source.DATABASE_URL?.trim();
+}
+
 export function assertProductionEnv(source: EnvSource = process.env): void {
   if (source.NODE_ENV !== 'production') return;
   if (/^(1|true|yes|on)$/i.test((source.SKIP_ENV_VALIDATION || '').trim())) return;
+  if (awaitingInstallation(source)) return;
 
   const problems = collectEnvProblems(source);
   if (problems.length === 0) return;

@@ -380,11 +380,30 @@ async function syncForms(ctx: Ctx, log: SyncLogEntry[]): Promise<void> {
     }
 
     /*
-     * Slugs are globally unique on forms, so the copy takes a market suffix.
-     * It is a machine key an administrator never sees in a URL — the form is
-     * reached through the page it sits on — so the suffix costs nothing.
+     * The copy keeps the source's slug. Form slugs are unique per market, so
+     * the UAE's copy of India's "contact" is also "contact" — no market carries
+     * a name that exists only because another market got there first.
+     *
+     * A market that already has a form under that slug keeps it: the slug is
+     * taken by something this market chose, and renaming either one to make
+     * room would be a decision the sync is not entitled to make.
      */
-    const slug = `${form.slug}-${ctx.target.code.toLowerCase()}`;
+    const slug = form.slug;
+    const slugTaken = await prisma.form.findFirst({
+      where: { countryId: ctx.target.id, slug },
+      select: { id: true },
+    });
+    if (slugTaken) {
+      log.push({
+        entity: 'FORM',
+        outcome: 'conflict',
+        label: form.name,
+        sourceId: form.id,
+        targetId: slugTaken.id,
+        note: `This market already has a form called “${slug}”. It was left alone.`,
+      });
+      continue;
+    }
 
     log.push({
       entity: 'FORM',

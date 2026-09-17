@@ -6,6 +6,7 @@ mockAuth();
 const { prisma } = await import('@/lib/db/prisma');
 const { syncCountryContent } = await import('@/lib/actions/country-sync');
 const { invalidateCountryCache } = await import('@/lib/country/registry');
+const { claimSyncRun } = await import('@/lib/country/sync-lock');
 
 const suffix = uniqueSuffix();
 let sourceId = '';
@@ -253,7 +254,7 @@ describe('sync from the default market', () => {
       select: { id: true },
     });
 
-    await sync({ mode: 'UPDATE_EXISTING' });
+    await sync();
     expect(await prisma.page.findUnique({ where: { id: local.id } })).not.toBeNull();
   });
 
@@ -277,7 +278,7 @@ describe('sync from the default market', () => {
   });
 
   it('refuses to sync the source market into itself', async () => {
-    const result = await syncCountryContent({ targetCountryId: sourceId, mode: 'ADD_MISSING' });
+    const result = await syncCountryContent({ targetCountryId: sourceId });
     expect(result.ok).toBe(false);
   });
 
@@ -289,5 +290,62 @@ describe('sync from the default market', () => {
     expect(runs.length).toBeGreaterThan(0);
     expect(runs[0].status).toBe('COMPLETED');
     expect(runs[0].finishedAt).not.toBeNull();
+  });
+
+  /*
+   * Started together rather than one after the other. A guard that queries for
+   * a running sync and then creates one passes a sequential test and still
+   * lets both of these through, because both read "nothing running" before
+   * either writes — which is the case that produces duplicates.
+   */
+  it('lets only one sync into a market start at a time', async () => {
+    const [first, second] = await Promise.all([sync(), sync()]);
+
+    const results = [first, second];
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+
+    const refused = results.find((result) => !result.ok);
+    expect(refused && !refused.ok ? refused.error : '').toMatch(/already running/i);
+
+    // And the loser left no half-claimed run behind.
+    expect(
+      await prisma.countrySyncRun.count({ where: { targetCountryId: targetId, status: 'RUNNING' } }),
+    ).toBe(0);
+  });
+
+  /*
+   * The lock is keyed on the destination, not on the source. Two markets being
+   * filled from India share no destination row, so making one wait for the
+   * other would be a limitation with nothing behind it.
+   */
+  it('does not make one market wait for a sync into a different market', async () => {
+    const other = await prisma.country.upsert({
+      where: { code: 'BH' },
+      update: {},
+      create: {
+        name: 'Bahrain',
+        code: 'BH',
+        slug: 'bh',
+        locale: 'en-BH',
+        currency: 'BHD',
+        currencySymbol: 'BHD',
+        timezone: 'Asia/Bahrain',
+        isActive: true,
+      },
+      select: { id: true },
+    });
+
+    const claims = await Promise.all([
+      claimSyncRun({ sourceCountryId: sourceId, targetCountryId: targetId, startedById: TEST_ACTOR.id }),
+      claimSyncRun({ sourceCountryId: sourceId, targetCountryId: other.id, startedById: TEST_ACTOR.id }),
+    ]);
+
+    // Both got a run: neither blocked the other.
+    expect(claims.every((claim) => 'runId' in claim)).toBe(true);
+
+    await prisma.countrySyncRun.deleteMany({
+      where: { id: { in: claims.flatMap((claim) => ('runId' in claim ? [claim.runId] : [])) } },
+    });
+    await prisma.country.delete({ where: { id: other.id } });
   });
 });

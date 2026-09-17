@@ -7,6 +7,7 @@ import { authorize } from '@/lib/auth/guards';
 import { recordAudit } from '@/lib/services/audit';
 import { getCountryById, getDefaultCountry } from '@/lib/country/registry';
 import { runCountrySync, type SyncResult } from '@/lib/country/sync';
+import { claimSyncRun } from '@/lib/country/sync-lock';
 import { success, failure, toActionError, type ActionResult } from '@/lib/utils/result';
 import type { Prisma } from '@prisma/client';
 
@@ -27,9 +28,6 @@ const schema = z.object({
   targetCountryId: z.string().min(1),
   previewOnly: z.coerce.boolean().default(false),
 });
-
-/** A run left behind by a killed container stops blocking after this. */
-const STALE_RUN_MS = 15 * 60 * 1000;
 
 /**
  * Copies the default market's content into another market.
@@ -64,30 +62,23 @@ export async function syncCountryContent(input: unknown): Promise<ActionResult<S
       return success({ ...result, runId: null });
     }
 
-    const running = await prisma.countrySyncRun.findFirst({
-      where: {
-        targetCountryId: target.id,
-        status: 'RUNNING',
-        startedAt: { gt: new Date(Date.now() - STALE_RUN_MS) },
-      },
-      select: { id: true, startedAt: true },
+    /*
+     * Checking for a running sync and starting one are a single atomic claim,
+     * held against the destination market alone — so two administrators cannot
+     * both start a sync into the UAE, while India → UAE and India → Qatar still
+     * run side by side.
+     */
+    const claim = await claimSyncRun({
+      sourceCountryId: source.id,
+      targetCountryId: target.id,
+      startedById: user.id,
     });
-    if (running) {
+    if ('busy' in claim) {
       return failure(
         `A sync into ${target.name} is already running. Wait for it to finish before starting another.`,
       );
     }
-
-    const run = await prisma.countrySyncRun.create({
-      data: {
-        sourceCountryId: source.id,
-        targetCountryId: target.id,
-        mode: 'ADD_MISSING',
-        status: 'RUNNING',
-        startedById: user.id,
-      },
-      select: { id: true },
-    });
+    const run = { id: claim.runId };
 
     try {
       const result = await runCountrySync({ source, target, previewOnly: false });

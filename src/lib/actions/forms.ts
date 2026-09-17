@@ -14,6 +14,29 @@ import { success, failure, toActionError, type ActionResult } from '@/lib/utils/
 import { resolveActionCountry } from '@/lib/country/admin';
 import { Prisma } from '@prisma/client';
 
+/**
+ * Is this slug already used in the market the form belongs to?
+ *
+ * Slugs are unique per market, so India and the UAE can each own a "contact"
+ * form — which is what stops a sync having to invent "contact-ae".
+ *
+ * Forms shared by every market (`countryId` null) are checked here rather than
+ * by the database: SQL treats two NULLs as distinct, so the unique index cannot
+ * catch a second shared form with the same slug and this is the only place that
+ * can.
+ */
+async function slugTaken(
+  slug: string,
+  countryId: string | null,
+  exceptId: string | null,
+): Promise<boolean> {
+  const existing = await prisma.form.findFirst({
+    where: { slug, countryId, ...(exceptId ? { id: { not: exceptId } } : {}) },
+    select: { id: true },
+  });
+  return Boolean(existing);
+}
+
 export async function saveForm(
   formId: string | null,
   payload: unknown,
@@ -36,24 +59,27 @@ export async function saveForm(
       });
     }
 
+    /*
+     * A form is either shared by every market (null) or bound to one. The id
+     * is validated against the markets the user may work in, so a crafted
+     * payload cannot bind a form to a market they cannot reach.
+     *
+     * Resolved before the slug, because a slug is only unique within a market:
+     * India and the UAE may each own a "contact" form.
+     */
+    const countryId = input.countryId
+      ? (await resolveActionCountry(user, input.countryId)).id
+      : null;
+
     const slug =
       formId === null
-        ? await uniqueSlug(input.slug || slugify(input.name), async (candidate) => {
-            const existing = await prisma.form.findUnique({
-              where: { slug: candidate },
-              select: { id: true },
-            });
-            return Boolean(existing);
-          })
+        ? await uniqueSlug(input.slug || slugify(input.name), (candidate) =>
+            slugTaken(candidate, countryId, null),
+          )
         : input.slug;
 
-    if (formId) {
-      const clash = await prisma.form.findFirst({
-        where: { slug, id: { not: formId } },
-        select: { id: true },
-      });
-      if (clash)
-        return failure('Another form already uses that slug.', { slug: ['This slug is taken'] });
+    if (formId && (await slugTaken(slug, countryId, formId))) {
+      return failure('Another form already uses that slug.', { slug: ['This slug is taken'] });
     }
 
     /*
@@ -69,15 +95,6 @@ export async function saveForm(
     if (conflict) {
       return failure(conflict, { offerMarketingConsent: [conflict] });
     }
-
-    /*
-     * A form is either shared by every market (null) or bound to one. The id
-     * is validated against the markets the user may work in, so a crafted
-     * payload cannot bind a form to a market they cannot reach.
-     */
-    const countryId = input.countryId
-      ? (await resolveActionCountry(user, input.countryId)).id
-      : null;
 
     const data = {
       name: sanitizeText(input.name),
@@ -205,18 +222,17 @@ export async function duplicateForm(formId: string): Promise<ActionResult<{ id: 
     });
     if (!source) return failure('That form no longer exists.');
 
-    const slug = await uniqueSlug(`${source.slug}-copy`, async (candidate) => {
-      const existing = await prisma.form.findUnique({
-        where: { slug: candidate },
-        select: { id: true },
-      });
-      return Boolean(existing);
-    });
+    const slug = await uniqueSlug(`${source.slug}-copy`, (candidate) =>
+      slugTaken(candidate, source.countryId, null),
+    );
 
     const copy = await prisma.form.create({
       data: {
         name: `${source.name} (copy)`,
         slug,
+        // A copy belongs to the market the original does. Without this a copy
+        // of one market's form became a shared form rendering in all of them.
+        countryId: source.countryId,
         description: source.description,
         isActive: false,
         submitLabel: source.submitLabel,

@@ -319,6 +319,17 @@ describe('syncing India into a market', () => {
     expect(copy._count.submissions).toBe(0);
     // Inactive on arrival, so it is read before it starts taking enquiries.
     expect(copy.isActive).toBe(false);
+
+    /*
+     * And it keeps India's slug rather than gaining a "-ae" nobody chose.
+     * Slugs are unique per market, so both copies can be called the same
+     * thing — which is the whole reason the constraint is per market.
+     */
+    const original = await prisma.form.findFirstOrThrow({
+      where: { countryId: indiaId, name: `Isolation form ${suffix}` },
+      select: { slug: true },
+    });
+    expect(copy.slug).toBe(original.slug);
   });
 
   it('Test 11 — no blog content is copied, and no country blog pages appear', async () => {

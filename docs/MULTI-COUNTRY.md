@@ -170,8 +170,17 @@ slug String @unique            slug String
                                @@unique([countryId, slug])
 ```
 
-This applies to `Page`, `BlogPost` and `Navigation`, and is what lets India and
-the UAE each own a page at `dropbox-business`.
+This applies to `Page`, `BlogPost`, `Navigation` and `Form`, and is what lets
+India and the UAE each own a page at `dropbox-business`.
+
+For `Form` it is also what keeps synced copies honest: the UAE's copy of India's
+`contact` form is called `contact`, not `contact-ae`. A form belongs to exactly
+one market or to all of them, so a global slug only ever forced one market to
+carry a name that existed because another market got there first.
+
+The one case the constraint cannot cover is two forms shared by *every* market:
+their `countryId` is null, SQL treats two NULLs as distinct, and a unique index
+lets both through. `saveForm` checks that pair itself.
 
 `Product.slug` is still globally unique: the product is one product everywhere.
 
@@ -446,8 +455,23 @@ never swallowed.
 
 A run into one market takes a lock on that market, so two administrators cannot
 sync India → UAE at once. India → UAE and India → Qatar are independent and can
-run together. Every run is recorded in `CountrySyncRun` with its source, target,
-actor, timings, status, counts and per-entity log.
+run together — the lock is keyed on the **destination**, which is the only thing
+two runs can contend over.
+
+The lock is a transaction-scoped PostgreSQL advisory lock, taken in
+`src/lib/country/sync-lock.ts` around the check for a running sync *and* the
+creation of the new run. Both halves have to be inside it: looking for a running
+sync and then starting one leaves a window where two callers both see nothing
+running, both start, and then race the mapping table into producing the
+duplicate the mapping exists to prevent.
+
+The advisory lock is released when its transaction commits, long before the sync
+finishes — it protects the claim, not the work. The `RUNNING` row holds the
+claim for the duration, and lapses after fifteen minutes so a run left behind by
+a killed container does not block the market until somebody clears it by hand.
+
+Every run is recorded in `CountrySyncRun` with its source, target, actor,
+timings, status, counts, per-entity breakdown and log.
 
 ---
 

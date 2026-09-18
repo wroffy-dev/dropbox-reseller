@@ -79,6 +79,43 @@ plain-http deployment handed people an address their own site does not serve.
 
 ---
 
+## Setup ends with a restart
+
+The last thing setup does is restart the server, and the wizard sends you to the
+sign-in screen while that happens.
+
+It has to. Auth.js reads `AUTH_SECRET` when it is first constructed, which
+happens the first time its module is imported — before setup ran, when there was
+no secret to read. Writing one afterwards cannot reach the instance that already
+exists, and Auth.js offers no way to hand it one later. Without the restart, a
+freshly installed copy reported success and then answered every sign-in with
+`MissingSecret`: installed, and unusable.
+
+Exiting is how a container asks to be restarted, and every supported way of
+running this image does: `restart: unless-stopped` in Compose, the revision
+manager on Azure Container Apps, Coolify, systemd on a VPS.
+
+**If nothing is watching the container** — a bare `docker run` with no restart
+policy — it stops instead. Start it again and open the sign-in page; the
+installation itself is complete, only the restart is outstanding.
+
+---
+
+## Coolify
+
+Coolify does not read `docker-compose.yml` unless the resource is deployed as
+one, so the volume this needs has to be added in its own interface:
+
+**Resource → Storages → Add**, with the destination path `/data/config`.
+
+Without it the wizard runs, reports success, and its configuration is gone on
+the next deployment — the same failure the environment check now refuses, but
+only if the check can see that the directory is not mounted.
+
+Restart is the **Restart** action on the resource; **Redeploy** also works.
+
+---
+
 ## After the last screen
 
 Setup finishes by sending you to the sign-in page, and the first sign-in goes

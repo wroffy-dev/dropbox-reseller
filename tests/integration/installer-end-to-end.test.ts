@@ -235,11 +235,21 @@ describe('installing a copy that has nothing', () => {
      * application can see the accounts in that database and judges itself
      * installed, which is the state a restart does *not* come back in.
      */
-    delete process.env.DATABASE_URL;
+    /*
+     * Emptied rather than deleted.
+     *
+     * `dotenv` only fills in keys that are *absent*, and constructing a Prisma
+     * client re-reads the project's `.env` — so a deleted variable came back
+     * from there, pointing at the development database, and whether this test
+     * passed then depended on what earlier suites had left in it. An empty
+     * string is falsy to every reader here and is never repopulated, which is
+     * what makes this deterministic.
+     */
+    process.env.DATABASE_URL = '';
     // The secrets went with the file. Everyone is signed out by this, which is
     // the unavoidable cost of losing the key that signed their sessions.
     for (const key of ['AUTH_SECRET', 'ENCRYPTION_KEY', 'MFA_ENCRYPTION_KEY']) {
-      delete process.env[key];
+      process.env[key] = '';
     }
     resetStoredConfigCache();
     resetInstallStateCache();

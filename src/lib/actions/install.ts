@@ -270,6 +270,15 @@ const finishSchema = z.object({
 export type InstallSummary = {
   /** Where to send the operator next. */
   signInPath: string;
+  /**
+   * The server is about to restart.
+   *
+   * It has to: modules that read configuration when they were first imported —
+   * Auth.js above all — captured an environment that had none, and cannot be
+   * told about the new one. Without this the install succeeds and every sign-in
+   * then fails with `MissingSecret`.
+   */
+  restarting: boolean;
   adminEmail: string;
   /** Key names written to the stored configuration. Never their values. */
   storedKeys: string[];
@@ -427,9 +436,14 @@ export async function finishInstallation(input: unknown): Promise<ActionResult<I
     const { lockInstallation } = await import('@/lib/install/lock');
     await lockInstallation();
 
+    // After the lock, never before: a restart mid-setup would lose the run.
+    const { scheduleRestartAfterInstall } = await import('@/lib/install/restart');
+    scheduleRestartAfterInstall();
+
     return success(
       {
         signInPath: '/auth-control-panel/admin',
+        restarting: true,
         adminEmail: admin.email,
         storedKeys: configuredKeys(),
         checks,

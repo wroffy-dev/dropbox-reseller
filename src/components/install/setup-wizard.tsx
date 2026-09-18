@@ -324,9 +324,14 @@ export function SetupWizard({ siteOrigin }: { siteOrigin: string }) {
                      * The action has just closed the installer, and a Server
                      * Action re-renders the route it was called from — which is
                      * now a 404, because that is what `/install` answers once
-                     * setup is done. Rendering a summary here would mean
-                     * rendering it on a page that has already removed itself,
-                     * and what the operator actually saw was the 404.
+                     * setup is done. Nothing can be rendered here afterwards:
+                     * anything this component showed would be replaced by that
+                     * 404 before anybody read it.
+                     *
+                     * The server is also about to restart, which is what makes
+                     * the new configuration take effect. Leaving now means the
+                     * browser is on a page it has already loaded while that
+                     * happens, rather than watching a connection drop.
                      *
                      * `replace` rather than `assign`, so Back does not return to
                      * a wizard that no longer exists.
